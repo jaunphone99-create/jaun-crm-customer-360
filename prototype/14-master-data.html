@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Master Data · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 14 · Master Data — CANONICAL v2.2 ข้อ 5 · 8.1 · 19.1 ข้อ 4 · sitemap-screen-specs ข้อ 17 · ไม่มี hex */
+.md-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.md-vtabs { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2); position: sticky; top: calc(var(--topbar-h) + var(--space-4)); max-height: calc(100vh - var(--topbar-h) - var(--space-8)); overflow-y: auto; }
+.md-vtab { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); width: 100%; min-height: var(--touch-min); padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-primary); font-size: var(--fs-sm); text-align: start; cursor: pointer; border-inline-start: 3px solid transparent; }
+.md-vtab:hover { background: var(--navy-50); }
+.md-vtab[aria-selected="true"] { background: var(--navy-50); color: var(--text-heading); font-weight: var(--fw-medium); border-inline-start-color: var(--navy-900); }
+.md-vtab__count { font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.md-select { display: none; margin-bottom: var(--space-3); }
+.md-group-label { font-size: var(--fs-xs); color: var(--text-secondary); padding: var(--space-2) var(--space-3) 0; font-weight: var(--fw-medium); }
+.md-swatch { display: inline-block; width: 14px; height: 14px; border-radius: var(--radius-sm); border: 2px solid var(--chart-separator); box-shadow: 0 0 0 1px var(--border-default); vertical-align: middle; margin-inline-end: var(--space-1); }
+.md-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-4) var(--space-5) var(--space-2); }
+.md-flag { font-variant-numeric: tabular-nums; }
+.md-actions { display: flex; gap: var(--space-1); flex-wrap: nowrap; }
+@media (max-width: 1279px) {
+  .md-layout { grid-template-columns: minmax(0, 1fr); }
+  .md-vtabs { display: none; }
+  .md-select { display: flex; }
+}
+</style>
+</head>
+<body data-page="master-data" data-roles="MARKETING BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* ============================================================================
+   หน้า 14 · Master Data (master-data)
+   แหล่ง: CANONICAL v2.2 ข้อ 4.2 · 4.7 · 5.1–5.10 (ค่า) · 8.1 (master_data.manage 🔐 · tag.manage · campaign.manage · หมายเหตุท้ายตาราง)
+         ข้อ 19.1 ข้อ 4: label_en ว่าง = รอยืนยัน · is_system ตาม supabase/migrations/0003_ref.sql · ธงความหมายแก้ได้ด้วย migration เท่านั้น
+   ระบบจริง: SELECT/INSERT/UPDATE ref.* · crm.tags · crm.campaigns ผ่าน RLS + audit trigger · ห้ามลบ (ปิดใช้งานแทน)
+   prototype: เพิ่ม/แก้/ปิดใช้งานเก็บในหน่วยความจำของหน้าเท่านั้น
+   ========================================================================= */
+(function () {
+  "use strict";
+  var D = JCRM.data, ui = JCRM.ui, fmt = JCRM.fmt, esc = JCRM.esc;
+  var DASH = fmt.DASH;
+  var PENDING = "รอยืนยัน";
+  var MIGRATION_ONLY = "แก้ได้ด้วย migration เท่านั้น";
+
+  /* label_en และ is_system ของค่าตั้งต้น — คัดจาก supabase/migrations/0003_ref.sql (แหล่งจริงตาม CANONICAL ข้อ 19.1 ข้อ 4) เพราะ data.js ไม่มีสองคอลัมน์นี้
+     ลำดับ (sort_order) = ลำดับในข้อ 5 และใน data.js (ตรงกับ migration ทุกตาราง) */
+  var REF_META = {
+    channels: { en: { WALK_IN: "Walk-in", LINE: "LINE", FACEBOOK: "Facebook", INSTAGRAM: "Instagram", TIKTOK: "TikTok", PHONE: "Phone", WEBSITE: "Web" }, system: ["WALK_IN", "PHONE"] },
+    sources: { en: {}, system: [] },
+    interestTypes: { en: { TRADE_IN: "Trade-in", ACCESSORY: "Accessories" }, system: [] },
+    productTypes: { en: { IPHONE: "iPhone", IPAD: "iPad", MAC: "Mac", APPLE_WATCH: "Apple Watch", AIRPODS: "AirPods" }, system: [] },
+    lostReasons: { en: { PRICE: "Price", NOT_READY: "Timing", OUT_OF_STOCK: "Stock", NO_MODEL_COLOR: "Product", COMPETITOR: "Competitor", FINANCE_REJECTED: "Finance", DOWN_PAYMENT: "Down Payment", PROMOTION: "Promotion", UNREACHABLE: "Contact", SERVICE_EXPERIENCE: "Service", OTHER: "Other" }, system: ["OTHER"] },
+    visitOutcomes: { en: {}, system: "ALL" },
+    interactionTypes: { en: {}, system: ["VISIT", "INQUIRY", "QUOTATION_SENT", "PURCHASE", "NOTE"] },
+    taskTypes: { en: {}, system: ["FOLLOW_UP", "CALL"] },
+    priorities: { en: {}, system: ["NORMAL"] },
+    transactionTypes: { en: {}, system: [] },
+    sourceSystems: { en: {}, system: ["MANUAL"] },
+    provinces: { en: { "TH-10": "Krung Thep Maha Nakhon" }, system: [] },
+    ownershipChangeReasons: { en: {}, system: ["STAFF_LEFT", "BRANCH_TRANSFER"] },
+    duplicateOverrideReasons: { en: {}, system: ["OTHER"] },
+    exportReasons: { en: {}, system: ["OTHER"] },
+    consentPurposes: { en: {}, system: "ALL" }
+  };
+  var YES = '<span class="md-flag" aria-label="ใช่">✓</span>', NO = '<span class="md-flag t-muted" aria-label="ไม่ใช่">' + DASH + "</span>";
+  function flag(v) { return v ? YES : NO; }
+  function pendingDash(note) { return '<span class="t-muted" tabindex="0" data-tooltip="' + esc(note || PENDING) + '" aria-label="' + esc("ไม่มีค่า · " + (note || PENDING)) + '">' + DASH + "</span>"; }
+  function chartCell(r) {
+    var token = r.chart, val = "";
+    try { val = window.getComputedStyle(document.documentElement).getPropertyValue(token).trim(); } catch (e) { val = ""; }
+    return '<span class="nowrap"><span class="md-swatch" style="background:var(' + esc(token) + ')" aria-hidden="true"></span><span class="code">' + esc(token) + "</span>" + (val ? ' <span class="t-xs t-muted">' + esc(val.toUpperCase()) + "</span>" : "") + "</span>";
+  }
+
+  /* แท็บ 18 ชุด (sitemap-screen-specs ข้อ 17.5) */
+  var TABS = [
+    { id: "channels", label: "ช่องทางติดต่อ", list: "channels", table: "ref.channels",
+      extra: [
+        { label: "กลุ่ม", render: function (r) { return esc(r.group || DASH); } },
+        { label: "ลักษณะการคุย", flag: "is_live", render: function (r) { return esc(r.isLive ? "สด" : "ข้อความ"); } },
+        { label: "สีกราฟ", render: chartCell }
+      ],
+      addFlags: [
+        { name: "group", label: "กลุ่ม", type: "radio", required: true, inline: true, options: [{ value: "offline", label: "offline" }, { value: "online", label: "online" }] },
+        { name: "isLive", label: "คุยสด (is_live · ใช้กำหนดสถานะเริ่มต้นของ Lead ข้อ 4.3)", type: "checkbox" }
+      ] },
+    { id: "sources", label: "แหล่งที่รู้จักร้าน", list: "sources", table: "ref.sources", pending: "รอยืนยัน · ข้อ 5.2" },
+    { id: "interest-types", label: "ความสนใจ", list: "interestTypes", table: "ref.interest_types",
+      extra: [{ label: "สร้าง Lead อัตโนมัติ", flag: "creates_lead", render: function (r) { return flag(r.createsLead); } }],
+      addFlags: [{ name: "createsLead", label: "ถือเป็นโอกาสขาย (สร้าง Lead อัตโนมัติ · creates_lead)", type: "checkbox" }] },
+    { id: "product-types", label: "ประเภทสินค้า", list: "productTypes", table: "ref.product_types", pending: "รอยืนยัน · ข้อ 5.4" },
+    { id: "lost-reasons", label: "เหตุผลที่ไม่สำเร็จ", list: "lostReasons", table: "ref.lost_reasons" },
+    { id: "visit-outcomes", label: "ผลการให้บริการ", list: "visitOutcomes", table: "ref.visit_outcomes", defaultSystem: true,
+      extra: [{ label: "นับเป็นบันทึกผลครบ", flag: "counts_as_recorded", render: function (r) { return flag(r.countsAsRecorded); } }],
+      addFlags: [{ name: "countsAsRecorded", label: "นับเป็นบันทึกผลครบ (counts_as_recorded)", type: "checkbox" }] },
+    { id: "interaction-types", label: "ประเภทการติดต่อ", list: "interactionTypes", table: "ref.interaction_types", pending: "รอยืนยัน · ข้อ 5.6" },
+    { id: "task-types", label: "ประเภทงาน", list: "taskTypes", table: "ref.task_types" },
+    { id: "priorities", label: "ความสำคัญ", list: "priorities", table: "ref.priorities",
+      extra: [{ label: "สี (ป้ายตัวอย่าง)", render: function (r) { return ui.priorityBadge(r.code) || NO; } }] },
+    { id: "transaction-types", label: "ประเภทธุรกรรม", list: "transactionTypes", table: "ref.transaction_types", pending: "รอยืนยัน Q14",
+      extra: [
+        { label: "นับเป็นการซื้อ", flag: "counts_as_purchase", render: function (r) { return flag(r.countsAsPurchase); } },
+        { label: "กลุ่มในแท็บการซื้อและบริการ", render: function (r) { return esc(r.tabGroup || DASH); } }
+      ],
+      addFlags: [
+        { name: "countsAsPurchase", label: "นับเป็นการซื้อ (counts_as_purchase)", type: "checkbox" },
+        { name: "tabGroup", label: "กลุ่มในแท็บการซื้อและบริการ", type: "text", maxLength: 50 }
+      ] },
+    { id: "source-systems", label: "ระบบต้นทาง", list: "sourceSystems", table: "ref.source_systems", pending: "รอยืนยัน Q14" },
+    { id: "provinces", label: "จังหวัด", list: "provinces", table: "ref.provinces", codePattern: /^TH-\d{2}$/, codeHelp: "รูปแบบ ISO 3166-2:TH เช่น TH-10" },
+    { id: "ownership-change-reasons", label: "เหตุผลเปลี่ยนผู้รับผิดชอบ", list: "ownershipChangeReasons", table: "ref.ownership_change_reasons" },
+    { id: "duplicate-override-reasons", label: "เหตุผลสร้างลูกค้าซ้ำ", list: "duplicateOverrideReasons", table: "ref.duplicate_override_reasons" },
+    { id: "export-reasons", label: "เหตุผลการส่งออก", list: "exportReasons", table: "ref.export_reasons", pending: "รอยืนยัน · ข้อ 5.8",
+      extra: [{ label: "กลุ่มการตลาด", flag: "is_marketing", render: function (r) { return flag(r.isMarketing); } }],
+      addFlags: [{ name: "isMarketing", label: "กลุ่มการตลาด (is_marketing · บังคับกรองความยินยอมเมื่อส่งออก)", type: "checkbox" }] },
+    { id: "consent-purposes", label: "วัตถุประสงค์ความยินยอม", list: "consentPurposes", table: "ref.consent_purposes",
+      extra: [{ label: "ผู้ควบคุมข้อมูล", flag: "controller_entity", render: function (r) { return r.controllerEntity ? esc(r.controllerEntity) : pendingDash("รอยืนยัน Q17"); } }],
+      addFlags: [{ name: "controllerEntity", label: "ผู้ควบคุมข้อมูล (controller_entity · รอยืนยัน Q17)", type: "text", maxLength: 100 }] },
+    { id: "tags", label: "Tag", kind: "tags", list: "tags", table: "crm.tags", permission: "tag.manage" },
+    { id: "campaigns", label: "แคมเปญ", kind: "campaigns", table: "crm.campaigns", permission: "campaign.manage", phase: "2" }
+  ];
+  TABS.forEach(function (t) { t.permission = t.permission || "master_data.manage"; t.kind = t.kind || "ref"; });
+
+  /* ข้อมูลในหน่วยความจำ */
+  var store = {};
+  TABS.forEach(function (t) {
+    if (t.kind === "campaigns") { store[t.id] = []; return; }
+    var meta = REF_META[t.list] || { en: {}, system: [] };
+    store[t.id] = (D[t.list] || []).map(function (r, i) {
+      var copy = {}; Object.keys(r).forEach(function (k) { copy[k] = r[k]; });
+      copy.sort = r.sort || i + 1;
+      copy.labelEn = t.kind === "ref" ? (meta.en[r.code] || null) : null;
+      copy.isSystem = t.kind === "ref" ? (meta.system === "ALL" || meta.system.indexOf(r.code) !== -1) : false;
+      copy.isActive = true;
+      return copy;
+    });
+  });
+  var state = { tab: null, showInactive: true };
+
+  function tabById(id) { return JCRM.find(TABS, "id", id); }
+  function tabVisible(t) { return JCRM.access(t.permission).visible; }
+  function visibleTabs() { return TABS.filter(tabVisible); }
+  function currentTab() {
+    var vis = visibleTabs();
+    var wanted = state.tab || JCRM.param("tab");
+    var t = tabById(wanted);
+    if (t && tabVisible(t)) { return t; }
+    return JCRM.can("master_data.manage") || JCRM.access("master_data.manage").visible ? tabById("channels") : (vis.filter(function (x) { return x.id === "tags"; })[0] || vis[0]);
+  }
+  function provincesTotal() { var m = /(\d+)\s*จังหวัด/.exec(D.provincesNote || ""); return m ? Number(m[1]) : null; }
+
+  /* ----------------------------------------------------------- ตาราง */
+  function statusBadge(r) { return r.isActive ? ui.badge("ใช้งาน", "success", "badge--square") : ui.badge("ปิดใช้งาน", "neutral", "badge--square"); }
+  function rowActions(t, r) {
+    var acc = JCRM.access(t.permission);
+    if (!acc.visible) { return ""; }
+    var why = acc.allowed ? null : acc.reason;
+    var edit = ui.button({ label: "แก้ไข", variant: "ghost", size: "sm", action: why ? null : "md-edit", id: t.id + "|" + r.code, disabledReason: why });
+    var toggle;
+    if (r.isActive) {
+      var sysWhy = r.isSystem ? "ค่าของระบบ ปิดใช้งานไม่ได้" : null;
+      toggle = ui.button({ label: "ปิดใช้งาน", variant: "ghost", size: "sm", action: why || sysWhy ? null : "md-toggle", id: t.id + "|" + r.code, disabledReason: why || sysWhy });
+    } else {
+      toggle = ui.button({ label: "เปิดใช้งาน", variant: "ghost", size: "sm", action: why ? null : "md-toggle", id: t.id + "|" + r.code, disabledReason: why });
+    }
+    return '<span class="md-actions">' + edit + toggle + "</span>";
+  }
+  function refTable(t) {
+    var rows = store[t.id].slice().sort(function (a, b) { return a.sort - b.sort; }).filter(function (r) { return state.showInactive || r.isActive; });
+    var cols = [
+      { key: "code", label: "รหัส", format: "code" },
+      { key: "labelTh", label: "ชื่อที่แสดง", render: function (r) { return esc(r.labelTh) + (r.pending ? " " + ui.badge(r.pending, "warning", "badge--square") : ""); } },
+      { key: "labelEn", label: "ชื่อภาษาอังกฤษ", hide: "tablet", render: function (r) { return r.labelEn ? esc(r.labelEn) : pendingDash(); } }
+    ];
+    (t.extra || []).forEach(function (x) { cols.push({ key: x.label, label: x.label, render: x.render }); });
+    cols.push({ key: "sort", label: "ลำดับ", align: "end", render: function (r) { return esc(fmt.int(r.sort)); } });
+    cols.push({ key: "isActive", label: "สถานะ", render: statusBadge });
+    cols.push({ key: "isSystem", label: "ค่าของระบบ", render: function (r) { return flag(r.isSystem); } });
+    cols.push({ key: "code", label: "การกระทำ", render: function (r) { return rowActions(t, r); } });
+    var total = t.id === "provinces" ? provincesTotal() : store[t.id].length;
+    return ui.table({
+      id: "md-table", caption: t.label, rowKey: "code", columns: cols, rows: rows,
+      empty: { title: state.showInactive ? "ยังไม่มีรายการ" : "ไม่มีรายการที่ใช้งานอยู่" },
+      footer: { shown: rows.length, total: t.id === "provinces" ? total : (state.showInactive ? total : rows.length), unit: "รายการ" }
+    }) + (t.id === "provinces" ? '<p class="proto-note" style="margin:var(--space-3) var(--space-5)">' + esc(D.provincesNote) + " (ข้อ 5.8 · 19.5 ข้อ 5)</p>" : "");
+  }
+  function tagTable(t) {
+    var rows = store[t.id].filter(function (r) { return state.showInactive || r.isActive; });
+    return ui.table({
+      id: "md-table", caption: "Tag", rowKey: "code", rows: rows,
+      columns: [
+        { key: "code", label: "รหัส", format: "code" },
+        { key: "labelTh", label: "ชื่อ Tag", render: function (r) { return esc(r.labelTh) + (r.pending ? " " + ui.badge(r.pending, "warning", "badge--square") : ""); } },
+        { key: "isActive", label: "สถานะ", render: statusBadge },
+        { key: "code", label: "การกระทำ", render: function (r) { return rowActions(t, r); } }
+      ],
+      empty: { title: "ยังไม่มี Tag" }, footer: { shown: rows.length, total: store[t.id].length, unit: "รายการ" }
+    });
+  }
+  function campaignTable(t) {
+    var rows = store[t.id].filter(function (r) { return state.showInactive || r.isActive; });
+    return ui.table({
+      id: "md-table", caption: "แคมเปญ", rowKey: "code", rows: rows,
+      columns: [
+        { key: "code", label: "รหัส", format: "code" },
+        { key: "labelTh", label: "ชื่อแคมเปญ" },
+        { key: "channel", label: "ช่องทาง", format: "channel" },
+        { key: "startsOn", label: "วันเริ่ม", format: "date" },
+        { key: "endsOn", label: "วันสิ้นสุด", format: "date" },
+        { key: "isActive", label: "สถานะ", render: statusBadge },
+        { key: "code", label: "การกระทำ", render: function (r) { return rowActions(t, r); } }
+      ],
+      empty: { title: "ยังไม่มีแคมเปญ", text: "ข้อมูลตัวอย่างไม่มีแคมเปญ (ข้อ 13) · แคมเปญผูกกับ Lead แบบ first-touch · หน้าแคมเปญเต็มและสมาชิกแคมเปญเป็น Phase 4 (ข้อ 5.10)" },
+      footer: rows.length ? { shown: rows.length, total: store[t.id].length, unit: "รายการ" } : false
+    });
+  }
+
+  /* ----------------------------------------------------------- render */
+  function tabCount(t) { return t.kind === "campaigns" ? store[t.id].length : (t.id === "provinces" ? provincesTotal() : store[t.id].length); }
+  function render() {
+    var t = currentTab();
+    state.tab = t.id;
+    var vis = visibleTabs();
+    var acc = JCRM.access(t.permission);
+    var header = ui.pageHeader({
+      title: "Master Data",
+      lead: "ค่ากลางที่ห้ามพิมพ์อิสระ · ไม่มีการลบ ใช้การปิดใช้งานแทน (ข้อ 5 · A14)",
+      actions: [{ label: "+ เพิ่มรายการ", variant: "accent", action: "md-add", id: t.id, permission: t.permission }]
+    });
+    var lookups = vis.filter(function (x) { return x.kind === "ref"; }), others = vis.filter(function (x) { return x.kind !== "ref"; });
+    function tabBtn(x) {
+      return '<button type="button" class="md-vtab" role="tab" id="md-tab-' + esc(x.id) + '" aria-controls="md-panel" aria-selected="' + (x.id === t.id) + '" tabindex="' + (x.id === t.id ? 0 : -1) + '" data-md-tab="' + esc(x.id) + '">' +
+        "<span>" + esc(x.label) + '</span><span class="md-vtab__count">' + esc(tabCount(x) === null ? DASH : fmt.int(tabCount(x))) + "</span></button>";
+    }
+    var vtabs = '<nav class="card md-vtabs" aria-label="ชุดข้อมูล"><div role="tablist" aria-orientation="vertical" aria-label="ชุดข้อมูล" id="md-tablist">' +
+      (lookups.length ? '<p class="md-group-label">ค่ากลาง (ref)</p>' + lookups.map(tabBtn).join("") : "") +
+      (others.length ? '<p class="md-group-label">Tag และแคมเปญ</p>' + others.map(tabBtn).join("") : "") + "</div></nav>";
+    var select = '<div class="field md-select"><label class="label" for="md-select">เลือกชุดข้อมูล</label><select class="select" id="md-select" data-jcrm-change="md-select">' +
+      vis.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === t.id ? " selected" : "") + ">" + esc(x.label) + "</option>"; }).join("") + "</select></div>";
+    var badges = (t.pending ? ui.badge(t.pending, "warning", "badge--square") + " " : "") + (t.phase ? ui.badge("Phase " + t.phase, "neutral", "badge--square") : "");
+    var mfa = acc.visible && !acc.allowed ? '<div style="padding:0 var(--space-5) var(--space-3)">' + ui.state("mfa") + "</div>" : "";
+    var body = t.kind === "tags" ? tagTable(t) : (t.kind === "campaigns" ? campaignTable(t) : refTable(t));
+    var panel = '<section class="card card--flush" id="md-panel" role="tabpanel" aria-labelledby="md-tab-' + esc(t.id) + '">' +
+      '<div class="md-toolbar"><div><h2 class="card__title">' + esc(t.label) + " (" + esc(tabCount(t) === null ? DASH : fmt.int(tabCount(t))) + ") " + badges + "</h2>" +
+      '<p class="card__subtitle"><span class="code">' + esc(t.table) + "</span> · ไม่มีการลบ ใช้การปิดใช้งานแทน" +
+      (t.kind === "ref" ? " · ธงความหมายของแถวที่มีอยู่แก้ได้ด้วย migration เท่านั้น" : "") + "</p></div>" +
+      '<label class="checkbox"><input type="checkbox" id="md-inactive"' + (state.showInactive ? " checked" : "") + ' data-jcrm-change="md-inactive"><span class="checkbox__text">แสดงรายการที่ปิดใช้งาน</span></label></div>' +
+      mfa + body + "</section>";
+    var note = JCRM.roleCodes().indexOf("BUSINESS_ADMIN") === -1 ? '<p class="state-bar section" role="note">ฝ่ายการตลาดเปิดหน้านี้ได้เฉพาะแท็บ Tag และแคมเปญ (ข้อ 8.1 หมายเหตุท้ายตาราง)</p>' : "";
+    document.getElementById("page").innerHTML = header + note + select + '<div class="md-layout">' + vtabs + panel + "</div>";
+  }
+  function setTab(id, focus) {
+    var t = tabById(id); if (!t || !tabVisible(t)) { return; }
+    state.tab = id;
+    try { var u = new window.URL(window.location.href); u.searchParams.set("tab", id); window.history.replaceState(null, "", u.toString()); } catch (e) { /* file:// */ }
+    render();
+    if (focus) { var b = document.getElementById("md-tab-" + id); if (b) { b.focus(); } }
+  }
+
+  document.addEventListener("click", function (e) {
+    var b = e.target && e.target.closest ? e.target.closest("[data-md-tab]") : null;
+    if (b) { e.preventDefault(); setTab(b.getAttribute("data-md-tab"), true); }
+  });
+  document.addEventListener("keydown", function (e) {
+    var b = e.target && e.target.closest ? e.target.closest("[data-md-tab]") : null;
+    if (!b) { return; }
+    var list = JCRM.$$("[data-md-tab]"), i = list.indexOf(b), n = null;
+    if (e.key === "ArrowDown") { n = list[(i + 1) % list.length]; }
+    if (e.key === "ArrowUp") { n = list[(i - 1 + list.length) % list.length]; }
+    if (e.key === "Home") { n = list[0]; }
+    if (e.key === "End") { n = list[list.length - 1]; }
+    if (n) { e.preventDefault(); n.focus(); }
+  });
+  JCRM.on("md-select", function (v) { setTab(v, false); });
+  JCRM.on("md-inactive", function () { var c = document.getElementById("md-inactive"); state.showInactive = !!(c && c.checked); render(); });
+
+  /* ----------------------------------------------------------- เพิ่ม/แก้ไข */
+  function rowOf(key) { var p = String(key).split("|"); var t = tabById(p[0]); return t ? { tab: t, row: JCRM.find(store[t.id], "code", p[1]) } : null; }
+  function codeField(t) {
+    var pattern = t.codePattern || (t.kind === "campaigns" ? /^[A-Z0-9_-]+$/ : /^[A-Z0-9_]+$/);
+    return { name: "code", label: "รหัส", type: "text", required: true, maxLength: 40, width: "half",
+      help: t.codeHelp || (t.kind === "campaigns" ? "ตัวพิมพ์ใหญ่ A–Z ตัวเลข _ หรือ - · แก้ไม่ได้หลังบันทึก" : "ตัวพิมพ์ใหญ่ A–Z ตัวเลข และ _ · แก้ไม่ได้หลังบันทึก"),
+      validate: function (v) {
+        var c = String(v).trim();
+        if (!pattern.test(c)) { return t.codeHelp ? "รูปแบบรหัสไม่ถูกต้อง (" + t.codeHelp + ")" : "ใช้ตัวพิมพ์ใหญ่ A–Z ตัวเลข และ _" + (t.kind === "campaigns" ? " หรือ -" : ""); }
+        return JCRM.find(store[t.id], "code", c) ? "รหัสนี้มีอยู่แล้ว" : null;
+      } };
+  }
+  function staticFlags(t, r) {
+    return (t.extra || []).filter(function (x) { return x.flag; }).map(function (x) {
+      return { name: "flag_" + x.flag, label: x.label, type: "static", html: '<p class="t-sm">' + x.render(r) + ' <span class="help">(' + esc(x.flag) + " · " + MIGRATION_ONLY + ")</span></p>" };
+    });
+  }
+  JCRM.on("md-add", function (tabId) {
+    var t = tabById(tabId); if (!t) { return; }
+    var fields, maxSort = store[t.id].reduce(function (m, r) { return Math.max(m, r.sort || 0); }, 0);
+    if (t.kind === "campaigns") {
+      fields = [codeField(t),
+        { name: "labelTh", label: "ชื่อแคมเปญ", type: "text", required: true, maxLength: 120, width: "half" },
+        { name: "channel", label: "ช่องทาง", type: "select", ref: "channels", required: true, width: "half" },
+        { name: "startsOn", label: "วันเริ่ม", type: "date", required: true, width: "half" },
+        { name: "endsOn", label: "วันสิ้นสุด", type: "date", width: "half", validate: function (v, vals) { return vals.startsOn && v < vals.startsOn ? "วันสิ้นสุดต้องไม่ก่อนวันเริ่ม" : null; } }];
+    } else if (t.kind === "tags") {
+      fields = [codeField(t), { name: "labelTh", label: "ชื่อ Tag", type: "text", required: true, maxLength: 60, width: "half" }];
+    } else {
+      fields = [codeField(t),
+        { name: "labelTh", label: "ชื่อที่แสดง", type: "text", required: true, maxLength: 120, width: "half" },
+        { name: "labelEn", label: "ชื่อภาษาอังกฤษ", type: "text", maxLength: 120, width: "half", help: "ว่างได้ (ว่าง = รอยืนยัน · ข้อ 19.1 ข้อ 4)" },
+        { name: "sort", label: "ลำดับ", type: "number", required: true, min: 1, value: maxSort + 1, width: "half", minMessage: "ลำดับต้องไม่น้อยกว่า 1" }].concat(t.addFlags || [])
+        .concat([{ name: "flag_note", type: "static", html: '<p class="help">ธงความหมายตั้งได้ตอนเพิ่มค่าเท่านั้น หลังบันทึกแก้ได้ด้วย migration · ค่าใหม่ไม่ใช่ค่าของระบบ' + (t.defaultSystem ? " (ยกเว้นผลการให้บริการที่ตารางตั้งค่าเริ่มต้นเป็นค่าของระบบ)" : "") + "</p>" }]);
+    }
+    JCRM.dialog({
+      title: "เพิ่มรายการ · " + t.label, size: "md", fields: fields, submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        var row = { code: String(v.code).trim(), labelTh: String(v.labelTh).trim(), isActive: true, isSystem: !!t.defaultSystem };
+        if (t.kind === "ref") {
+          row.labelEn = String(v.labelEn || "").trim() || null; row.sort = v.sort;
+          (t.addFlags || []).forEach(function (f) { row[f.name] = f.type === "checkbox" ? !!v[f.name] : (String(v[f.name] || "").trim() || null); });
+        }
+        if (t.kind === "campaigns") { row.channel = v.channel; row.startsOn = v.startsOn; row.endsOn = v.endsOn || null; }
+        store[t.id].push(row);
+        JCRM.toast("เพิ่ม " + row.code + " แล้ว (prototype · ไม่มีการบันทึกจริง) · ระบบจริง INSERT " + t.table + " ผ่าน RLS และบันทึก audit", "success");
+        render();
+        return true;
+      }
+    });
+  });
+  JCRM.on("md-edit", function (key) {
+    var hit = rowOf(key); if (!hit || !hit.row) { return; }
+    var t = hit.tab, r = hit.row, fields;
+    var codeStatic = { name: "code_static", label: "รหัส", type: "static", html: '<p class="code">' + esc(r.code) + '</p><p class="help">แก้รหัสไม่ได้หลังบันทึก</p>' };
+    if (t.kind === "campaigns") {
+      fields = [codeStatic,
+        { name: "labelTh", label: "ชื่อแคมเปญ", type: "text", required: true, maxLength: 120, value: r.labelTh, width: "half" },
+        { name: "channel", label: "ช่องทาง", type: "select", ref: "channels", required: true, value: r.channel, width: "half" },
+        { name: "startsOn", label: "วันเริ่ม", type: "date", required: true, value: r.startsOn, width: "half" },
+        { name: "endsOn", label: "วันสิ้นสุด", type: "date", value: r.endsOn || "", width: "half", validate: function (v, vals) { return vals.startsOn && v < vals.startsOn ? "วันสิ้นสุดต้องไม่ก่อนวันเริ่ม" : null; } }];
+    } else if (t.kind === "tags") {
+      fields = [codeStatic, { name: "labelTh", label: "ชื่อ Tag", type: "text", required: true, maxLength: 60, value: r.labelTh, width: "half" }];
+    } else {
+      fields = [codeStatic,
+        { name: "labelTh", label: "ชื่อที่แสดง", type: "text", required: true, maxLength: 120, value: r.labelTh, width: "half" },
+        { name: "labelEn", label: "ชื่อภาษาอังกฤษ", type: "text", maxLength: 120, value: r.labelEn || "", width: "half", help: "ว่างได้ (ว่าง = รอยืนยัน)" },
+        { name: "sort", label: "ลำดับ", type: "number", required: true, min: 1, value: r.sort, width: "half", minMessage: "ลำดับต้องไม่น้อยกว่า 1" }].concat(staticFlags(t, r));
+    }
+    JCRM.dialog({
+      title: "แก้ไข · " + t.label, size: "md", fields: fields, submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        r.labelTh = String(v.labelTh).trim();
+        if (t.kind === "ref") { r.labelEn = String(v.labelEn || "").trim() || null; r.sort = v.sort; }
+        if (t.kind === "campaigns") { r.channel = v.channel; r.startsOn = v.startsOn; r.endsOn = v.endsOn || null; }
+        JCRM.toast("บันทึก " + r.code + " แล้ว (prototype · ไม่มีการบันทึกจริง) · ระบบจริง UPDATE " + t.table + " และบันทึก audit", "success");
+        render();
+        return true;
+      }
+    });
+  });
+  JCRM.on("md-toggle", function (key) {
+    var hit = rowOf(key); if (!hit || !hit.row) { return; }
+    var t = hit.tab, r = hit.row;
+    if (r.isActive && r.isSystem) { JCRM.toast("ค่าของระบบ ปิดใช้งานไม่ได้", "warning"); return; }
+    JCRM.confirm({
+      title: (r.isActive ? "ปิดใช้งาน " : "เปิดใช้งาน ") + r.labelTh + "?",
+      message: r.isActive ? "รายการเดิมที่ใช้ค่านี้ยังแสดงได้ แต่เลือกใหม่ไม่ได้" : "ค่านี้จะกลับมาให้เลือกได้ในฟอร์ม",
+      confirmLabel: r.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน", variant: r.isActive ? "danger-outline" : "primary",
+      onConfirm: function () {
+        r.isActive = !r.isActive;
+        JCRM.toast((r.isActive ? "เปิดใช้งาน " : "ปิดใช้งาน ") + r.code + " แล้ว (prototype · ไม่มีการบันทึกจริง)", "success");
+        render();
+        return true;
+      }
+    });
+  });
+
+  JCRM.page({ id: "master-data", render: render, branchPicker: false });
+})();
+</script>
+</body>
+</html>

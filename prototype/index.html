@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JAUN CRM · Customer 360 — สารบัญ prototype</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า index — สารบัญ + ตัวสลับผู้ใช้ตัวอย่าง · ไม่มี hex (ใช้ token จาก app.css) */
+.hero { background: var(--surface-nav); color: var(--text-on-nav); padding: var(--space-10) var(--page-px) var(--space-8); }
+.hero h1 { color: var(--text-on-nav); font-size: var(--fs-display); }
+.hero__accent { color: var(--orange-400); }
+.hero__lead { color: var(--text-on-nav-2); max-width: 72ch; margin-top: var(--space-2); }
+.hero__meta { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+.hero__meta .chip { background: var(--navy-800); border-color: var(--navy-600); color: var(--white); }
+.persona-group { margin-bottom: var(--space-4); }
+.persona-group__title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-secondary-sunk); margin-bottom: var(--space-2); }
+.persona-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-card); }
+.persona-card[aria-current="true"] { border-color: var(--support-blue); box-shadow: inset 4px 0 0 0 var(--jaun-orange); background: var(--navy-50); }
+.persona-card__head { display: flex; gap: var(--space-3); align-items: center; }
+.persona-card__pages { font-size: var(--fs-xs); color: var(--text-secondary); }
+.screen-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-card); box-shadow: var(--shadow-1); }
+.screen-card__no { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--support-blue); font-variant-numeric: tabular-nums; }
+.screen-card__title { font-size: var(--fs-h4); font-weight: var(--fw-semibold); color: var(--text-heading); }
+.screen-card__meta { font-size: var(--fs-xs); color: var(--text-secondary); }
+.screen-card__roles { display: flex; flex-wrap: wrap; gap: 4px; }
+.screen-card__roles .chip { font-size: 11px; padding: 0 var(--space-2); }
+.screen-card__roles .chip.is-mine { background: var(--navy-900); border-color: var(--navy-900); color: var(--white); }
+.screen-card.is-locked { background: var(--surface-raised); box-shadow: none; }
+.screen-card.is-locked .screen-card__title { color: var(--text-secondary-sunk); }
+.screen-card__foot { margin-top: auto; display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+</style>
+</head>
+<body data-page="index" data-roles="">
+<a class="skip-link" href="#main">ข้ามไปยังเนื้อหาหลัก</a>
+
+<header class="hero">
+  <p class="t-xs" style="color:var(--text-on-nav-3)" id="hero-version">Phase 0 · prototype · 16 ก.ย. 2569</p>
+  <h1>JAUN <span class="hero__accent">CRM</span> · Customer 360</h1>
+  <p class="hero__lead">ต้นแบบหน้าจอแบบคลิกได้ของระบบ CRM หน้าร้าน JAUNPHONE 1–4 และทีมออนไลน์ส่วนกลาง
+    เปิดจากไฟล์บนเครื่องได้ทันที ไม่ต้องต่ออินเทอร์เน็ต ข้อมูลทั้งหมดเป็นข้อมูลสมมติจาก CANONICAL ข้อ 13</p>
+  <div class="hero__meta" id="hero-meta"></div>
+</header>
+
+<main id="main" class="page">
+
+  <section class="section grid grid-3">
+    <div class="card card--info-left">
+      <h2 class="card__title">prototype นี้คืออะไร</h2>
+      <p class="t-sm" style="margin-top:var(--space-2)">หน้าจอ 19 หน้าตาม CANONICAL ข้อ 14.1 ใช้เพื่อยืนยันลำดับข้อมูล คำที่ใช้ และสิทธิ์ของแต่ละบทบาท
+        ก่อนพัฒนาจริงบน Next.js + Supabase ไม่ได้ต่อฐานข้อมูลจริง</p>
+      <p class="t-sm t-muted" style="margin-top:var(--space-2)">ในระบบจริง สิทธิ์ถูกตรวจในฐานข้อมูล (RLS · RPC) เสมอ การซ่อนปุ่มบนหน้าจอเป็นเพียงความสะดวก (ข้อ 9.1)</p>
+    </div>
+    <div class="card card--info-left">
+      <h2 class="card__title">"ตอนนี้" ถูกตรึงไว้</h2>
+      <p class="t-sm" style="margin-top:var(--space-2)">ทุกหน้าคำนวณเหมือนเวลาปัจจุบันคือ <strong id="now-text"></strong></p>
+      <p class="t-sm" style="margin-top:var(--space-2)">ช่วง "30 วันล่าสุด" (ค่าเริ่มต้น) = [13 ส.ค. 2569, 12 ก.ย. 2569) · ช่วงก่อนหน้า = [14 ก.ค. 2569, 13 ส.ค. 2569)</p>
+      <p class="t-sm t-muted" style="margin-top:var(--space-2)">ตัวเลือกช่วงเวลาเปิดเฉพาะ "วันนี้" และ "30 วันล่าสุด" ช่วงอื่นไม่มีข้อมูลตัวอย่าง ค่าที่ไม่มีใน CANONICAL แสดง –</p>
+    </div>
+    <div class="card card--info-left">
+      <h2 class="card__title">วิธีใช้</h2>
+      <ol class="t-sm stack-2" style="margin-top:var(--space-2); padding-inline-start:var(--space-5); list-style:decimal">
+        <li>เลือกผู้ใช้ตัวอย่างด้านล่าง (จำไว้ในเบราว์เซอร์นี้)</li>
+        <li>เปิดหน้าจอจากตาราง — เมนูด้านซ้ายแสดงเฉพาะหน้าที่ผู้ใช้นั้นเปิดได้</li>
+        <li>เปิดหน้าที่ไม่มีสิทธิ์จะเห็นการ์ด "ไม่มีสิทธิ์เข้าหน้านี้" พร้อมบทบาทที่เข้าได้</li>
+        <li>หรือเริ่มจาก <a href="01-login.html">หน้าเข้าสู่ระบบ</a> ด้วยอีเมลตัวอย่าง</li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section card" aria-labelledby="persona-title">
+    <div class="card__header">
+      <div>
+        <h2 class="card__title" id="persona-title">ผู้ใช้ตัวอย่าง (CANONICAL ข้อ 13.5)</h2>
+        <p class="card__subtitle">ผู้ใช้ตัวแทนต่อบทบาทมีป้าย "ตัวแทนบทบาท" · สลับเป็นคุณคิม คุณบอส คุณฝน ได้เพื่อทดสอบขอบเขตข้อมูล</p>
+      </div>
+      <div class="row">
+        <button type="button" class="btn btn--ghost btn--sm" id="reset-persona">รีเซ็ตเป็นค่าเริ่มต้น</button>
+        <label class="checkbox" style="min-height:auto"><input type="checkbox" id="aal1-toggle"><span class="checkbox__text">จำลองเซสชันที่ยังไม่ยืนยัน MFA (aal1)<small>บทบาทที่ต้อง MFA จะไม่ถูกนับ (ข้อ 8.0 · 13.13)</small></span></label>
+      </div>
+    </div>
+    <div id="storage-warning" class="alert alert--warning" role="alert" style="margin-bottom:var(--space-4)" hidden>เบราว์เซอร์นี้ไม่อนุญาตให้จำผู้ใช้ตัวอย่าง ระบบจะใช้ จ๋าอั๋น (ST-0001) เมื่อเปลี่ยนหน้า</div>
+    <div id="current-persona" class="alert" style="margin-bottom:var(--space-4)"></div>
+    <div id="persona-groups"></div>
+  </section>
+
+  <section class="section" aria-labelledby="screens-title">
+    <div class="row-between" style="margin-bottom:var(--space-3)">
+      <h2 id="screens-title">หน้าจอทั้ง 19 หน้า (CANONICAL ข้อ 14.1)</h2>
+      <p class="t-sm t-muted" id="screens-summary"></p>
+    </div>
+    <div class="grid grid-4" id="screen-grid"></div>
+    <p class="proto-note" style="margin-top:var(--space-4)">หน้าที่ยังไม่ได้สร้างไฟล์จะยังแสดงในรายการนี้ · กดแล้วเบราว์เซอร์จะแจ้งว่าไม่พบไฟล์</p>
+  </section>
+
+  <section class="section card card--raised">
+    <h2 class="card__title">หมายเหตุด้านเทคนิค</h2>
+    <ul class="t-sm stack-2" style="margin-top:var(--space-2); padding-inline-start:var(--space-5); list-style:disc">
+      <li>ฟอนต์ Kanit เก็บในเครื่องที่ <code>assets/fonts/</code> (SIL OFL 1.1) ไม่เรียก Google Fonts</li>
+      <li>ข้อมูลตัวอย่างอยู่ใน <code>assets/data.js</code> เท่านั้น — ตรวจความถูกต้องด้วย <code>node tools/check-prototype.mjs</code></li>
+      <li>ค่าเต็มของเบอร์/อีเมลอยู่ใน data.js เพราะไม่มีเซิร์ฟเวอร์ ระบบจริงได้ค่าเต็มผ่าน <code>api.reveal_contact</code> เท่านั้นและบันทึก CONTACT_REVEALED ทุกครั้ง</li>
+      <li>ขนาดจอ: มือถือ &lt; 768px (bottom navigation) · แท็บเล็ต 768–1279px (เมนูย่อเป็นไอคอน + ปุ่มลอยรับลูกค้า) · เดสก์ท็อป ≥ 1280px</li>
+    </ul>
+  </section>
+</main>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var D = JCRM.data, esc = JCRM.esc, fmt = JCRM.fmt, ui = JCRM.ui;
+
+  document.getElementById("now-text").textContent = fmt.dateTime(D.meta.now, { suffix: true });
+  document.getElementById("hero-version").textContent = "Phase 0 · prototype · CANONICAL " + D.meta.canonicalVersion + " · " + D.meta.documentDate;
+  document.getElementById("storage-warning").hidden = JCRM.storage.set("jcrm.probe", "1") && (JCRM.storage.remove("jcrm.probe"), true);
+  document.getElementById("reset-persona").addEventListener("click", function () {
+    JCRM.setStaff(D.meta.defaultStaffCode); aalToggle.checked = false;
+    JCRM.toast("สลับเป็น " + JCRM.staffName(D.meta.defaultStaffCode) + " แล้ว", "success"); render();
+  });
+  document.getElementById("hero-meta").innerHTML = [
+    "ตอนนี้ " + fmt.dateTime(D.meta.now, { suffix: true }),
+    "องค์กร " + D.organization.name,
+    D.branches.map(function (b) { return b.name; }).join(" · ")
+  ].map(function (t) { return '<span class="chip">' + esc(t) + "</span>"; }).join("");
+
+  var aalToggle = document.getElementById("aal1-toggle");
+  aalToggle.checked = JCRM.storage.get(D.meta.aalStorageKey) === "aal1";
+  aalToggle.addEventListener("change", function () { JCRM.setAal(aalToggle.checked ? "aal1" : null); render(); });
+
+  function openable(staffCode) {
+    return D.screens.filter(function (s) { return !s.isPublic && JCRM.canOpen(s.id, staffCode); });
+  }
+
+  function render() {
+    var me = JCRM.currentStaff();
+    var mine = openable(me.staffCode);
+    var myRoles = JCRM.roleCodes();
+
+    document.getElementById("current-persona").innerHTML =
+      '<div class="grow"><p class="alert__title">กำลังใช้: ' + esc(me.displayName) + " · " + esc(me.staffCode) + "</p>" +
+      "<p>" + esc(JCRM.assignmentText(me, { branchNames: true })) + " · เซสชัน " + esc(JCRM.aal(me)) + " · เปิดได้ " + mine.length + " จาก 18 หน้า (ไม่นับหน้าเข้าสู่ระบบ) · แจ้งเตือนที่ยังไม่อ่าน " + JCRM.select.notificationsFor(me.staffCode).length + "</p></div>" +
+      (mine.length ? '<a class="btn btn--accent" href="' + esc(JCRM.landingFile()) + '">เข้าหน้าแรก</a>' : "");
+
+    /* ---- กลุ่มผู้ใช้ตามบทบาท ---- */
+    var groups = D.roles.map(function (r) {
+      return { title: r.labelTh + " (" + r.code + ")", people: D.staff.filter(function (s) { return s.assignments.some(function (a) { return a.role === r.code; }); }) };
+    });
+    groups.push({ title: "ยังไม่มีบทบาท (INVITED)", people: D.staff.filter(function (s) { return !s.assignments.length; }) });
+    var repCodes = Object.keys(D.defaultPersonaByRole).map(function (k) { return D.defaultPersonaByRole[k]; });
+
+    document.getElementById("persona-groups").innerHTML = groups.filter(function (g) { return g.people.length; }).map(function (g) {
+      return '<div class="persona-group"><p class="persona-group__title">' + esc(g.title) + '</p><div class="grid grid-3">' + g.people.map(function (s) {
+        var pages = openable(s.staffCode);
+        var current = s.staffCode === me.staffCode;
+        return '<article class="persona-card" aria-current="' + current + '">' +
+          '<div class="persona-card__head">' + ui.avatar(s.displayName) + '<div class="grow"><p class="t-medium t-heading">' + esc(s.displayName) +
+          ' <span class="code">' + esc(s.staffCode) + "</span></p><p class=\"t-xs t-muted\">" + esc(s.email) + "</p></div>" +
+          ui.badge(JCRM.label("staffStatus", s.status), s.status === "ACTIVE" ? "success" : "warning") + "</div>" +
+          '<p class="t-sm">' + esc(JCRM.assignmentText(s)) + (s.teamTh ? " · ทีม " + esc(s.teamTh) : "") + "</p>" +
+          '<div class="badge-row">' + (repCodes.indexOf(s.staffCode) !== -1 ? ui.badge("ตัวแทนบทบาท", "info") : "") +
+          (D.alternatePersonas.indexOf(s.staffCode) !== -1 ? ui.badge("ผู้ใช้สลับทดสอบ", "neutral") : "") +
+          (JCRM.requiresMfa(s) ? ui.badge("ต้อง MFA", "navy") : "") + "</div>" +
+          (s.note ? '<p class="t-xs t-muted">' + esc(s.note) + "</p>" : "") +
+          '<p class="persona-card__pages">เปิดได้ ' + pages.length + " หน้า" + (pages.length ? ": " + esc(pages.map(function (p) { return p.no; }).join(" · ")) : "") + "</p>" +
+          (current ? ui.badge("กำลังใช้อยู่", "success") :
+            '<button type="button" class="btn btn--outline btn--sm" data-use="' + esc(s.staffCode) + '">ใช้ผู้ใช้นี้</button>') +
+          "</article>";
+      }).join("") + "</div></div>";
+    }).join("");
+    JCRM.$$("[data-use]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        JCRM.setStaff(b.getAttribute("data-use"));
+        aalToggle.checked = false;
+        JCRM.toast("สลับเป็น " + JCRM.staffName(b.getAttribute("data-use")) + " แล้ว", "success");
+        render();
+      });
+    });
+
+    /* ---- ตารางหน้าจอ ---- */
+    document.getElementById("screens-summary").textContent = me.displayName + " เปิดได้ " + mine.length + " หน้า";
+    document.getElementById("screen-grid").innerHTML = D.screens.map(function (sc) {
+      var ok = JCRM.canOpen(sc.id);
+      var roles = sc.roles.length ? sc.roles.map(function (rc) {
+        var r = JCRM.role(rc);
+        return '<span class="chip' + (myRoles.indexOf(rc) !== -1 ? " is-mine" : "") + '" title="' + esc(r.labelTh) + '">' + esc(r.abbr) + "</span>";
+      }).join("") : '<span class="t-xs t-muted">' + esc(sc.roleNote) + "</span>";
+      return '<article class="screen-card' + (ok ? "" : " is-locked") + '">' +
+        '<span class="screen-card__no">หน้า ' + esc(sc.no) + " · " + esc(sc.id) + "</span>" +
+        '<h3 class="screen-card__title">' + esc(sc.title) + "</h3>" +
+        '<p class="screen-card__meta">กลุ่มเมนู ' + esc(sc.group || sc.groupNote) + " · Phase " + esc(sc.phase) + " · mockup " + esc(sc.mockup) + "</p>" +
+        '<div class="screen-card__roles" aria-label="บทบาทที่เข้าได้">' + roles + "</div>" +
+        (sc.roleNote && sc.roles.length ? '<p class="screen-card__meta">' + esc(sc.roleNote) + "</p>" : "") +
+        '<div class="screen-card__foot">' + (ok ? '<a class="btn btn--secondary btn--sm" href="' + esc(sc.file) + '">เปิดหน้า</a>' :
+          '<a class="btn btn--outline btn--sm" href="' + esc(sc.file) + '">ดูการ์ดไม่มีสิทธิ์</a>' + ui.badge(me.displayName + " เปิดไม่ได้", "neutral", "badge--square")) +
+        '<span class="code">' + esc(sc.file) + "</span></div></article>";
+    }).join("");
+  }
+  render();
+})();
+</script>
+</body>
+</html>

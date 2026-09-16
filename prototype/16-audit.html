@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ประวัติการใช้งาน · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 16 · ประวัติการใช้งาน — CANONICAL v2.2 ข้อ 9.5 · 8.1 · 13.14 · sitemap-screen-specs ข้อ 19 · ไม่มี hex */
+.au-tabpanel { padding-top: var(--space-4); }
+.au-filters .field { flex: 0 1 190px; min-width: 160px; }
+.au-filters .au-actions { display: flex; gap: var(--space-2); align-items: flex-end; margin-inline-start: auto; }
+.au-action { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-xs); color: var(--text-heading); white-space: nowrap; }
+.au-source-tablet { display: none; }
+.au-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; font-size: var(--fs-sm); }
+.au-dl dt { color: var(--text-secondary); }
+.au-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.au-kv td.is-changed { background: var(--warning-bg); }
+@media (max-width: 1279px) { .au-source-tablet { display: inline-flex; margin-top: var(--space-1); } }
+</style>
+</head>
+<body data-page="audit" data-roles="EXECUTIVE BUSINESS_ADMIN SYSTEM_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* ============================================================================
+   หน้า 16 · ประวัติการใช้งาน (audit) · แท็บ ประวัติการใช้งานธุรกิจ (audit.read) · บันทึกความปลอดภัย (security_log.read)
+   แหล่ง: CANONICAL v2.2 ข้อ 6.1 (รูปแบบเลขอ้างอิง) · 8.1 · 9.5 (คอลัมน์ · action · entity_type · security log) · 13.14 (แถวตัวอย่าง 5 แถว)
+   ระบบจริง: api.search_audit · api.search_security_log (ค่า PII ปิดบังจากฐานข้อมูลเสมอ · append-only · ไม่มีปุ่มแก้ ลบ หรือส่งออก)
+   ========================================================================= */
+(function () {
+  "use strict";
+  var D = JCRM.data, ui = JCRM.ui, fmt = JCRM.fmt, esc = JCRM.esc;
+  var DASH = fmt.DASH, NOW = D.meta.now;
+  /* action ของ audit_logs (ข้อ 9.5) + access_logs · ใช้เป็นตัวเลือกของตัวกรอง */
+  var AUDIT_ACTIONS = ["CUSTOMER_CREATED", "CUSTOMER_UPDATED", "CUSTOMER_CONTACT_UPDATED", "CUSTOMER_TAG_REMOVED", "CUSTOMER_MERGED", "CUSTOMER_ANONYMIZED", "LEAD_ASSIGNED", "OPPORTUNITY_WON",
+    "ROLE_GRANTED", "ROLE_REVOKED", "ROLE_GRANT_REQUESTED", "ROLE_GRANT_DECIDED", "PERMISSION_CHANGED", "STAFF_INVITED", "STAFF_UPDATED", "STAFF_DISABLED", "MFA_ENROLLED", "MFA_RESET",
+    "SETTINGS_UPDATED", "INTEGRATION_UPDATED", "EXPORT_REQUESTED", "EXPORT_DECIDED", "EXPORT_DOWNLOADED", "REPORT_EXPORTED", "CONSENT_RECORDED", "DSR_CREATED", "DSR_COMPLETED"];
+  var ACCESS_ACTIONS = ["CUSTOMER_VIEWED", "CONTACT_REVEALED", "CUSTOMER_CANDIDATE_SEARCH", "CUSTOMER_SEARCH", "CUSTOMER_LINKED_TO_BRANCH"];
+  var ENTITY_TYPES = ["CUSTOMER", "CONTACT", "ADDRESS", "NOTE", "CONSENT", "VISIT", "INTERACTION", "LEAD", "OPPORTUNITY", "QUOTATION", "TASK", "TRANSACTION_REF", "STAFF", "ROLE_ASSIGNMENT", "ROLE_GRANT_REQUEST", "TEAM", "EXPORT", "DSR", "SETTING", "REF", "DUPLICATE_DECISION"];
+  /* security_log.read คืนเฉพาะ action กลุ่มนี้ (ข้อ 9.5) */
+  function isSecurityAction(a) { return /^ROLE_/.test(a) || /^STAFF_/.test(a) || /^MFA_/.test(a) || ["PERMISSION_CHANGED", "SETTINGS_UPDATED", "INTEGRATION_UPDATED"].indexOf(a) !== -1; }
+  /* ประเภทรายการจากรูปแบบเลขอ้างอิง (ข้อ 6.1) */
+  var PREFIX_TYPE = [[/^CUS-/, "CUSTOMER"], [/^LD-/, "LEAD"], [/^OP-/, "OPPORTUNITY"], [/^QT-/, "QUOTATION"], [/^TK-/, "TASK"], [/^V-/, "VISIT"], [/^ST-/, "STAFF"], [/^EX-/, "EXPORT"], [/^RG-/, "ROLE_GRANT_REQUEST"], [/^DSR-/, "DSR"]];
+  function entityTypeOf(ref) { for (var i = 0; i < PREFIX_TYPE.length; i++) { if (PREFIX_TYPE[i][0].test(ref || "")) { return PREFIX_TYPE[i][1]; } } return null; }
+  function branchOf(ref) {
+    var c = JCRM.customer(ref); if (c) { return c.branch || null; }
+    var l = JCRM.find(D.leads, "leadNo", ref); if (l) { return l.branch; }
+    return null;
+  }
+  function cleanDetail(t) { return String(t || "").replace(/\s*\(A\d+\)\s*$/, ""); }
+
+  var rows = D.auditSamples.map(function (r, i) {
+    return { id: String(i + 1), at: r.at, actor: r.actor, action: r.action, log: r.log, entityRef: r.entityRef, entityType: entityTypeOf(r.entityRef), branch: branchOf(r.entityRef), detail: cleanDetail(r.detailTh) };
+  });
+  var defaults = { from: fmt.addDays(fmt.dayKey(NOW), -6) + "T00:00", to: NOW.slice(0, 16), actor: "", action: "", entity: "", ref: "", branch: "" };   /* 7 วันล่าสุด (หมายเหตุผู้เขียน S24) */
+  var filters = { business: copy(defaults), security: copy(defaults) };
+  var applied = { business: copy(defaults), security: copy(defaults) };
+  function copy(o) { var c = {}; Object.keys(o).forEach(function (k) { c[k] = o[k]; }); return c; }
+
+  function sourceLabel(log) { return log === "access_logs" ? "การเข้าถึง" : (log === "login_events" ? "เหตุการณ์เข้าสู่ระบบ" : "ประวัติการแก้ไข"); }
+  function actorText(code) { var s = JCRM.staff(code); return s ? s.staffCode + " " + s.displayName : DASH; }
+  function matches(r, f) {
+    if (f.from && fmt.compareIso(r.at, f.from) < 0) { return false; }
+    if (f.to && fmt.compareIso(r.at, f.to) > 0) { return false; }
+    if (f.actor && r.actor !== f.actor.trim().toUpperCase()) { return false; }
+    if (f.action && r.action !== f.action) { return false; }
+    if (f.entity && r.entityType !== f.entity) { return false; }
+    if (f.ref && r.entityRef !== f.ref.trim().toUpperCase()) { return false; }
+    if (f.branch && r.branch !== f.branch) { return false; }
+    return true;
+  }
+  function rowsFor(tab) {
+    return rows.filter(function (r) { return (tab === "security" ? r.log === "audit_logs" && isSecurityAction(r.action) : true) && matches(r, applied[tab]); })
+      .sort(function (a, b) { return -fmt.compareIso(a.at, b.at); });
+  }
+
+  /* ----------------------------------------------------------- ตัวกรอง */
+  function filterBar(tab) {
+    var f = filters[tab];
+    var actions = (tab === "security" ? AUDIT_ACTIONS.filter(isSecurityAction) : AUDIT_ACTIONS.concat(ACCESS_ACTIONS)).slice().sort();
+    function opt(v, label, sel) { return '<option value="' + esc(v) + '"' + (v === sel ? " selected" : "") + ">" + esc(label) + "</option>"; }
+    var p = tab + "-";
+    var changed = Object.keys(defaults).some(function (k) { return applied[tab][k] !== defaults[k]; });
+    return '<form class="filter-bar filter-bar--panel au-filters" data-au-form="' + tab + '" role="search" aria-label="ตัวกรองประวัติ" novalidate>' +
+      '<div class="field"><label class="label" for="' + p + 'from">ตั้งแต่</label><input class="input" type="datetime-local" id="' + p + 'from" name="from" value="' + esc(f.from) + '"></div>' +
+      '<div class="field"><label class="label" for="' + p + 'to">ถึง</label><input class="input" type="datetime-local" id="' + p + 'to" name="to" value="' + esc(f.to) + '"><p class="error-text" id="' + p + 'to-error" hidden></p></div>' +
+      '<div class="field"><label class="label" for="' + p + 'actor">ผู้กระทำ (รหัสพนักงาน)</label><input class="input" type="text" id="' + p + 'actor" name="actor" value="' + esc(f.actor) + '" placeholder="ST-NNNN" autocomplete="off"><p class="error-text" id="' + p + 'actor-error" hidden></p></div>' +
+      '<div class="field"><label class="label" for="' + p + 'action">action</label><select class="select" id="' + p + 'action" name="action">' + opt("", "ทั้งหมด", f.action) + actions.map(function (a) { return opt(a, a, f.action); }).join("") + "</select></div>" +
+      (tab === "business" ? '<div class="field"><label class="label" for="' + p + 'entity">ประเภทรายการ</label><select class="select" id="' + p + 'entity" name="entity">' + opt("", "ทั้งหมด", f.entity) + ENTITY_TYPES.map(function (a) { return opt(a, a, f.entity); }).join("") + "</select></div>" : "") +
+      '<div class="field"><label class="label" for="' + p + 'ref">เลขอ้างอิงรายการ</label><input class="input" type="text" id="' + p + 'ref" name="ref" value="' + esc(f.ref) + '" placeholder="ตรงทั้งค่า เช่น RG-2026-0003" autocomplete="off"></div>' +
+      (tab === "business" ? '<div class="field"><label class="label" for="' + p + 'branch">สาขา</label><select class="select" id="' + p + 'branch" name="branch">' + opt("", "ทั้งหมด", f.branch) + D.branches.map(function (b) { return opt(b.code, b.name, f.branch); }).join("") + "</select></div>" : "") +
+      '<div class="au-actions">' + (changed ? ui.button({ label: "ล้างตัวกรอง", variant: "ghost", action: "au-clear", id: tab }) : "") +
+      '<button type="submit" class="btn btn--primary">' + JCRM.icon("search") + "<span>ค้นหา</span></button></div></form>";
+  }
+
+  /* ----------------------------------------------------------- ตาราง */
+  function tableFor(tab) {
+    var list = rowsFor(tab);
+    var changed = Object.keys(defaults).some(function (k) { return applied[tab][k] !== defaults[k]; });
+    return ui.table({
+      id: "au-" + tab, caption: tab === "security" ? "บันทึกความปลอดภัย" : "ประวัติการใช้งานธุรกิจ", rowKey: "id", rowAction: "au-open",
+      columns: [
+        { key: "at", label: "เวลา", format: "dateTime" },
+        { key: "actor", label: "ผู้กระทำ", render: function (r) { return esc(actorText(r.actor)); } },
+        { key: "action", label: "action", render: function (r) { return '<span class="au-action">' + esc(r.action) + '</span><span class="au-source-tablet">' + ui.badge(sourceLabel(r.log), "neutral", "badge--square") + "</span>"; } },
+        { key: "entityRef", label: "รายการ", format: "code" },
+        { key: "detail", label: "รายละเอียด" },
+        { key: "log", label: "แหล่ง", hide: "tablet", render: function (r) { return ui.badge(sourceLabel(r.log), r.log === "access_logs" ? "info" : "neutral", "badge--square"); } }
+      ],
+      rows: list,
+      emptyKind: changed ? "noresult" : "empty",
+      empty: changed ? { title: "ไม่พบประวัติตามเงื่อนไข", clearAction: "au-clear-" + tab } : { title: "ไม่พบประวัติตามเงื่อนไข" },
+      footer: { shown: list.length, total: list.length, unit: "รายการ" }
+    });
+  }
+
+  function render() {
+    var canBiz = JCRM.access("audit.read").visible, canSec = JCRM.access("security_log.read").visible;
+    var saOnly = !canBiz && canSec;
+    var header = ui.pageHeader({ title: "ประวัติการใช้งาน", lead: "ค้นประวัติการกระทำทางธุรกิจ การเข้าถึงข้อมูล (ค่าปิดบัง) และบันทึกความปลอดภัย · append-only ไม่มีการแก้ ลบ หรือส่งออก (ข้อ 9.5)" });
+    var saNote = saOnly ? '<p class="state-bar section" role="note">ผู้ดูแลระบบ (IT) เห็นเฉพาะบันทึกความปลอดภัย: เหตุการณ์เข้าสู่ระบบ และการกระทำ ROLE_* · PERMISSION_CHANGED · STAFF_* · MFA_* · SETTINGS_UPDATED · INTEGRATION_UPDATED · ไม่มีประวัติการเข้าถึงและรายการของลูกค้า (ข้อ 9.5)</p>' : "";
+    var tabs = ui.tabs({
+      id: "au-tabs", label: "ประเภทประวัติ", param: "tab", selected: saOnly ? "security" : "business",
+      tabs: [
+        { id: "business", label: "ประวัติการใช้งานธุรกิจ", hidden: !canBiz, html: canBiz ? '<div class="au-tabpanel stack">' + filterBar("business") + '<div class="card card--flush" data-au-table="business">' + tableFor("business") + "</div>" +
+          '<p class="t-xs t-muted">ค่า PII ทุกช่องมาจากฐานข้อมูลแบบปิดบังเสมอ · ลูกค้าที่ถูกทำนิรนามแสดง "[ANONYMIZED]" · การเปิดหน้านี้ไม่สร้างประวัติการเข้าถึงเพิ่ม · ข้อมูลตัวอย่างมีเฉพาะ 5 แถวของข้อ 13.14</p></div>' : "" },
+        { id: "security", label: "บันทึกความปลอดภัย", hidden: !canSec, html: canSec ? '<div class="au-tabpanel stack">' + filterBar("security") + '<div class="card card--flush" data-au-table="security">' + tableFor("security") + "</div>" +
+          '<p class="t-xs t-muted">ไม่มีเหตุการณ์เข้าสู่ระบบในข้อมูลตัวอย่าง (audit.login_events) · บันทึกความปลอดภัยไม่คืนประวัติการเข้าถึงหรือรายการที่เป็นลูกค้า</p></div>' : "" }
+      ]
+    });
+    document.getElementById("page").innerHTML = header + saNote + tabs;
+  }
+  function refreshTable(tab) { var host = document.querySelector('[data-au-table="' + tab + '"]'); if (host) { host.innerHTML = tableFor(tab); } }
+
+  /* ค้นหา (ส่งเมื่อกดปุ่ม · ไม่ค้นขณะพิมพ์) */
+  document.addEventListener("submit", function (e) {
+    var form = e.target && e.target.closest ? e.target.closest("[data-au-form]") : null;
+    if (!form) { return; }
+    e.preventDefault();
+    var tab = form.getAttribute("data-au-form");
+    var f = {};
+    JCRM.$$("input, select", form).forEach(function (el) { f[el.name] = el.value; });
+    Object.keys(defaults).forEach(function (k) { if (f[k] === undefined) { f[k] = ""; } });
+    var errs = {};
+    if (f.from && f.to && fmt.compareIso(f.to, f.from) < 0) { errs.to = "เวลา “ถึง” ต้องไม่ก่อน “ตั้งแต่”"; }
+    if (f.actor && !/^ST-\d{4,}$/i.test(f.actor.trim())) { errs.actor = "รหัสพนักงานรูปแบบ ST-NNNN"; }
+    ["to", "actor"].forEach(function (k) {
+      var el = document.getElementById(tab + "-" + k + "-error"), input = document.getElementById(tab + "-" + k);
+      if (el) { el.hidden = !errs[k]; el.textContent = errs[k] || ""; }
+      if (input) { input.setAttribute("aria-invalid", errs[k] ? "true" : "false"); }
+    });
+    if (Object.keys(errs).length) { var first = document.getElementById(tab + "-" + Object.keys(errs)[0]); if (first) { first.focus(); } return; }
+    filters[tab] = copy(f); applied[tab] = copy(f);
+    refreshTable(tab);
+  });
+  function clear(tab) { filters[tab] = copy(defaults); applied[tab] = copy(defaults); render(); JCRM.initTabs(document); }
+  JCRM.on("au-clear", clear);
+  JCRM.on("au-clear-business", function () { clear("business"); });
+  JCRM.on("au-clear-security", function () { clear("security"); });
+
+  /* ----------------------------------------------------------- drawer รายละเอียด */
+  function changesFor(r) {
+    var before = null, after = null, field = null;
+    if (r.action === "CUSTOMER_CONTACT_UPDATED") {
+      var c = JCRM.customer(r.entityRef);
+      field = "value_masked"; before = c && c.contactHistoryMasked ? c.contactHistoryMasked.before : null; after = c && c.contactHistoryMasked ? c.contactHistoryMasked.after : null;
+      return [{ field: field, before: before, after: after, hashBefore: DASH, hashAfter: DASH }];
+    }
+    if (r.action === "LEAD_ASSIGNED") {
+      var oc = JCRM.find(D.ownershipChanges, "entityRef", r.entityRef);
+      return oc ? [{ field: "owner_staff_id", before: JCRM.staffName(oc.fromStaff), after: JCRM.staffName(oc.toStaff) }] : [];
+    }
+    if (r.action === "ROLE_GRANT_REQUESTED") {
+      var q = JCRM.find(D.roleGrantRequests, "requestNo", r.entityRef);
+      return q ? [{ field: "role_code", before: null, after: q.role }, { field: "target_staff_id", before: null, after: q.target }] : [];
+    }
+    if (r.action === "EXPORT_REQUESTED") {
+      var x = JCRM.find(D.exportRequests, "exportNo", r.entityRef);
+      return x ? [{ field: "row_count", before: null, after: fmt.int(x.rows) }, { field: "reason_code", before: null, after: x.reason }, { field: "requested_as_role", before: null, after: x.requestedAsRole }] : [];
+    }
+    return [];
+  }
+  function reasonFor(r) {
+    if (r.action === "LEAD_ASSIGNED") { var oc = JCRM.find(D.ownershipChanges, "entityRef", r.entityRef); return oc ? oc.reason + " · " + JCRM.label("ownershipChangeReasons", oc.reason) : DASH; }
+    if (r.action === "CONTACT_REVEALED") { return r.detail; }
+    return DASH;
+  }
+  JCRM.on("au-open", function (id) {
+    var r = JCRM.find(rows, "id", id); if (!r) { return; }
+    var changes = changesFor(r);
+    var isAccess = r.log === "access_logs";
+    var s = JCRM.staff(r.actor);
+    var kv = isAccess ? '<p class="t-sm t-muted">ประวัติการเข้าถึงไม่มีภาพก่อน/หลัง · เก็บ contact_id หรือ hash แทนค่า PII (ข้อ 9.5)</p>' :
+      (changes.length ? '<div class="table-wrap"><table class="table table--compact au-kv"><caption class="sr-only">ช่องที่เปลี่ยน ก่อนและหลัง</caption><thead><tr><th scope="col">ชื่อช่อง</th><th scope="col">ก่อน</th><th scope="col">หลัง</th></tr></thead><tbody>' +
+        changes.map(function (c) {
+          return '<tr><th scope="row" class="code">' + esc(c.field) + '</th><td class="is-changed">' + esc(c.before === null || c.before === undefined ? DASH : c.before) + (c.hashBefore ? '<span class="cell-sub">sha256 ' + esc(c.hashBefore) + "</span>" : "") +
+            '</td><td class="is-changed">' + esc(c.after === null || c.after === undefined ? DASH : c.after) + (c.hashAfter ? '<span class="cell-sub">sha256 ' + esc(c.hashAfter) + "</span>" : "") + "</td></tr>";
+        }).join("") + "</tbody></table></div>" +
+        '<p class="help">before/after ของระบบจริงเป็นภาพทั้งแถว (PII เก็บเป็น {"masked": …, "sha256": …}) · ข้อมูลตัวอย่างมีเฉพาะช่องที่ข้อ 13.14 พิมพ์ ช่องที่เปลี่ยนไฮไลต์</p>' :
+        '<p class="t-sm t-muted">' + DASH + "</p>");
+    JCRM.drawer({
+      title: r.action, ref: fmt.dateTime(r.at, { suffix: true }), wide: true,
+      body: '<div class="stack"><dl class="au-dl">' +
+        "<dt>เวลา</dt><dd>" + esc(fmt.dateTime(r.at, { suffix: true })) + "</dd>" +
+        "<dt>แหล่ง</dt><dd>" + esc(sourceLabel(r.log)) + ' <span class="code">audit.' + esc(r.log) + "</span></dd>" +
+        "<dt>ประเภทผู้กระทำ</dt><dd>" + esc(s ? "STAFF" : DASH) + "</dd>" +
+        "<dt>ผู้กระทำ</dt><dd>" + esc(actorText(r.actor)) + ' <span class="t-muted">· actor_label ' + DASH + "</span></dd>" +
+        "<dt>บทบาทขณะทำ</dt><dd>" + DASH + "</dd><dt>aal</dt><dd>" + DASH + "</dd>" +
+        "<dt>action</dt><dd><span class=\"au-action\">" + esc(r.action) + "</span></dd>" +
+        "<dt>ประเภท/เลขอ้างอิงรายการ</dt><dd>" + esc((r.entityType || DASH) + " · " + r.entityRef) + "</dd>" +
+        "<dt>สาขา</dt><dd>" + esc(r.branch ? JCRM.branchName(r.branch) : DASH) + "</dd>" +
+        "<dt>ช่องที่เปลี่ยน</dt><dd>" + esc(isAccess || !changes.length ? DASH : changes.map(function (c) { return c.field; }).join(" · ")) + "</dd>" +
+        "<dt>รายละเอียด</dt><dd>" + esc(r.detail) + "</dd>" +
+        "<dt>เหตุผล</dt><dd>" + esc(reasonFor(r)) + "</dd>" +
+        "<dt>ip · user agent</dt><dd>" + DASH + " · " + DASH + "</dd><dt>device id · request id</dt><dd>" + DASH + " · " + DASH + "</dd></dl>" +
+        '<p class="t-xs t-muted">ip และข้อมูลอุปกรณ์เป็นค่าที่อุปกรณ์รายงาน ไม่ใช่หลักฐาน</p>' +
+        '<section aria-label="ก่อนและหลัง"><h3 class="section__title">ก่อน → หลัง</h3>' + kv + "</section></div>",
+      footer: ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" })
+    });
+  });
+
+  JCRM.page({ id: "audit", render: render, branchPicker: false });
+})();
+</script>
+</body>
+</html>

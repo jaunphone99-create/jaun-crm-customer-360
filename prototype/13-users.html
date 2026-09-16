@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ผู้ใช้งานและสิทธิ์ · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 13 · ผู้ใช้งานและสิทธิ์ — CANONICAL v2.2 ข้อ 7 · 8.1 · 9.2 · 13.5 · 13.14 · sitemap-screen-specs ข้อ 16 · ไม่มี hex */
+.u-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-4) var(--space-5) 0; }
+.u-toolbar .filter-bar { margin-bottom: 0; }
+.u-search { min-width: 220px; }
+.u-tabpanel { padding-top: var(--space-4); }
+.u-menu { position: fixed; right: auto; }
+.u-menu .menu-item { font-size: var(--fs-sm); }
+.u-menu__danger { color: var(--danger-text); }
+.u-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; font-size: var(--fs-sm); }
+.u-dl dt { color: var(--text-secondary); }
+.u-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.u-asg { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+.u-asg:last-child { border-bottom: 0; }
+.u-member { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+.u-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.u-panel { margin-top: var(--space-4); }
+.u-name { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+@media (max-width: 1279px) { .u-search { min-width: 180px; } }
+</style>
+</head>
+<body data-page="users" data-roles="SUPERVISOR BRANCH_MANAGER OPERATIONS EXECUTIVE BUSINESS_ADMIN SYSTEM_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* ============================================================================
+   หน้า 13 · ผู้ใช้งานและสิทธิ์ (users) · แท็บ ผู้ใช้งาน · ทีม · คำขอมอบบทบาท · อุปกรณ์
+   แหล่ง: CANONICAL v2.2 ข้อ 2 (ทีม) · 7 · 7.1 · 7.2 · 7.3 · 8.1 (user.* role.* team.manage) · 9.2 (อุปกรณ์ counter) · 9.6 · 13.5 · 13.14 (RG-2026-0003)
+   ระบบจริง: api.list_staff · api.update_staff · api.can_assign_role · api.assign_role · api.revoke_role · api.disable_staff + disable-staff
+            · invite-staff · reset-mfa · api.request_role_grant · api.decide_role_grant · api.list_role_grant_requests · api.save_team
+            · api.set_team_member · api.register_device
+   prototype: ทุกการเปลี่ยนแปลงอยู่ในหน่วยความจำของหน้า (โหลดใหม่ = ข้อมูลตัวอย่างเดิม) · ไม่มีการส่งอีเมลหรือบันทึกจริง
+   ========================================================================= */
+(function () {
+  "use strict";
+  var D = JCRM.data, ui = JCRM.ui, fmt = JCRM.fmt, esc = JCRM.esc;
+  var DASH = fmt.DASH, NOW = D.meta.now;
+  var HIGH_ROLES = ["EXECUTIVE", "BUSINESS_ADMIN", "SYSTEM_ADMIN"];
+  var BRANCH_ROLES = D.roles.filter(function (r) { return r.isBranchRole; }).map(function (r) { return r.code; });
+  var SELF = "ทำรายการกับบัญชีของตนเองไม่ได้";
+  var extra = {};           /* ข้อมูลที่ข้อ 13 ไม่มี (ชื่อเล่น เบอร์ รหัสพนักงาน ผู้เชิญ) + ค่าที่แก้ในหน้านี้ */
+  var ended = {};           /* assignment ที่สิ้นสุดเมื่อปิดใช้งาน (ใช้ตัดสินกติกาของบัญชีที่ปิดใช้งานแล้ว) */
+  var reqState = {};        /* ผลการตัดสินคำขอในหน้านี้ */
+  var localRequests = [];
+  var devices = [];
+  var filters = { q: "", role: "ALL", branch: "ALL", status: "ALL" };
+  var selectedRequest = null;
+  var detailCtl = null;
+
+  /* คุณโอ๊ต: วันที่เชิญตามข้อ 13.14 · ผู้เชิญและรหัสพนักงานไม่มีในข้อ 13 (แสดง –) */
+  D.roleGrantRequests.forEach(function (q) { extraOf(q.target).invitedAt = q.targetInvitedAt; });
+
+  function extraOf(code) { extra[code] = extra[code] || {}; return extra[code]; }
+  function me() { return JCRM.currentStaffCode(); }
+  function roleLabel(code) { var r = JCRM.role(code); return r ? r.labelTh : DASH; }
+  function rulesAssignments(s) { return s.status === "DISABLED" ? (ended[s.staffCode] || []) : s.assignments; }
+  function hasRole(s, role) { return rulesAssignments(s).some(function (a) { return a.role === role; }); }
+  function isBusiness(s) { return rulesAssignments(s).some(function (a) { return a.role !== "SYSTEM_ADMIN"; }); }
+  function reqOf(q) {
+    var st = reqState[q.requestNo] || {};
+    return { requestNo: q.requestNo, type: q.type || "GRANT", role: q.role, target: q.target, requestedBy: q.requestedBy, requestedAt: q.requestedAt,
+      reason: q.reason || null, status: st.status || q.status || "REQUESTED", decidedBy: st.decidedBy || null, decidedAt: st.decidedAt || null, decisionNote: st.note || null, targetInvitedAt: q.targetInvitedAt || null };
+  }
+  function allRequests() {
+    return D.roleGrantRequests.concat(localRequests).map(reqOf).sort(function (a, b) { return -fmt.compareIso(a.requestedAt, b.requestedAt); });
+  }
+  function pendingRequestFor(s) { return allRequests().filter(function (q) { return q.target === s.staffCode && q.status === "REQUESTED"; })[0] || null; }
+  function bmManageable(s, perm) {
+    var bs = JCRM.scopeBranches(perm, "BRANCH");
+    var asg = rulesAssignments(s);
+    return asg.length > 0 && asg.every(function (a) { return (a.role === "STAFF" || a.role === "SUPERVISOR") && bs.indexOf(a.branch) !== -1; });
+  }
+  function lastActiveHighReason(s) {
+    if (hasRole(s, "EXECUTIVE") && D.staff.filter(function (x) { return x.status === "ACTIVE" && hasRole(x, "EXECUTIVE"); }).length <= 1) { return "ปิดใช้งานผู้บริหารที่ใช้งานอยู่คนสุดท้ายไม่ได้"; }
+    if (hasRole(s, "BUSINESS_ADMIN") && D.staff.filter(function (x) { return x.status === "ACTIVE" && hasRole(x, "BUSINESS_ADMIN"); }).length <= 1) { return "ปิดใช้งานผู้ดูแลข้อมูลธุรกิจที่ใช้งานอยู่คนสุดท้ายไม่ได้"; }
+    return null;
+  }
+  function plus24h(iso) { return fmt.addDays(fmt.dayKey(iso), 1) + iso.slice(10); }
+  function nextStaffCode() {
+    var n = D.runningNumbers.ST + D.staff.filter(function (s) { return extraOf(s.staffCode).createdHere; }).length + 1;
+    return "ST-" + String(10000 + n).slice(1);
+  }
+  function nextRequestNo() {
+    var n = D.runningNumbers["RG:2026"] + localRequests.length + 1;
+    return "RG-2026-" + String(10000 + n).slice(1);
+  }
+
+  /* ---------------------------------------------- การกระทำต่อแถว (ข้อ 7.2 · 7.3 · 8.1) */
+  function rowActions(s) {
+    var self = s.staffCode === me(), disabled = s.status === "DISABLED", out = [];
+    function add(key, label, reason) { out.push({ key: key, label: label, reason: reason || null }); }
+    /* แก้ไขโปรไฟล์ — user.update B (ทุก assignment เป็น STAFF/SUPERVISOR ในสาขาตน · ข้อ 7.3 ข้อ 5) · G · S¹ (บัญชีที่ไม่มีบทบาทธุรกิจ) */
+    (function () {
+      var acc = JCRM.access("user.update"); if (!acc.visible) { return; }
+      if (self) { add("edit", "แก้ไขโปรไฟล์", SELF); return; }
+      var mode = JCRM.topScope("user.update");
+      if (mode === "BRANCH" && !bmManageable(s, "user.update")) { return; }
+      if (mode === "SYSTEM" && isBusiness(s)) { return; }
+      add("edit", "แก้ไขโปรไฟล์", acc.allowed ? null : acc.reason);
+    })();
+    /* มอบบทบาท — role.assign 🔐 (ข้อ 7.2) */
+    (function () {
+      var acc = JCRM.access("role.assign"); if (!acc.visible) { return; }
+      if (self) { add("assign", "มอบบทบาท", SELF); return; }
+      var mode = JCRM.topScope("role.assign");
+      if (mode === "BRANCH" && !bmManageable(s, "role.assign")) { return; }
+      if (hasRole(s, "SYSTEM_ADMIN")) { return; }   /* SYSTEM_ADMIN ห้ามถือร่วมกับบทบาทธุรกิจ (ข้อ 7.1) */
+      if (disabled) { add("assign", "มอบบทบาท", "มอบบทบาทให้บัญชีที่ปิดใช้งานไม่ได้"); return; }
+      if (!isBusiness(s) && pendingRequestFor(s)) { add("assign", "มอบบทบาท", "บัญชีสายผู้ดูแลระบบ (IT) รับบทบาทธุรกิจได้หลังผู้ดูแลข้อมูลธุรกิจยืนยันตัวตนกับ HR (ข้อ 7.2)"); return; }
+      add("assign", "มอบบทบาท", acc.allowed ? null : acc.reason);
+    })();
+    /* เปลี่ยนอีเมล/รีเซ็ต MFA — บัญชี STAFF และบทบาท ≥ SUPERVISOR → BUSINESS_ADMIN · บัญชี BA/EX/SA → EXECUTIVE (ข้อ 7.3 ข้อ 6) */
+    (function () {
+      var mine = JCRM.roleCodes();
+      var high = HIGH_ROLES.some(function (r) { return hasRole(s, r); });
+      var ok = (mine.indexOf("BUSINESS_ADMIN") !== -1 && !high && rulesAssignments(s).length > 0) || (mine.indexOf("EXECUTIVE") !== -1 && high);
+      if (!ok || self) { return; }
+      add("reset", "เปลี่ยนอีเมล/รีเซ็ต MFA", disabled ? "บัญชีนี้ปิดใช้งานแล้ว" : null);
+    })();
+    /* ส่งคำเชิญใหม่ — เฉพาะบัญชีเชิญแล้วที่คำเชิญหมดอายุ (ข้อ 9.2 · 19.3 ข้อ 6) */
+    (function () {
+      if (s.status !== "INVITED") { return; }
+      var mode = JCRM.topScope("user.invite");
+      var can = mode === "SYSTEM" ? !isBusiness(s) : (mode === "ORGANIZATION" ? isBusiness(s) : (mode === "BRANCH" ? bmManageable(s, "user.invite") : false));
+      if (!can) { return; }
+      var exp = extraOf(s.staffCode).inviteExpiresAt;
+      add("resend", "ส่งคำเชิญใหม่", exp && fmt.compareIso(NOW, exp) < 0 ? "คำเชิญยังไม่หมดอายุ (หมดอายุ " + fmt.dateTime(exp) + ")" : null);
+    })();
+    /* ปิดใช้งาน — user.disable 🔐 (ข้อ 7.3 ข้อ 4–5) */
+    (function () {
+      var acc = JCRM.access("user.disable"); if (!acc.visible) { return; }
+      if (self) { add("disable", "ปิดใช้งาน", SELF); return; }
+      var mode = JCRM.topScope("user.disable");
+      if (mode === "BRANCH" && !bmManageable(s, "user.disable")) { return; }
+      if (mode === "SYSTEM" && isBusiness(s)) { return; }
+      if (disabled) { add("disable", "ปิดใช้งาน", "บัญชีนี้ปิดใช้งานแล้ว"); return; }
+      var last = lastActiveHighReason(s);
+      add("disable", "ปิดใช้งาน", last || (acc.allowed ? null : acc.reason));
+    })();
+    return out;
+  }
+  /* ถอนบทบาท (ข้อ 7.2 · ข้อ 7.3 ข้อ 5 · permission-matrix 6.2) */
+  function revokeReason(s, a) {
+    if (s.staffCode === me()) { return SELF; }
+    if (HIGH_ROLES.indexOf(a.role) !== -1) { return "ถอนบทบาทนี้ใช้คำขอชนิดถอน (ผู้ดูแลระบบยื่น · ผู้บริหารอนุมัติ)"; }
+    var mode = JCRM.topScope("role.assign");
+    if (mode === "BRANCH" && !((a.role === "STAFF" || a.role === "SUPERVISOR") && JCRM.scopeBranches("role.assign", "BRANCH").indexOf(a.branch) !== -1)) {
+      return "ผู้จัดการสาขาถอนได้เฉพาะบทบาทพนักงานขาย/แอดมินและหัวหน้าทีมในสาขาของตน";
+    }
+    var acc = JCRM.access("role.assign");
+    return acc.allowed ? null : acc.reason;
+  }
+
+  /* --------------------------------------------------------------- ข้อความ */
+  function roleText(s) {
+    if (s.status === "DISABLED") { return "– (บทบาทสิ้นสุดเมื่อปิดใช้งาน)"; }
+    if (!s.assignments.length) {
+      var q = pendingRequestFor(s);
+      return q ? "– (รอคำขอ " + roleLabel(q.role) + " · " + q.requestNo + ")" : DASH;
+    }
+    var t = JCRM.assignmentText(s, { branchNames: true });
+    return s.status === "INVITED" ? t + " (มีผลเมื่อเปิดใช้งาน)" : t;
+  }
+  function teamText(s) {
+    var list = D.teamMembers.filter(function (m) { return m.staff === s.staffCode; }).map(function (m) { return m.team + (m.isLeader ? " (หัวหน้า)" : ""); });
+    return list.length ? list.join(" · ") : DASH;
+  }
+  function staffWithCode(code) { var s = JCRM.staff(code); return s ? s.displayName + " (" + code + ")" : DASH; }
+
+  /* ------------------------------------------------------------------ แท็บ */
+  function tabVisibility() {
+    var roles = JCRM.roleCodes();
+    return {
+      teams: JCRM.topScope("user.read") !== "SYSTEM" && JCRM.topScope("user.read") !== null,
+      requests: JCRM.can("role.decide") || JCRM.can("role.request") || roles.indexOf("BUSINESS_ADMIN") !== -1,   /* หมายเหตุผู้เขียน S32: EX อนุมัติ · SA ยื่น · BA อ่านอย่างเดียว */
+      devices: JCRM.scopeBranches("user.update", "BRANCH").length > 0
+    };
+  }
+
+  /* ---- แท็บผู้ใช้งาน ---- */
+  /* รายชื่อตาม user.read (ข้อ 8.0 · 8.1): T สมาชิกทีมที่ตนนำ · B ผู้มีบทบาทในสาขา (รวมบัญชีที่ปิดใช้งานในหน้านี้) · G/S ทุกบัญชี — ตรรกะเดียวกับ JCRM.select.staffListFor */
+  function readableStaff() {
+    var top = JCRM.topScope("user.read");
+    if (!top) { return []; }
+    if (top === "ORGANIZATION" || top === "SYSTEM") { return D.staff.slice(); }
+    if (top === "TEAM") {
+      var members = [];
+      JCRM.effectiveAssignments().filter(function (a) { return a.role === "SUPERVISOR"; }).forEach(function (a) {
+        JCRM.teamMembersLedBy(me(), a.branch).forEach(function (m) { if (members.indexOf(m) === -1) { members.push(m); } });
+      });
+      return D.staff.filter(function (s) { return members.indexOf(s.staffCode) !== -1; });
+    }
+    var bs = JCRM.scopeBranches("user.read", "BRANCH");
+    return D.staff.filter(function (s) { return rulesAssignments(s).some(function (a) { return a.branch && bs.indexOf(a.branch) !== -1; }); });
+  }
+  function filteredStaff() {
+    var list = readableStaff().sort(function (a, b) { return a.staffCode < b.staffCode ? -1 : 1; });
+    var q = filters.q.trim().toLowerCase();
+    return list.filter(function (s) {
+      if (q && s.displayName.toLowerCase().indexOf(q) === -1 && s.staffCode.toLowerCase().indexOf(q) === -1) { return false; }
+      if (filters.role !== "ALL" && !rulesAssignments(s).some(function (a) { return a.role === filters.role; })) { return false; }
+      if (filters.branch !== "ALL" && !rulesAssignments(s).some(function (a) { return a.branch === filters.branch; })) { return false; }
+      if (filters.status !== "ALL" && s.status !== filters.status) { return false; }
+      return true;
+    });
+  }
+  function usersTable() {
+    var base = readableStaff();
+    var rows = filteredStaff();
+    var hasFilter = filters.q.trim() || filters.role !== "ALL" || filters.branch !== "ALL" || filters.status !== "ALL";
+    return ui.table({
+      id: "u-users", caption: "ผู้ใช้งาน", rowKey: "staffCode", rowAction: "u-detail",
+      columns: [
+        { key: "staffCode", label: "รหัสพนักงาน", format: "code" },
+        { key: "displayName", label: "ชื่อ", render: function (s) { var nick = extraOf(s.staffCode).nickname; return '<span class="u-name">' + ui.avatar(s.displayName, "sm") + "<span>" + esc(s.displayName) + (nick ? '<span class="cell-sub">' + esc(nick) + "</span>" : "") + "</span></span>"; } },
+        { key: "assignments", label: "บทบาท @ ขอบเขต", render: function (s) { return esc(roleText(s)); } },
+        { key: "team", label: "ทีม", hide: "tablet", render: function (s) { return esc(teamText(s)); } },
+        { key: "email", label: "อีเมล", hide: "tablet" },
+        { key: "status", label: "สถานะ", format: "status:staffStatus" },
+        { key: "staffCode", label: "การกระทำ", render: function (s) {
+          var acts = rowActions(s);
+          return acts.length ? '<button type="button" class="icon-btn icon-btn--sm" data-u-menu="' + esc(s.staffCode) + '" aria-haspopup="menu" aria-expanded="false" aria-label="การกระทำของ ' + esc(s.displayName) + '">' + JCRM.icon("moreV") + "</button>" : "";
+        } }
+      ],
+      rows: rows,
+      emptyKind: hasFilter ? "noresult" : "empty",
+      empty: hasFilter ? { title: "ไม่พบผู้ใช้งาน", clearAction: "u-clear" } : { title: "ไม่พบผู้ใช้งาน" },
+      footer: { shown: rows.length, total: base.length, unit: "บัญชี" }
+    });
+  }
+  function usersPanel() {
+    var readable = readableStaff();
+    var roleOpts = D.roles.map(function (r) { return '<option value="' + r.code + '"' + (filters.role === r.code ? " selected" : "") + ">" + esc(r.labelTh) + "</option>"; }).join("");
+    var brSet = [];
+    readable.forEach(function (s) { rulesAssignments(s).forEach(function (a) { if (a.branch && brSet.indexOf(a.branch) === -1) { brSet.push(a.branch); } }); });
+    brSet.sort();
+    var brOpts = brSet.map(function (b) { return '<option value="' + b + '"' + (filters.branch === b ? " selected" : "") + ">" + esc(JCRM.branchName(b)) + "</option>"; }).join("");
+    var stOpts = D.enums.staffStatus.map(function (x) { return '<option value="' + x.code + '"' + (filters.status === x.code ? " selected" : "") + ">" + esc(x.labelTh) + "</option>"; }).join("");
+    var hasFilter = filters.q.trim() || filters.role !== "ALL" || filters.branch !== "ALL" || filters.status !== "ALL";
+    return '<div class="u-tabpanel"><div class="filter-bar filter-bar--panel" role="search" aria-label="ตัวกรองผู้ใช้งาน">' +
+      '<div class="field u-search"><label class="label" for="u-q">ค้นหาชื่อหรือรหัสพนักงาน</label><input class="input" id="u-q" type="search" autocomplete="off" value="' + esc(filters.q) + '" placeholder="เช่น คุณขวัญ หรือ ST-0045"></div>' +
+      '<div class="field field--inline"><label class="label" for="u-role">บทบาท</label><select class="select" id="u-role" data-jcrm-change="u-filter-role"><option value="ALL">ทั้งหมด</option>' + roleOpts + "</select></div>" +
+      '<div class="field field--inline"><label class="label" for="u-branch">สาขา</label><select class="select" id="u-branch" data-jcrm-change="u-filter-branch"><option value="ALL">ทั้งหมด</option>' + brOpts + "</select></div>" +
+      '<div class="field field--inline"><label class="label" for="u-status">สถานะ</label><select class="select" id="u-status" data-jcrm-change="u-filter-status"><option value="ALL">ทั้งหมด</option>' + stOpts + "</select></div>" +
+      (hasFilter ? ui.button({ label: "ล้างตัวกรอง", variant: "ghost", action: "u-clear" }) : "") +
+      '</div><p class="t-xs t-muted" style="margin:0 0 var(--space-3)">ค้นในรายการที่โหลดแล้วเท่านั้น (ไม่ใช่ช่องค้นหาลูกค้า · คำค้นไม่ลง URL) · อีเมลของพนักงานแสดงเฉพาะผู้มีสิทธิ์ดูรายชื่อผู้ใช้</p>' +
+      '<div class="card card--flush" id="u-users-host">' + usersTable() + "</div></div>";
+  }
+
+  /* ---- แท็บทีม ---- */
+  function visibleTeams() {
+    var top = JCRM.topScope("user.read");
+    if (top === "ORGANIZATION") { return D.teams.slice(); }
+    if (top === "TEAM") { return D.teams.filter(function (t) { return D.teamMembers.some(function (m) { return m.team === t.code && m.staff === me() && m.isLeader; }); }); }
+    if (top === "BRANCH") { var bs = JCRM.scopeBranches("user.read", "BRANCH"); return D.teams.filter(function (t) { return bs.indexOf(t.branch) !== -1; }); }
+    return [];
+  }
+  function canManageTeam(t) { return JCRM.scopeBranches("team.manage", "BRANCH").indexOf(t.branch) !== -1; }
+  function teamsPanel() {
+    var teams = visibleTeams();
+    var createBtn = ui.permButton({ label: "+ สร้างทีม", variant: "secondary", action: "t-create", permission: "team.manage" });
+    var table = ui.table({
+      id: "u-teams", caption: "ทีม", rowKey: "code",
+      columns: [
+        { key: "code", label: "รหัสทีม", format: "code" },
+        { key: "name", label: "ชื่อทีม" },
+        { key: "branch", label: "สาขา", format: "branch" },
+        { key: "code", label: "หัวหน้า", render: function (t) {
+          var leaders = D.teamMembers.filter(function (m) { return m.team === t.code && m.isLeader; }).map(function (m) { return JCRM.staffName(m.staff); });
+          var members = D.teamMembers.filter(function (m) { return m.team === t.code; });
+          return leaders.length ? esc(leaders.join(" · ")) : (members.length ? DASH + " (ไม่มีหัวหน้า)" : DASH);
+        } },
+        { key: "code", label: "สมาชิก", render: function (t) {
+          var names = D.teamMembers.filter(function (m) { return m.team === t.code; }).map(function (m) { return JCRM.staffName(m.staff); });
+          return names.length ? esc(names.join(" · ")) : '<span class="t-muted">ไม่มีสมาชิก</span>';
+        } },
+        { key: "code", label: "การกระทำ", render: function (t) {
+          if (!JCRM.access("team.manage").visible) { return '<span class="t-xs t-muted">ดูอย่างเดียว</span>'; }
+          return canManageTeam(t) ? ui.button({ label: "จัดการสมาชิก", variant: "secondary", size: "sm", action: "t-manage", id: t.code }) :
+            ui.button({ label: "จัดการสมาชิก", variant: "secondary", size: "sm", disabledReason: D.meta.texts.reasonOutOfBranch });
+        } }
+      ],
+      rows: teams, empty: { title: "ไม่มีทีมในขอบเขตของคุณ" }, footer: { shown: teams.length, total: teams.length, unit: "ทีม" }
+    });
+    return '<div class="u-tabpanel stack"><div class="row-between"><p class="t-sm t-muted">สมาชิกทีมมาจาก core.team_members แหล่งเดียว · สมาชิกต้องมีบทบาทในสาขาของทีม · หัวหน้าทีมนับเป็นสมาชิก (ข้อ 7.1)</p>' + createBtn + "</div>" +
+      '<div class="card card--flush">' + table + "</div></div>";
+  }
+
+  /* ---- แท็บคำขอมอบบทบาท ---- */
+  function decisionReason(q) {
+    var acc = JCRM.access("role.decide");
+    if (!acc.visible) { return undefined; }
+    if (q.status !== "REQUESTED") { return "คำขอนี้ตัดสินแล้ว"; }
+    if (q.requestedBy === me() || q.target === me()) { return "ผู้อนุมัติต้องไม่ใช่ผู้ยื่นหรือผู้รับ"; }
+    return acc.allowed ? null : acc.reason;
+  }
+  function decisionButtons(q, size) {
+    var r = decisionReason(q);
+    if (r === undefined || q.status !== "REQUESTED") { return ""; }
+    return ui.button({ label: "ปฏิเสธ", variant: "danger-outline", size: size, action: r ? null : "rg-reject", id: q.requestNo, disabledReason: r }) +
+      ui.button({ label: "อนุมัติ", variant: "primary", size: size, action: r ? null : "rg-approve", id: q.requestNo, disabledReason: r });
+  }
+  function requestsPanel() {
+    var rows = allRequests();
+    if (selectedRequest && !JCRM.find(rows, "requestNo", selectedRequest)) { selectedRequest = null; }
+    if (!selectedRequest) { var firstPending = rows.filter(function (q) { return q.status === "REQUESTED"; })[0] || rows[0]; selectedRequest = firstPending ? firstPending.requestNo : null; }
+    var head = '<div class="row-between"><p class="t-sm t-muted">' + (JCRM.can("role.decide") ? "ผู้บริหารอนุมัติ/ปฏิเสธคำขอบทบาทสูง (ข้อ 7.2) · ลบคำขอไม่ได้" :
+      (JCRM.can("role.request") ? "ผู้ดูแลระบบยื่นคำขอบทบาท ผู้ดูแลระบบ (IT) · ผู้บริหาร · ผู้ดูแลข้อมูลธุรกิจ · รอผู้บริหารอนุมัติ" : "อ่านอย่างเดียว · ผู้ดูแลข้อมูลธุรกิจยืนยันตัวตนกับ HR ของบัญชีสายผู้ดูแลระบบก่อนรับบทบาทธุรกิจ (ข้อ 7.2)")) + "</p>" +
+      ui.permButton({ label: "+ ยื่นคำขอบทบาท", variant: "secondary", action: "rg-new", permission: "role.request" }) + "</div>";
+    var table = ui.table({
+      id: "u-requests", caption: "คำขอมอบบทบาท", rowKey: "requestNo", rowAction: "rg-select", selected: selectedRequest ? [selectedRequest] : [],
+      columns: [
+        { key: "requestNo", label: "เลขคำขอ", format: "code" },
+        { key: "type", label: "ชนิด", render: function (q) { return ui.badge(JCRM.label("roleGrantType", q.type), "neutral", "badge--square"); } },
+        { key: "role", label: "บทบาท", render: function (q) { return esc(roleLabel(q.role)); } },
+        { key: "target", label: "ผู้รับ", render: function (q) { return esc(staffWithCode(q.target)); } },
+        { key: "requestedBy", label: "ผู้ยื่น", hide: "tablet", render: function (q) { return esc(staffWithCode(q.requestedBy)); } },
+        { key: "requestedAt", label: "ยื่นเมื่อ", format: "dateTime" },
+        { key: "status", label: "สถานะ", format: "status:roleGrantStatus" },
+        { key: "decidedBy", label: "ผู้ตัดสิน · เมื่อ", hide: "tablet", render: function (q) { return q.decidedBy ? esc(JCRM.staffName(q.decidedBy) + " · " + fmt.dateTime(q.decidedAt)) : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "requestNo", label: "การกระทำ", render: function (q) { return '<div class="u-actions">' + decisionButtons(q, "sm") + "</div>"; } }
+      ],
+      rows: rows, empty: { title: "ไม่มีคำขอที่รอดำเนินการ" }, footer: { shown: rows.length, total: rows.length, unit: "คำขอ" }
+    });
+    return '<div class="u-tabpanel stack">' + head + '<div class="card card--flush">' + table + "</div>" + requestDetail(rows) + "</div>";
+  }
+  function requestDetail(rows) {
+    var q = selectedRequest ? JCRM.find(rows, "requestNo", selectedRequest) : null;
+    if (!q) { return ""; }
+    var t = JCRM.staff(q.target), ex = extraOf(q.target);
+    return '<section class="card u-panel" aria-labelledby="rg-detail-title"><div class="card__header"><div><h3 class="card__title" id="rg-detail-title">รายละเอียดคำขอ ' + esc(q.requestNo) + "</h3>" +
+      '<p class="card__subtitle">ข้อมูลที่ผู้อนุมัติต้องตรวจก่อนตัดสิน (ข้อ 7.2)</p></div>' + ui.status("roleGrantStatus", q.status) + "</div>" +
+      '<dl class="u-dl"><dt>ชนิด · บทบาท</dt><dd>' + esc(JCRM.label("roleGrantType", q.type) + " · " + roleLabel(q.role)) + "</dd>" +
+      "<dt>ผู้รับ</dt><dd>" + esc(staffWithCode(q.target)) + (t ? " " + ui.status("staffStatus", t.status) : "") + "</dd>" +
+      "<dt>ผู้เชิญ</dt><dd>" + esc(ex.invitedBy ? JCRM.staffName(ex.invitedBy) : DASH) + "</dd>" +
+      "<dt>วันที่เชิญ</dt><dd>" + esc(ex.invitedAt ? fmt.date(ex.invitedAt) : DASH) + "</dd>" +
+      "<dt>อีเมล</dt><dd>" + esc(t ? t.email : DASH) + "</dd>" +
+      "<dt>รหัสพนักงาน (HR)</dt><dd>" + esc(ex.employeeCode || DASH) + "</dd>" +
+      "<dt>ผู้ยื่น</dt><dd>" + esc(staffWithCode(q.requestedBy) + " · " + fmt.dateTime(q.requestedAt)) + "</dd>" +
+      "<dt>เหตุผลคำขอ</dt><dd>" + esc(q.reason || DASH) + "</dd>" +
+      "<dt>ผู้ตัดสิน</dt><dd>" + esc(q.decidedBy ? JCRM.staffName(q.decidedBy) + " · " + fmt.dateTime(q.decidedAt) : DASH) + (q.decisionNote ? '<span class="cell-sub">' + esc(q.decisionNote) + "</span>" : "") + "</dd></dl>" +
+      '<p class="t-xs t-muted" style="margin-top:var(--space-3)">ผู้อนุมัติต้องไม่ใช่ผู้ยื่น ผู้รับ หรือบัญชีที่รหัสพนักงานเดียวกับผู้รับ · ข้อมูลตัวอย่างไม่มีผู้เชิญและรหัสพนักงานของผู้รับ (แสดง –) ระบบจริงตรวจในฐานข้อมูล</p>' +
+      (decisionButtons(q) ? '<div class="card__footer"><span class="grow"></span>' + decisionButtons(q) + "</div>" : "") + "</section>";
+  }
+
+  /* ---- แท็บอุปกรณ์ (หมายเหตุผู้เขียน S31: ข้อ 14.1 ไม่มีหน้าจออุปกรณ์ จึงวางเป็นแท็บของหน้านี้) ---- */
+  function devicesPanel() {
+    var branches = JCRM.scopeBranches("user.update", "BRANCH");
+    var visible = devices.filter(function (d) { return branches.indexOf(d.branch) !== -1; });
+    var btn = ui.permButton({ label: "ลงทะเบียนเครื่องนี้", variant: "secondary", action: "d-register", permission: "user.update",
+      extra: { ok: !devices.length, reason: "เครื่องนี้ลงทะเบียนแล้ว" } });
+    var table = ui.table({
+      id: "u-devices", caption: "อุปกรณ์", rowKey: "branch",
+      columns: [
+        { key: "deviceId", label: "รหัสอุปกรณ์", format: "code" },
+        { key: "branch", label: "สาขา", format: "branch" },
+        { key: "shared", label: "อุปกรณ์ counter ใช้ร่วมกัน", render: function (d) { return d.shared ? ui.badge("ใช่", "info", "badge--square") : ui.badge("ไม่ใช่", "neutral", "badge--square"); } }
+      ],
+      rows: visible, empty: { title: "ยังไม่มีอุปกรณ์ที่ลงทะเบียน", text: "ข้อมูลตัวอย่างไม่มีอุปกรณ์ (ข้อ 13) · ลงทะเบียนอุปกรณ์ counter ที่ใช้ร่วมกันในสาขา" }, footer: false
+    });
+    return '<div class="u-tabpanel stack"><div class="row-between"><p class="t-sm t-muted">อุปกรณ์ counter ใช้ร่วมกัน: ไม่มีการใช้งาน ' + esc(fmt.int(D.settingValues["session.shared_counter_idle_min"])) +
+      " นาทีจะล็อกหน้าจอและต้องเข้าสู่ระบบใหม่ · ซ่อน “จดจำฉันไว้” (ข้อ 9.2) · ลงทะเบียนผ่าน api.register_device (ผู้มีสิทธิ์แก้ผู้ใช้ระดับสาขาของสาขานั้น)</p>" + btn + "</div>" +
+      '<div class="card card--flush">' + table + "</div></div>";
+  }
+
+  /* ----------------------------------------------------------------- render */
+  function roleNote() {
+    var roles = JCRM.roleCodes();
+    if (roles.length === 1 && roles[0] === "EXECUTIVE") { return '<p class="state-bar" role="note">ผู้บริหารเปิดหน้านี้เพื่อดูรายชื่อและอนุมัติคำขอบทบาท · จัดการบัญชีได้เฉพาะ “เปลี่ยนอีเมล/รีเซ็ต MFA” ของบัญชีผู้ดูแลข้อมูลธุรกิจ ผู้บริหาร และผู้ดูแลระบบ (ข้อ 7.3 ข้อ 6 · 8.1)</p>'; }
+    if (roles.length === 1 && roles[0] === "SYSTEM_ADMIN") { return '<p class="state-bar" role="note">บัญชีที่มีบทบาทธุรกิจแสดงเพื่ออ่านอย่างเดียว · ผู้ดูแลระบบเชิญ แก้ และปิดใช้งานได้เฉพาะบัญชีสายผู้ดูแลระบบ (IT) และไม่มีสิทธิ์ข้อมูลลูกค้า (ข้อ 7.1 · 8.1 ¹)</p>'; }
+    if (!JCRM.access("user.update").visible) { return '<p class="state-bar" role="note">บทบาทของคุณดูรายชื่อได้อย่างเดียว (' + esc(D.scopeLabels[JCRM.topScope("user.read")] || DASH) + ")</p>"; }
+    return "";
+  }
+  function render() {
+    var vis = tabVisibility();
+    var pending = allRequests().filter(function (q) { return q.status === "REQUESTED"; }).length;
+    var header = ui.pageHeader({
+      title: "ผู้ใช้งานและสิทธิ์",
+      lead: "ดูรายชื่อผู้ใช้ เชิญ แก้ไข ปิดใช้งาน มอบ/ถอนบทบาท จัดการทีม และคำขอบทบาทสูง (ข้อ 7)",
+      actions: [{ label: "+ เพิ่มผู้ใช้งาน", variant: "accent", action: "u-invite", permission: "user.invite" }]
+    });
+    var tabs = ui.tabs({
+      id: "u-tabs", label: "ส่วนของหน้าผู้ใช้งานและสิทธิ์", param: "tab", selected: "users",
+      tabs: [
+        { id: "users", label: "ผู้ใช้งาน", html: usersPanel() },
+        { id: "teams", label: "ทีม", html: vis.teams ? teamsPanel() : "", hidden: !vis.teams },
+        { id: "requests", label: "คำขอมอบบทบาท", count: pending, html: vis.requests ? requestsPanel() : "", hidden: !vis.requests },
+        { id: "devices", label: "อุปกรณ์", html: vis.devices ? devicesPanel() : "", hidden: !vis.devices }
+      ]
+    });
+    document.getElementById("page").innerHTML = header + (roleNote() ? '<div class="section">' + roleNote() + "</div>" : "") + tabs;
+  }
+  function rerender() { closeMenus(); render(); JCRM.initTabs(document); }
+  function refreshUsersTable() { var host = document.getElementById("u-users-host"); if (host) { host.innerHTML = usersTable(); } }
+
+  /* ------------------------------------------------------ เมนู ⋮ ต่อแถว */
+  function closeMenus() {
+    JCRM.$$("[data-u-menu-pop]").forEach(function (p) { p.remove(); });
+    JCRM.$$('[data-u-menu][aria-expanded="true"]').forEach(function (b) { b.setAttribute("aria-expanded", "false"); });
+  }
+  function openMenu(btn) {
+    var code = btn.getAttribute("data-u-menu");
+    var wasOpen = !!document.querySelector('[data-u-menu-pop="' + code + '"]');
+    JCRM.$$("[data-jcrm-popover]").forEach(function (p) { p.remove(); });
+    closeMenus();
+    if (wasOpen) { return; }
+    var s = JCRM.staff(code), acts = rowActions(s);
+    var pop = document.createElement("div");
+    pop.className = "popover menu-popover u-menu";
+    pop.setAttribute("data-jcrm-popover", "");
+    pop.setAttribute("data-u-menu-pop", code);
+    pop.setAttribute("role", "menu");
+    pop.setAttribute("aria-label", "การกระทำของ " + s.displayName);
+    pop.innerHTML = acts.map(function (a) {
+      var cls = "menu-item" + (a.key === "disable" ? " u-menu__danger" : "");
+      return '<button type="button" role="menuitem" class="' + cls + '"' + (a.reason ? ' aria-disabled="true" data-tooltip="' + esc(a.reason) + '"' : ' data-jcrm-action="u-' + a.key + '" data-jcrm-id="' + esc(code) + '"') + "><span>" + esc(a.label) +
+        (a.reason ? '<span class="menu-item__label-disabled">' + esc(a.reason) + "</span>" : "") + "</span></button>";
+    }).join("");
+    document.body.appendChild(pop);
+    var r = btn.getBoundingClientRect();
+    var top = r.bottom + 4;
+    if (top + pop.offsetHeight > window.innerHeight - 8) { top = Math.max(8, r.top - pop.offsetHeight - 4); }
+    pop.style.top = top + "px";
+    pop.style.left = Math.max(8, r.right - pop.offsetWidth) + "px";
+    btn.setAttribute("aria-expanded", "true");
+    var items = JCRM.$$(".menu-item", pop);
+    if (items[0]) { items[0].focus(); }
+    pop.addEventListener("keydown", function (e) {
+      var i = items.indexOf(document.activeElement);
+      if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      if (e.key === "Escape" || e.key === "Tab") { closeMenus(); btn.focus(); }
+    });
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target && e.target.closest ? e.target.closest("[data-u-menu]") : null;
+    if (!b) { return; }
+    e.preventDefault(); e.stopPropagation();
+    openMenu(b);
+  }, true);
+  window.addEventListener("scroll", closeMenus, true);
+  window.addEventListener("resize", closeMenus);
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.id === "u-q") { filters.q = e.target.value; refreshUsersTable(); }
+  });
+
+  /* --------------------------------------------------------- actions: ตัวกรอง */
+  JCRM.on("u-filter-role", function (v) { filters.role = v; refreshUsersTable(); });
+  JCRM.on("u-filter-branch", function (v) { filters.branch = v; refreshUsersTable(); });
+  JCRM.on("u-filter-status", function (v) { filters.status = v; refreshUsersTable(); });
+  JCRM.on("u-clear", function () { filters = { q: "", role: "ALL", branch: "ALL", status: "ALL" }; rerender(); });
+
+  /* --------------------------------------------------------- รายละเอียดบัญชี */
+  function closeDetail() { if (detailCtl && detailCtl.el && detailCtl.el.isConnected) { detailCtl.close(); } detailCtl = null; }
+  JCRM.on("u-detail", function (code) {
+    var s = JCRM.staff(code); if (!s) { return; }
+    closeMenus();
+    var ex = extraOf(code);
+    var asg = s.assignments.map(function (a) {
+      var reason = JCRM.access("role.assign").visible ? revokeReason(s, a) : undefined;
+      var btn = reason === undefined ? "" : ui.button({ label: "ถอนบทบาท", variant: "danger-outline", size: "sm", action: reason ? null : "u-revoke", id: code + "|" + a.role + "|" + (a.branch || ""), disabledReason: reason });
+      return '<div class="u-asg"><span>' + esc(roleLabel(a.role) + (a.branch ? " @ " + JCRM.branchName(a.branch) : (a.role === "SYSTEM_ADMIN" ? "" : " @ องค์กร"))) + "</span>" + btn + "</div>";
+    }).join("") || '<p class="t-sm t-muted">' + esc(roleText(s)) + "</p>";
+    var acts = rowActions(s).map(function (a) {
+      return ui.button({ label: a.label, variant: a.key === "disable" ? "danger-outline" : "secondary", size: "sm", action: a.reason ? null : "u-" + a.key, id: code, disabledReason: a.reason });
+    }).join("");
+    detailCtl = JCRM.drawer({
+      title: s.displayName, ref: s.staffCode, wide: true,
+      body: '<div class="stack"><dl class="u-dl">' +
+        "<dt>สถานะ</dt><dd>" + ui.status("staffStatus", s.status) + "</dd>" +
+        "<dt>อีเมล</dt><dd>" + esc(s.email) + "</dd>" +
+        "<dt>ชื่อเล่น</dt><dd>" + esc(ex.nickname || DASH) + "</dd>" +
+        "<dt>เบอร์โทร</dt><dd>" + esc(ex.phone || DASH) + "</dd>" +
+        "<dt>รหัสพนักงาน (HR)</dt><dd>" + esc(ex.employeeCode || DASH) + "</dd>" +
+        "<dt>ทีม</dt><dd>" + esc(teamText(s)) + "</dd>" +
+        (s.status === "INVITED" ? "<dt>วันที่เชิญ</dt><dd>" + esc(ex.invitedAt ? fmt.date(ex.invitedAt) : DASH) + "</dd><dt>ผู้เชิญ</dt><dd>" + esc(ex.invitedBy ? JCRM.staffName(ex.invitedBy) : DASH) + "</dd>" : "") +
+        "</dl>" +
+        '<section aria-label="บทบาทที่มีผล"><h3 class="section__title">บทบาท</h3>' + asg + "</section>" +
+        (acts ? '<section aria-label="การกระทำ"><h3 class="section__title">การกระทำ</h3><div class="u-actions">' + acts + "</div></section>" : "") +
+        '<p class="t-xs t-muted">ทุกการเชิญ แก้ ปิดใช้งาน มอบ ถอน ยื่น และตัดสิน บันทึกประวัติ (STAFF_* · ROLE_* · MFA_RESET · ข้อ 9.5) · ห้ามลบบัญชี</p></div>',
+      footer: ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }),
+      onCancel: function () { detailCtl = null; }
+    });
+  });
+
+  /* --------------------------------------------------------- เพิ่มผู้ใช้งาน (ข้อ 7.3) */
+  function staffFields(mode, s) {
+    return [
+      { name: "display_name", label: "ชื่อ", type: "text", required: true, maxLength: 100, value: s ? s.displayName : "", width: "half" },
+      { name: "nickname", label: "ชื่อเล่น", type: "text", maxLength: 50, value: s ? extraOf(s.staffCode).nickname || "" : "", width: "half" },
+      { name: "phone", label: "เบอร์โทร", type: "tel", value: s ? extraOf(s.staffCode).phone || "" : "", width: "half",
+        validate: function (v) { var d = String(v).replace(/[\s-]/g, ""); return /^0[689]\d{8}$/.test(d) || /^0[2-7]\d{7}$/.test(d) ? null : "รูปแบบเบอร์ไม่ถูกต้อง (มือถือ 10 หลักขึ้นต้น 06 08 09 หรือเบอร์บ้าน 9 หลักขึ้นต้น 02–07)"; } },
+      { name: "employee_code", label: "รหัสพนักงาน (HR)", type: "text", required: true, maxLength: 30, value: s ? extraOf(s.staffCode).employeeCode || "" : "", width: "half",
+        help: "ห้ามซ้ำกับบัญชีที่ยังไม่ปิดใช้งาน (รอยืนยัน Q1)" }
+    ];
+  }
+  function employeeCodeTaken(code, exceptStaff) {
+    var v = String(code || "").trim().toUpperCase();
+    return D.staff.some(function (s) { return s.staffCode !== exceptStaff && s.status !== "DISABLED" && String(extraOf(s.staffCode).employeeCode || "").toUpperCase() === v; });
+  }
+  JCRM.on("u-invite", function () {
+    var mode = JCRM.topScope("user.invite");
+    var fields = [
+      { name: "display_name", label: "ชื่อ", type: "text", required: true, maxLength: 100, width: "half", placeholder: "เช่น คุณเมย์" },
+      { name: "nickname", label: "ชื่อเล่น", type: "text", maxLength: 50, width: "half" },
+      { name: "email", label: "อีเมล", type: "email", required: true, maxLength: 120, width: "half", placeholder: "name@example.com" },
+      staffFields(mode)[2],
+      staffFields(mode)[3]
+    ];
+    if (mode === "SYSTEM") {
+      fields.push({ name: "sa_note", label: "บทบาท", type: "static", html: '<p class="alert" role="note">บัญชีสาย SYSTEM_ADMIN ต้องยื่นคำขอบทบาทหลังเชิญ (แท็บคำขอมอบบทบาท) · ไม่มี assignment จนกว่าผู้บริหารอนุมัติ (ข้อ 19.3 ข้อ 6)</p>' });
+    } else {
+      var rule = JCRM.find(D.roleGrantRules, "actor", mode === "BRANCH" ? "BRANCH_MANAGER" : "BUSINESS_ADMIN");
+      var roleOptions = (rule ? rule.can : []).map(function (r) { return { value: r, label: roleLabel(r) }; });
+      fields.push({ name: "role", label: "บทบาท", type: "select", required: true, options: roleOptions, width: "half", help: "แสดงเฉพาะบทบาทที่คุณมอบได้ (ข้อ 7.2)" });
+      if (mode === "BRANCH") {
+        var bmb = JCRM.scopeBranches("role.assign", "BRANCH");
+        if (bmb.length === 1) {
+          fields.push({ name: "branch_lock", label: "สาขา", type: "static", html: '<p class="t-sm">' + esc(JCRM.branchName(bmb[0])) + ' <span class="t-muted">(ระบบล็อกสาขาที่คุณเป็นผู้จัดการ)</span></p>' });
+          fields.push({ name: "branch", type: "hidden", value: bmb[0] });
+        } else {
+          fields.push({ name: "branch", label: "สาขา", type: "select", required: true, options: bmb.map(function (b) { return { value: b, label: JCRM.branchName(b) }; }), width: "half" });
+        }
+      } else {
+        fields.push({ name: "branch", label: "สาขา", type: "select", width: "half", options: D.branches.map(function (b) { return { value: b.code, label: b.name }; }),
+          visibleWhen: { field: "role", in: BRANCH_ROLES }, requiredWhen: { field: "role", in: BRANCH_ROLES }, requiredMessage: "เลือกสาขา", help: "บทบาทองค์กร (ฝ่ายการตลาด) ไม่มีสาขา" });
+      }
+      fields.push({ name: "sv_note", type: "static", html: '<p class="t-xs t-warning">บทบาทหัวหน้าทีมจะมีผลเมื่อเป็นหัวหน้าทีมในสาขานี้ (ตั้งที่แท็บทีม · ข้อ 7.1)</p>', visibleWhen: { field: "role", equals: "SUPERVISOR" } });
+    }
+    fields.push({ name: "invite_note", type: "static", html: '<p class="t-xs t-muted">คำเชิญมีอายุ 24 ชั่วโมง · บัญชีเป็น “เชิญแล้ว” จนพนักงานตั้งรหัสผ่าน (และลงทะเบียน MFA สำหรับบทบาทที่ต้องใช้) · บทบาทมีผลเมื่อบัญชีเปิดใช้งาน · ระบบไม่มีการสมัครใช้งานเอง</p>' });
+    JCRM.drawer({
+      title: "เพิ่มผู้ใช้งาน", fields: fields, submitLabel: "ส่งคำเชิญ", submitVariant: "accent",
+      onSubmit: function (v) {
+        var errs = {};
+        if (D.staff.some(function (s) { return s.email.toLowerCase() === String(v.email).trim().toLowerCase(); })) { errs.email = "อีเมลนี้มีบัญชีอยู่แล้ว"; }
+        if (employeeCodeTaken(v.employee_code)) { errs.employee_code = "รหัสพนักงานนี้ใช้กับบัญชีที่ยังไม่ปิดใช้งานแล้ว"; }
+        if (Object.keys(errs).length) { return { errors: errs }; }
+        var code = nextStaffCode();
+        var asg = mode === "SYSTEM" ? [] : [{ role: v.role, branch: BRANCH_ROLES.indexOf(v.role) !== -1 ? v.branch : null }];
+        D.staff.push({ staffCode: code, displayName: String(v.display_name).trim(), email: String(v.email).trim().toLowerCase(), status: "INVITED", assignments: asg, scopeTh: DASH });
+        var ex = extraOf(code);
+        ex.createdHere = true; ex.nickname = v.nickname; ex.phone = v.phone; ex.employeeCode = v.employee_code;
+        ex.invitedAt = NOW; ex.inviteExpiresAt = plus24h(NOW); ex.invitedBy = me();
+        JCRM.toast("สร้างคำเชิญ " + code + " ในหน่วยความจำแล้ว (prototype · ไม่ได้ส่งอีเมลจริง) · ระบบจริงเรียก invite-staff · หมดอายุ " + fmt.dateTime(ex.inviteExpiresAt), "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  /* --------------------------------------------------------- แก้ไขโปรไฟล์ */
+  JCRM.on("u-edit", function (code) {
+    var s = JCRM.staff(code); if (!s) { return; }
+    closeDetail();
+    var mode = JCRM.topScope("user.update");
+    var fields = staffFields(mode, s);
+    if (mode !== "BRANCH") {
+      fields.push({ name: "email_note", label: "อีเมล", type: "static", html: '<p class="t-sm">' + esc(s.email) + '</p><p class="help">เปลี่ยนอีเมลผ่าน “เปลี่ยนอีเมล/รีเซ็ต MFA” (ข้อ 7.3 ข้อ 6)</p>' });
+    }
+    JCRM.drawer({
+      title: "แก้ไขโปรไฟล์", ref: s.staffCode, fields: fields, submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        if (employeeCodeTaken(v.employee_code, code)) { return { errors: { employee_code: "รหัสพนักงานนี้ใช้กับบัญชีที่ยังไม่ปิดใช้งานแล้ว" } }; }
+        var ex = extraOf(code);
+        s.displayName = String(v.display_name).trim(); ex.nickname = v.nickname; ex.phone = v.phone; ex.employeeCode = v.employee_code;
+        JCRM.toast("บันทึกโปรไฟล์ " + code + " แล้ว (prototype) · ระบบจริงเรียก api.update_staff และบันทึก STAFF_UPDATED", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  /* --------------------------------------------------------- มอบ/ถอนบทบาท */
+  JCRM.on("u-assign", function (code) {
+    var s = JCRM.staff(code); if (!s) { return; }
+    closeDetail();
+    var mode = JCRM.topScope("role.assign");
+    var rule = JCRM.find(D.roleGrantRules, "actor", mode === "BRANCH" ? "BRANCH_MANAGER" : "BUSINESS_ADMIN");
+    var fields = [{ name: "role", label: "บทบาท", type: "select", required: true, options: (rule ? rule.can : []).map(function (r) { return { value: r, label: roleLabel(r) }; }), width: "half" }];
+    var bmb = JCRM.scopeBranches("role.assign", "BRANCH");
+    if (mode === "BRANCH" && bmb.length === 1) {
+      fields.push({ name: "branch_lock", label: "สาขา", type: "static", html: '<p class="t-sm">' + esc(JCRM.branchName(bmb[0])) + ' <span class="t-muted">(ล็อก)</span></p>' });
+      fields.push({ name: "branch", type: "hidden", value: bmb[0] });
+    } else {
+      var brOpts = (mode === "BRANCH" ? bmb : D.branches.map(function (b) { return b.code; })).map(function (b) { return { value: b, label: JCRM.branchName(b) }; });
+      fields.push({ name: "branch", label: "สาขา", type: "select", width: "half", options: brOpts, visibleWhen: { field: "role", in: BRANCH_ROLES }, requiredWhen: { field: "role", in: BRANCH_ROLES }, requiredMessage: "เลือกสาขา" });
+    }
+    fields.push({ name: "sv_note", type: "static", html: '<p class="t-xs t-warning">บทบาทหัวหน้าทีมจะมีผลเมื่อเป็นหัวหน้าทีมในสาขานี้ (ข้อ 7.1)</p>', visibleWhen: { field: "role", equals: "SUPERVISOR" } });
+    fields.push({ name: "reason", label: "เหตุผล", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 2 });
+    JCRM.dialog({
+      title: "มอบบทบาทให้ " + s.displayName, size: "md",
+      intro: '<p class="t-sm">บทบาทปัจจุบัน: ' + esc(roleText(s)) + " · ห้ามมอบบทบาทของตนเอง · ห้ามมอบบทบาทที่ระดับเท่าหรือสูงกว่าบทบาทสูงสุดของคุณ · ผู้บริหาร/ผู้ดูแลข้อมูลธุรกิจ/ผู้ดูแลระบบใช้คำขอ (ข้อ 7.2)</p>",
+      fields: fields, submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        var branch = BRANCH_ROLES.indexOf(v.role) !== -1 ? v.branch : null;
+        if (s.status === "DISABLED") { return { errors: { role: "มอบบทบาทให้บัญชีที่ปิดใช้งานไม่ได้" } }; }
+        if (v.role === "MARKETING" && hasRole(s, "BUSINESS_ADMIN")) { return { errors: { role: "ถือบทบาทฝ่ายการตลาดร่วมกับผู้ดูแลข้อมูลธุรกิจไม่ได้ (รอยืนยัน Q22)" } }; }
+        if (s.assignments.some(function (a) { return a.role === v.role && (a.branch || null) === branch; })) { return { errors: { role: "บัญชีนี้มีบทบาทนี้" + (branch ? "ในสาขานี้" : "") + "อยู่แล้ว" } }; }
+        s.assignments.push({ role: v.role, branch: branch });
+        JCRM.toast("มอบบทบาท " + roleLabel(v.role) + (branch ? " @ " + JCRM.branchName(branch) : "") + " ให้ " + s.displayName + " แล้ว (prototype) · ระบบจริงเรียก api.assign_role และบันทึก ROLE_GRANTED", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+  JCRM.on("u-revoke", function (key) {
+    var parts = String(key).split("|"), s = JCRM.staff(parts[0]); if (!s) { return; }
+    var a = s.assignments.filter(function (x) { return x.role === parts[1] && (x.branch || "") === parts[2]; })[0]; if (!a) { return; }
+    closeDetail();
+    JCRM.dialog({
+      title: "ถอนบทบาท " + roleLabel(a.role) + (a.branch ? " @ " + JCRM.branchName(a.branch) : ""), size: "sm",
+      intro: '<p class="t-sm">ของ ' + esc(s.displayName + " (" + s.staffCode + ")") + " · ระบบตั้งวันสิ้นสุดของบทบาทเป็นตอนนี้ (แก้แถวบทบาทได้เฉพาะการถอน · ข้อ 7.1)</p>",
+      fields: [{ name: "reason", label: "เหตุผล", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 2 }],
+      submitLabel: "ถอนบทบาท", submitVariant: "danger-outline",
+      onSubmit: function () {
+        s.assignments = s.assignments.filter(function (x) { return x !== a; });
+        JCRM.toast("ถอนบทบาทแล้ว (prototype) · ระบบจริงเรียก api.revoke_role และบันทึก ROLE_REVOKED", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  /* --------------------------------------------------------- ปิดใช้งาน (ข้อ 7.3 ข้อ 4) */
+  JCRM.on("u-disable", function (code) {
+    var s = JCRM.staff(code); if (!s) { return; }
+    closeDetail();
+    JCRM.dialog({
+      title: "ปิดใช้งาน " + s.displayName + " (" + s.staffCode + ")", size: "md",
+      intro: '<div class="alert alert--danger" role="note"><span aria-hidden="true">!</span><div><p class="alert__title">ผลกระทบ</p><ul>' +
+        "<li>เข้าสู่ระบบไม่ได้ทันทีและถูกออกจากทุกอุปกรณ์</li><li>บทบาททั้งหมดสิ้นสุดวันนี้</li><li>โอกาสขายที่เปิดอยู่ย้ายให้ผู้จัดการสาขาของรายการ (หลายคนใช้รหัสพนักงานน้อยสุด · รอยืนยัน)</li>" +
+        "<li>Lead และงานที่เปิดอยู่จะไม่มีผู้รับผิดชอบ (รอยืนยัน)</li><li>เปิดใช้งานใหม่ต้องมอบบทบาทใหม่ · ห้ามลบบัญชี</li></ul></div></div>" +
+        '<p class="t-xs t-muted" style="margin-top:var(--space-2)">ถ้าสาขาของโอกาสขายไม่มีผู้จัดการสาขา ระบบจะปฏิเสธและแสดง: “สาขา {ชื่อ} ไม่มีผู้จัดการสาขา กรุณาโอนโอกาสขายที่เปิดอยู่ให้ผู้อื่นก่อน (เปลี่ยนผู้รับผิดชอบที่หน้าโอกาสการขาย)”</p>',
+      fields: [{ name: "reason", label: "เหตุผล", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 2 }],
+      ack: "ฉันเข้าใจผลกระทบ", cancelLabel: "ยกเลิก", submitLabel: "ปิดใช้งานผู้ใช้", submitVariant: "danger",
+      onSubmit: function () {
+        ended[code] = s.assignments.slice();
+        s.assignments = [];
+        s.status = "DISABLED";
+        JCRM.toast("ปิดใช้งาน " + code + " แล้ว (prototype) · ระบบจริงเรียก api.disable_staff + disable-staff และบันทึก STAFF_DISABLED", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  /* --------------------------------------------------------- เปลี่ยนอีเมล/รีเซ็ต MFA · ส่งคำเชิญใหม่ */
+  JCRM.on("u-reset", function (code) {
+    var s = JCRM.staff(code); if (!s) { return; }
+    closeDetail();
+    JCRM.dialog({
+      title: "เปลี่ยนอีเมล/รีเซ็ต MFA · " + s.displayName, size: "md",
+      intro: '<p class="t-sm">อีเมลปัจจุบัน: ' + esc(s.email) + " · ผู้กระทำต้องยืนยัน MFA ในเซสชันนี้ · ทำกับบัญชีของตนเองไม่ได้ (ข้อ 7.3 ข้อ 6)</p>",
+      fields: [
+        { name: "new_email", label: "อีเมลใหม่", type: "email", maxLength: 120, help: "เว้นว่างถ้าไม่เปลี่ยนอีเมล" },
+        { name: "reset_mfa", label: "รีเซ็ตการยืนยันตัวตนสองขั้นตอน", type: "checkbox", help: "ผู้ใช้ต้องลงทะเบียน TOTP ใหม่ในการเข้าสู่ระบบครั้งถัดไป" },
+        { name: "notice", type: "static", html: '<p class="alert" role="note">ระบบจะแจ้งไปที่อีเมลเดิมทุกครั้ง</p>' }
+      ],
+      submitLabel: "ยืนยัน", submitVariant: "primary",
+      onSubmit: function (v) {
+        var email = String(v.new_email || "").trim().toLowerCase();
+        if (!email && !v.reset_mfa) { return { errors: { new_email: "กรอกอีเมลใหม่หรือเลือกรีเซ็ต MFA อย่างน้อยหนึ่งอย่าง" } }; }
+        if (email && D.staff.some(function (x) { return x.email.toLowerCase() === email; })) { return { errors: { new_email: "อีเมลนี้มีบัญชีอยู่แล้ว" } }; }
+        if (email) { s.email = email; }
+        JCRM.toast("บันทึกคำขอเปลี่ยนอีเมล/รีเซ็ต MFA ของ " + code + " แล้ว (prototype) · ระบบจริงเรียก reset-mfa และบันทึก MFA_RESET", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+  JCRM.on("u-resend", function (code) {
+    var s = JCRM.staff(code); if (!s) { return; }
+    closeDetail();
+    var ex = extraOf(code);
+    JCRM.confirm({
+      title: "ส่งคำเชิญใหม่ให้ " + s.displayName + "?",
+      message: "ออกลิงก์ใหม่อายุ 24 ชั่วโมง · วันที่เชิญเดิม " + (ex.invitedAt ? fmt.date(ex.invitedAt) : DASH) + " · เวลาหมดอายุคำเชิญเดิม " + (ex.inviteExpiresAt ? fmt.dateTime(ex.inviteExpiresAt) : DASH + " (ข้อมูลตัวอย่างไม่มีเวลาเชิญ)"),
+      confirmLabel: "ส่งคำเชิญ", variant: "accent",
+      onConfirm: function () {
+        ex.inviteExpiresAt = plus24h(NOW);
+        JCRM.toast("ออกคำเชิญใหม่ในหน่วยความจำแล้ว (prototype · ไม่ได้ส่งอีเมลจริง) · หมดอายุ " + fmt.dateTime(ex.inviteExpiresAt), "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  /* --------------------------------------------------------- ทีม */
+  JCRM.on("t-create", function () {
+    var bs = JCRM.scopeBranches("team.manage", "BRANCH");
+    var fields = [
+      { name: "code", label: "รหัสทีม", type: "text", required: true, maxLength: 30, width: "half", placeholder: "เช่น JP2-SALES",
+        validate: function (v) { var c = String(v).trim().toUpperCase(); if (!/^[A-Z0-9_-]+$/.test(c)) { return "ใช้ตัวพิมพ์ใหญ่ A–Z ตัวเลข _ หรือ -"; } return JCRM.team(c) ? "รหัสนี้มีอยู่แล้ว" : null; } },
+      { name: "name", label: "ชื่อทีม", type: "text", required: true, maxLength: 100, width: "half" }
+    ];
+    if (bs.length === 1) {
+      fields.push({ name: "branch_lock", label: "สาขา", type: "static", html: '<p class="t-sm">' + esc(JCRM.branchName(bs[0])) + ' <span class="t-muted">(ล็อก)</span></p>' });
+      fields.push({ name: "branch", type: "hidden", value: bs[0] });
+    } else {
+      fields.push({ name: "branch", label: "สาขา", type: "select", required: true, options: bs.map(function (b) { return { value: b, label: JCRM.branchName(b) }; }) });
+    }
+    JCRM.dialog({
+      title: "สร้างทีม", size: "md", fields: fields, submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        var c = String(v.code).trim().toUpperCase();
+        D.teams.push({ code: c, name: String(v.name).trim(), branch: v.branch });
+        JCRM.toast("สร้างทีม " + c + " แล้ว (prototype) · ระบบจริงเรียก api.save_team", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+  JCRM.on("t-manage", function (teamCode) {
+    var t = JCRM.team(teamCode); if (!t || !canManageTeam(t)) { return; }
+    var draft = D.teamMembers.filter(function (m) { return m.team === teamCode; }).map(function (m) { return { staff: m.staff, isLeader: m.isLeader }; });
+    var ctl;
+    function eligible() {
+      return D.staff.filter(function (s) { return s.status === "ACTIVE" && s.assignments.some(function (a) { return a.branch === t.branch; }) && !draft.some(function (d) { return d.staff === s.staffCode; }); });
+    }
+    function bodyHtml() {
+      var list = draft.length ? draft.map(function (d, i) {
+        return '<div class="u-member"><span>' + ui.avatar(JCRM.staffName(d.staff), "sm") + " " + esc(staffWithCode(d.staff)) + (d.isLeader ? " " + ui.badge("หัวหน้า", "navy", "badge--square") : "") + "</span>" +
+          '<span class="u-actions">' + ui.button({ label: d.isLeader ? "ยกเลิกหัวหน้า" : "ตั้งเป็นหัวหน้า", variant: "secondary", size: "sm", action: "tm-leader", id: String(i) }) +
+          ui.button({ label: "นำออก", variant: "danger-outline", size: "sm", action: "tm-remove", id: String(i) }) + "</span></div>";
+      }).join("") : ui.state("empty", { title: "ไม่มีสมาชิก", compact: true });
+      var opts = eligible();
+      return '<div class="stack"><p class="t-sm">' + esc(t.name + " · " + JCRM.branchName(t.branch)) + "</p>" + list +
+        '<div class="field"><label class="label" for="tm-add">+ เพิ่มสมาชิก</label><div class="input-group"><select class="select" id="tm-add"' + (opts.length ? "" : " disabled") + '><option value="">' + (opts.length ? "เลือกพนักงาน" : "ไม่มีพนักงานที่มีบทบาทในสาขานี้เพิ่มได้") + "</option>" +
+        opts.map(function (s) { return '<option value="' + esc(s.staffCode) + '">' + esc(s.displayName + " · " + s.staffCode) + "</option>"; }).join("") + "</select>" +
+        ui.button({ label: "เพิ่ม", variant: "secondary", action: "tm-add" }) + '</div><p class="help">พนักงานต้องมีบทบาทในสาขาของทีมก่อน</p></div>' +
+        '<p class="t-xs t-warning">การตั้งหรือยกเลิกหัวหน้าทำให้บทบาทหัวหน้าทีมในสาขานี้มีผลหรือหมดผลทันที</p></div>';
+    }
+    function sync() {
+      var host = ctl && ctl.el.querySelector("[data-tm-body]");
+      if (host) { host.innerHTML = bodyHtml(); }
+      var hid = ctl && ctl.el.querySelector('input[name="draft"]');
+      if (hid) { hid.value = JSON.stringify(draft); }
+    }
+    JCRM.on("tm-leader", function (i) { var d = draft[Number(i)]; if (d) { d.isLeader = !d.isLeader; sync(); } });
+    JCRM.on("tm-remove", function (i) { draft.splice(Number(i), 1); sync(); });
+    JCRM.on("tm-add", function () {
+      var sel = ctl && ctl.el.querySelector("#tm-add");
+      if (!sel || !sel.value) { JCRM.toast("เลือกพนักงานก่อน", "warning"); return; }
+      draft.push({ staff: sel.value, isLeader: false }); sync();
+    });
+    ctl = JCRM.drawer({
+      title: "จัดการสมาชิกทีม", ref: t.code,
+      body: '<div data-tm-body>' + bodyHtml() + "</div>",
+      fields: [{ name: "draft", type: "hidden", value: JSON.stringify(draft) }],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function () {
+        for (var i = D.teamMembers.length - 1; i >= 0; i--) { if (D.teamMembers[i].team === teamCode) { D.teamMembers.splice(i, 1); } }
+        draft.forEach(function (d) { D.teamMembers.push({ team: teamCode, staff: d.staff, isLeader: d.isLeader }); });
+        JCRM.toast("บันทึกสมาชิกทีม " + teamCode + " แล้ว (prototype) · ระบบจริงเรียก api.set_team_member", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  /* --------------------------------------------------------- คำขอมอบบทบาท (ข้อ 7.2) */
+  JCRM.on("rg-select", function (no) { selectedRequest = no; rerender(); });
+  function applyDecision(q, status, note) {
+    reqState[q.requestNo] = { status: status, decidedBy: me(), decidedAt: NOW, note: note || null };
+    if (status === "APPROVED") {
+      var t = JCRM.staff(q.target);
+      if (t && q.type === "GRANT" && !t.assignments.some(function (a) { return a.role === q.role; })) { t.assignments.push({ role: q.role, branch: null }); }
+      if (t && q.type === "REVOKE") { t.assignments = t.assignments.filter(function (a) { return a.role !== q.role; }); }
+    }
+  }
+  JCRM.on("rg-approve", function (no) {
+    var q = JCRM.find(allRequests(), "requestNo", no); if (!q || decisionReason(q)) { return; }
+    JCRM.confirm({
+      title: "อนุมัติคำขอ " + no + "?",
+      message: JCRM.label("roleGrantType", q.type) + "บทบาท " + roleLabel(q.role) + " · " + staffWithCode(q.target) + (q.type === "GRANT" ? " · บทบาทมีผลเมื่อบัญชีเปิดใช้งาน" : ""),
+      confirmLabel: "อนุมัติ", variant: "primary",
+      onConfirm: function () {
+        applyDecision(q, "APPROVED");
+        JCRM.toast("อนุมัติ " + no + " แล้ว (prototype) · ระบบจริงเรียก api.decide_role_grant บันทึก ROLE_GRANT_DECIDED และแจ้งผู้ยื่น", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+  JCRM.on("rg-reject", function (no) {
+    var q = JCRM.find(allRequests(), "requestNo", no); if (!q || decisionReason(q)) { return; }
+    JCRM.dialog({
+      title: "ปฏิเสธคำขอ " + no, size: "md",
+      fields: [{ name: "note", label: "เหตุผล", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 3 }],
+      submitLabel: "ปฏิเสธคำขอ", submitVariant: "danger-outline",
+      onSubmit: function (v) {
+        applyDecision(q, "REJECTED", v.note);
+        JCRM.toast("ปฏิเสธ " + no + " แล้ว (prototype) · ระบบจริงแจ้ง ROLE_GRANT_DECIDED ถึงผู้ยื่น", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+  JCRM.on("rg-new", function () {
+    var roles = (JCRM.find(D.roleGrantRules, "actor", "SYSTEM_ADMIN") || {}).requestOnly || [];
+    var grantTargets = D.staff.filter(function (s) { return s.status !== "DISABLED" && s.staffCode !== me(); });
+    var revokeTargets = D.staff.filter(function (s) { return s.staffCode !== me() && s.assignments.some(function (a) { return HIGH_ROLES.indexOf(a.role) !== -1; }); });
+    JCRM.dialog({
+      title: "ยื่นคำขอบทบาท", size: "md",
+      intro: '<p class="t-sm">คำขอรอผู้บริหารอนุมัติ · ระบบแจ้งผู้บริหารทุกคนยกเว้นผู้รับ · ลบคำขอไม่ได้ (ข้อ 7.2)</p>',
+      fields: [
+        { name: "type", label: "ชนิดคำขอ", type: "radio", required: true, inline: true, options: D.enums.roleGrantType.map(function (x) { return { value: x.code, label: x.labelTh }; }) },
+        { name: "role", label: "บทบาท", type: "select", required: true, options: roles.map(function (r) { return { value: r, label: roleLabel(r) }; }) },
+        { name: "target_grant", label: "ผู้รับ", type: "select", options: grantTargets.map(function (s) { return { value: s.staffCode, label: s.displayName + " · " + s.staffCode }; }),
+          visibleWhen: { field: "type", equals: "GRANT" }, requiredWhen: { field: "type", equals: "GRANT" }, requiredMessage: "เลือกผู้รับ", help: "บัญชีที่ไม่ใช่ปิดใช้งาน" },
+        { name: "target_revoke", label: "ผู้รับ", type: "select", options: revokeTargets.map(function (s) { return { value: s.staffCode, label: s.displayName + " · " + s.staffCode }; }),
+          visibleWhen: { field: "type", equals: "REVOKE" }, requiredWhen: { field: "type", equals: "REVOKE" }, requiredMessage: "เลือกผู้รับ", help: "บัญชีที่ถือบทบาทนั้นอยู่" },
+        { name: "reason", label: "เหตุผล", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 2 }
+      ],
+      submitLabel: "ยื่นคำขอ", submitVariant: "primary",
+      onSubmit: function (v) {
+        var targetCode = v.type === "GRANT" ? v.target_grant : v.target_revoke, t = JCRM.staff(targetCode);
+        var field = v.type === "GRANT" ? "target_grant" : "target_revoke";
+        var err = null;
+        if (!t) { err = "เลือกผู้รับ"; }
+        else if (v.type === "GRANT" && v.role === "SYSTEM_ADMIN" && isBusiness(t)) { err = "บัญชีที่มีบทบาทธุรกิจรับบทบาทผู้ดูแลระบบ (IT) ไม่ได้"; }
+        else if (v.type === "GRANT" && v.role !== "SYSTEM_ADMIN" && hasRole(t, "SYSTEM_ADMIN")) { err = "บัญชีผู้ดูแลระบบ (IT) รับบทบาทธุรกิจไม่ได้"; }
+        else if (v.type === "GRANT" && hasRole(t, v.role)) { err = "บัญชีนี้มีบทบาทนี้อยู่แล้ว"; }
+        else if (v.type === "REVOKE" && !hasRole(t, v.role)) { err = "บัญชีนี้ไม่มีบทบาทนี้"; }
+        else if (allRequests().some(function (q) { return q.status === "REQUESTED" && q.target === targetCode && q.role === v.role && q.type === v.type; })) { err = "มีคำขอนี้รออนุมัติอยู่แล้ว"; }
+        if (err) { var e = {}; e[field] = err; return { errors: e }; }
+        var no = nextRequestNo();
+        localRequests.push({ requestNo: no, type: v.type, role: v.role, target: targetCode, requestedBy: me(), requestedAt: NOW, reason: v.reason, status: "REQUESTED" });
+        selectedRequest = no;
+        JCRM.toast("ยื่นคำขอ " + no + " แล้ว (prototype) · รอผู้บริหารอนุมัติ · ระบบจริงเรียก api.request_role_grant และแจ้ง ROLE_GRANT_APPROVAL_REQUIRED", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  /* --------------------------------------------------------- อุปกรณ์ */
+  JCRM.on("d-register", function () {
+    var bs = JCRM.scopeBranches("user.update", "BRANCH");
+    var fields = [{ name: "device_id", label: "รหัสอุปกรณ์", type: "static", html: '<p class="t-sm">' + DASH + ' <span class="t-muted">(device_id ของเครื่องนี้ · prototype ไม่สร้างรหัสจริง)</span></p>' }];
+    if (bs.length === 1) {
+      fields.push({ name: "branch_lock", label: "สาขา", type: "static", html: '<p class="t-sm">' + esc(JCRM.branchName(bs[0])) + ' <span class="t-muted">(ล็อก)</span></p>' });
+      fields.push({ name: "branch", type: "hidden", value: bs[0] });
+    } else {
+      fields.push({ name: "branch", label: "สาขา", type: "select", required: true, options: bs.map(function (b) { return { value: b, label: JCRM.branchName(b) }; }) });
+    }
+    fields.push({ name: "shared", label: "อุปกรณ์ counter ใช้ร่วมกัน", type: "checkbox",
+      help: "เครื่องนี้จะล็อกหน้าจอเมื่อไม่มีการใช้งาน " + fmt.int(D.settingValues["session.shared_counter_idle_min"]) + " นาที และซ่อน ‘จดจำฉันไว้’" });
+    JCRM.dialog({
+      title: "ลงทะเบียนเครื่องนี้", size: "md", fields: fields, cancelLabel: "ยกเลิก", submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        devices.push({ deviceId: DASH, branch: v.branch, shared: !!v.shared });
+        if (v.shared) { document.documentElement.setAttribute("data-device", "counter"); }
+        JCRM.toast("ลงทะเบียนอุปกรณ์แล้ว (prototype) · ระบบจริงเรียก api.register_device", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  JCRM.page({ id: "users", render: render, branchPicker: false });
+})();
+</script>
+</body>
+</html>

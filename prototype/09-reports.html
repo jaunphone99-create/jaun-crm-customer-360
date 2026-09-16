@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รายงาน · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 09 · รายงาน — CANONICAL v2.2 ข้อ 12 · 13.1–13.6 · 13.11 · 14.8 · sitemap-screen-specs ข้อ 12 · ไม่มี hex · มือถือแสดง "กรุณาใช้งานบนคอมพิวเตอร์" (app.js) */
+.rp-kpis { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: var(--space-4); }
+.rp-charts { display: grid; gap: var(--space-4); grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: var(--space-4); }
+.rp-card-title { font-size: var(--fs-h4); font-weight: var(--fw-semibold); color: var(--text-heading); }
+.rp-card-sub { font-size: var(--fs-xs); color: var(--text-secondary); margin-bottom: var(--space-3); }
+.rp-section { margin-bottom: var(--space-5); }
+.rp-section > h3 { font-size: var(--fs-h4); margin-bottom: var(--space-2); }
+.rp-funnels { display: grid; gap: var(--space-4); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rp-note { font-size: var(--fs-xs); color: var(--text-secondary); margin-top: var(--space-1); }
+.rp-staff-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); margin-bottom: var(--space-3); }
+.rp-scope { display: inline-flex; gap: var(--space-2); align-items: center; }
+@media (max-width: 1279px) {
+  .rp-charts, .rp-funnels { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body data-page="reports" data-roles="SUPERVISOR BRANCH_MANAGER OPERATIONS MARKETING EXECUTIVE BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var D = JCRM.data, fmt = JCRM.fmt, ui = JCRM.ui, esc = JCRM.esc, DASH = fmt.DASH, T = D.meta.texts, L = D.kpiLabels;
+  var BR4 = ["JP1", "JP2", "JP3", "JP4"];
+  var TABS = [
+    { id: "overview", label: "ภาพรวม", code: "OVERVIEW" }, { id: "customers", label: "ลูกค้า", code: "CUSTOMERS" }, { id: "sales", label: "การขาย", code: "SALES" },
+    { id: "channels", label: "ช่องทาง", code: "CHANNELS" }, { id: "staff", label: "พนักงาน", code: "STAFF" }, { id: "branches", label: "สาขา", code: "BRANCHES" }
+  ];
+  var UNBOUND = D.kpis.emptyScopes["ST-0050"].staffUnboundKpis.concat(["REPEAT_RATE"]);   /* ไม่ผูกพนักงาน (ข้อ 12.4) + อัตราที่คำนวณจากค่าเหล่านั้น */
+  var S = { ctx: null, tab: JCRM.qs("tab") || "overview", staffBranch: null };
+
+  function find(list, key, v) { return JCRM.find(list, key, v); }
+  function nul(v) { return '<span class="is-null">' + DASH + "</span>"; }
+
+  /* ---------------------------------------------------------------------------
+     ขอบเขตข้อมูลของรายงาน
+     org = ทุกสาขา (ข้อ 13.1) · branch = สาขาเดียว (13.2 · 13.2b) · team = ทีม JP1-SALES (13.6) · none = ไม่มีข้อมูลตัวอย่าง
+     หมายเหตุผู้เขียน: OPERATIONS ถือ JP1–JP4 ครบและ JPON ไม่มีรายการใน P (ข้อ 13.2) → "ทุกสาขา" ใช้ยอดองค์กรข้อ 13.1 (sitemap ข้อ 12.10)
+     ------------------------------------------------------------------------ */
+  function scopeOf(ctx) {
+    var k = JCRM.select.kpisFor(undefined, { branch: ctx.branch, preset: ctx.preset });
+    var sc = JCRM.select.scope();
+    var covers4 = BR4.every(function (b) { return JCRM.scopeBranches("report.view", "OWN").indexOf(b) !== -1; });
+    if (k.kind === "team") { return { mode: "team", k: k, branches: ["JP1"], label: "ทีม " + (sc.team || "JP1-SALES") }; }
+    if (ctx.preset !== "TODAY" && ctx.branch === "ALL" && sc.kind === "branch" && covers4) {
+      var o = D.kpis.org;
+      k = { kind: "branch", preset: ctx.preset, branch: "ALL", values: {}, rates: {}, growth: o.growthDisplay, pp: o.ppDisplay, notes: [] };
+      Object.keys(o.values).forEach(function (x) { k.values[x] = o.values[x]; });
+      Object.keys(o.rates).forEach(function (x) { k.rates[x] = o.rates[x]; });
+    }
+    var b = k.branch === "ALL" && sc.kind === "branch" && !covers4 ? null : k.branch;
+    if (b === "ALL") { return { mode: "all", k: k, branches: BR4.slice(), label: "ทุกสาขา" }; }
+    if (b && BR4.indexOf(b) !== -1) { return { mode: "branch", k: k, branches: [b], label: JCRM.branchName(b) }; }
+    return { mode: "none", k: k, branches: [], label: b ? JCRM.branchName(b) : "ทุกสาขาในสิทธิ์ของคุณ" };
+  }
+
+  function kpi(o) {
+    var s = S.cur;
+    var c = { label: o.label, preset: s.ctx.preset, tooltip: o.tooltip };
+    if (o.rate !== undefined) { c.display = o.rate ? fmt.rate(o.rate) : DASH; }
+    else if (o.format === "money") { c.display = fmt.money(o.value); }
+    else if (o.format === "minutes") { c.display = o.value === null || o.value === undefined ? DASH : fmt.minutes(o.value); }
+    else { c.display = fmt.int(o.value); }
+    if (o.delta && c.display !== DASH) { c.delta = o.delta; }
+    if (o.sub && c.display !== DASH) { c.sub = o.sub; }
+    if (o.target && o.rate) { c.target = { num: o.rate.num, den: o.rate.den, kpi: o.target }; }
+    if (o.code && s.mode === "team" && UNBOUND.indexOf(o.code) !== -1) { c.note = T.teamScopeNull; }
+    return ui.kpiCard(c);
+  }
+  function card(title, sub, inner, id) {
+    return '<section class="card" aria-labelledby="' + esc(id) + '-t"><h3 class="rp-card-title" id="' + esc(id) + '-t">' + esc(title) + '</h3><p class="rp-card-sub">' + esc(sub) + "</p>" + inner + "</section>";
+  }
+  function periodSub() { return S.cur.ctx.preset === "TODAY" ? fmt.asOf() : "30 วันล่าสุด · " + fmt.rangeInclusive(D.meta.periods.LAST_30_DAYS.start, D.meta.periods.LAST_30_DAYS.endExclusive); }
+  function sampleFor(text) { return ui.sampleNote({ text: text }); }
+  function teamNote() { return '<p class="rp-note">' + esc(T.teamScopeNull) + "</p>"; }
+
+  /* ---------------------------------------------------------------------------
+     แท็บ
+     ------------------------------------------------------------------------ */
+  function overviewTab() {
+    var s = S.cur, v = s.k.values, r = s.k.rates, g = s.k.growth, pp = s.k.pp, today = s.ctx.preset === "TODAY";
+    var html = '<div class="rp-kpis">' +
+      kpi({ label: L.VISITS, value: v.VISITS, delta: today ? null : g.VISITS, code: "VISITS" }) +
+      kpi({ label: L.UNIQUE_CUSTOMERS, value: v.UNIQUE_CUSTOMERS, delta: g.UNIQUE_CUSTOMERS, code: "UNIQUE_CUSTOMERS" }) +
+      kpi({ label: L.SALES, value: v.SALES, delta: g.SALES, code: "SALES" }) +
+      kpi({ label: L.CONV_LEAD_TO_SALE, rate: r.CONV_LEAD_TO_SALE || null, delta: pp.CONV_LEAD_TO_SALE, code: "CONV_LEAD_TO_SALE" }) + "</div>";
+    html += '<div class="rp-charts">' + card("ลูกค้าเข้าร้านแยกตามสาขา", periodSub() + " · " + L.WALKIN_VISITS, '<div id="rp-walkin"></div>', "rp-walkin") +
+      card("ลูกค้าใหม่/ลูกค้าเก่า", periodSub() + " · กลางวง = ลูกค้าไม่ซ้ำ", '<div id="rp-newret"></div>', "rp-newret") + "</div>";
+    return html;
+  }
+  function drawOverview() {
+    var s = S.cur, today = s.ctx.preset === "TODAY";
+    if (s.mode === "team" || s.mode === "none") {
+      JCRM.chart.hbar("rp-walkin", { title: "ลูกค้าเข้าร้านแยกตามสาขา", items: [], sample: { text: s.mode === "team" ? "ไม่มีข้อมูลตัวอย่างของขอบเขตทีม" : "ไม่มีข้อมูลตัวอย่างสำหรับ" + s.label } });
+      JCRM.chart.donut("rp-newret", { title: "ลูกค้าใหม่/ลูกค้าเก่า", segments: [], sample: { text: s.mode === "team" ? T.teamScopeNull : "ไม่มีข้อมูลตัวอย่างสำหรับ" + s.label } });
+      return;
+    }
+    var items = JCRM.chart.walkinByBranchItems(today ? "TODAY" : "LAST_30_DAYS").filter(function (it, i) { return s.branches.indexOf(BR4[i]) !== -1; });
+    JCRM.chart.hbar("rp-walkin", { title: "ลูกค้าเข้าร้านแยกตามสาขา", items: items, color: "--chart-1", valueLabel: L.WALKIN_VISITS });
+    if (today) { JCRM.chart.donut("rp-newret", { title: "ลูกค้าใหม่/ลูกค้าเก่า", segments: [], sample: { text: "ไม่มีข้อมูลตัวอย่างลูกค้าใหม่/เก่าของวันนี้" } }); return; }
+    var scope = s.mode === "all" ? "ALL" : s.branches[0];
+    var row = scope === "ALL" ? D.kpis.branchesTotal : find(D.kpis.branches, "branch", scope);
+    JCRM.chart.donut("rp-newret", { title: "ลูกค้าใหม่/ลูกค้าเก่า", segments: JCRM.chart.newReturningSegments(scope), centerValue: row.uniqueCustomers, centerLabel: L.UNIQUE_CUSTOMERS, tableLabel: "ประเภทลูกค้า" });
+  }
+
+  function customersTab() {
+    var s = S.cur, v = s.k.values, r = s.k.rates, today = s.ctx.preset === "TODAY";
+    var rep = r.REPEAT_RATE || null;
+    var html = '<div class="rp-kpis">' +
+      kpi({ label: L.NEW_CUSTOMERS, value: v.NEW_CUSTOMERS, code: "NEW_CUSTOMERS" }) +
+      kpi({ label: L.RETURNING_CUSTOMERS, value: v.RETURNING_CUSTOMERS, code: "RETURNING_CUSTOMERS" }) +
+      kpi({ label: L.REPEAT_RATE, rate: rep, sub: rep ? fmt.int(rep.num) + " / " + fmt.int(rep.den) + " (" + L.REPEAT_BUYERS + " / " + L.BUYERS + ")" : null, code: "REPEAT_RATE" }) +
+      kpi({ label: L.CAPTURE_RATE, rate: r.CAPTURE_RATE || null, target: "CAPTURE_RATE", code: "CAPTURE_RATE" }) +
+      kpi({ label: L.IDENTIFIED_VISITS, value: v.IDENTIFIED_VISITS, code: "IDENTIFIED_VISITS" }) + "</div>";
+    if (today || s.mode === "team" || s.mode === "none") {
+      return html + sampleFor(s.mode === "team" ? "ตารางลูกค้ารายสาขาไม่ผูกกับพนักงาน จึงไม่แสดงสำหรับขอบเขตทีม" : "ไม่มีข้อมูลตัวอย่างตารางลูกค้ารายสาขาสำหรับช่วง/ขอบเขตนี้");
+    }
+    var rows = s.branches.map(function (b) {
+      var x = find(D.kpis.branches, "branch", b), c = find(D.kpis.branchComponents, "branch", b), rt = find(D.kpis.branchRates, "branch", b);
+      return { branch: b, visits: x.visits, identified: x.identifiedVisits, capture: rt.CAPTURE_RATE, unique: x.uniqueCustomers, nw: x.newCustomers, ret: x.returningCustomers, buyers: c.buyers, repeat: c.repeatBuyers, repeatRate: rt.REPEAT_RATE };
+    });
+    var t = D.kpis.branchesTotal, ct = D.kpis.branchComponentsTotal, o = D.kpis.org.rates;
+    return html + '<div class="card card--flush">' + ui.table({ id: "rp-cust", caption: "ลูกค้ารายสาขา", stickyFirst: true, footer: false, rows: rows,
+      totalRow: s.mode === "all" ? { label: "รวม", values: { visits: t.visits, identified: t.identifiedVisits, capture: o.CAPTURE_RATE, unique: t.uniqueCustomers, nw: t.newCustomers, ret: t.returningCustomers, buyers: ct.buyers, repeat: ct.repeatBuyers, repeatRate: o.REPEAT_RATE } } : null,
+      columns: [
+        { key: "branch", label: "สาขา", format: "branch" }, { key: "visits", label: L.VISITS, format: "int" }, { key: "identified", label: L.IDENTIFIED_VISITS, format: "int" },
+        { key: "capture", label: L.CAPTURE_RATE, format: "rate" }, { key: "unique", label: L.UNIQUE_CUSTOMERS, format: "int" }, { key: "nw", label: L.NEW_CUSTOMERS, format: "int" },
+        { key: "ret", label: L.RETURNING_CUSTOMERS, format: "int" }, { key: "buyers", label: L.BUYERS, format: "int" }, { key: "repeat", label: L.REPEAT_BUYERS, format: "int" }, { key: "repeatRate", label: L.REPEAT_RATE, format: "rate" }
+      ] }) + "</div>";
+  }
+
+  function salesTab() {
+    var s = S.cur, v = s.k.values, r = s.k.rates, g = s.k.growth;
+    var lostSub = v.LOST_TOTAL === undefined || v.LOST_TOTAL === null ? null : "โอกาสขาย " + fmt.int(v.LOST_OPPORTUNITIES) + " · Lead " + fmt.int(v.LOST_LEADS);
+    var html = '<div class="rp-kpis">' +
+      kpi({ label: L.LEADS, value: v.LEADS, delta: g.LEADS, code: "LEADS" }) +
+      kpi({ label: L.OPPORTUNITIES, value: v.OPPORTUNITIES, delta: g.OPPORTUNITIES, code: "OPPORTUNITIES" }) +
+      kpi({ label: L.SALES, value: v.SALES, delta: g.SALES, code: "SALES" }) +
+      kpi({ label: L.SALES_AMOUNT, value: v.SALES_AMOUNT, format: "money", delta: g.SALES_AMOUNT, code: "SALES_AMOUNT" }) +
+      kpi({ label: L.CLOSE_RATE, rate: r.CLOSE_RATE || null, code: "CLOSE_RATE" }) +
+      kpi({ label: L.LOST_RATE, rate: r.LOST_RATE || null, code: "LOST_RATE" }) +
+      kpi({ label: L.LOST_TOTAL, value: v.LOST_TOTAL, sub: lostSub, code: "LOST_TOTAL" }) + "</div>";
+    return html + '<div class="rp-charts">' + card("Funnel ลูกค้า", periodSub() + " · ร้อยละเทียบผู้มาติดต่อ", '<div id="rp-funnel"></div>', "rp-funnel") +
+      card("เหตุผลที่ไม่สำเร็จ", periodSub() + " · 5 อันดับ + อื่น ๆ · " + L.LOST_TOTAL + " (Lead + โอกาสขาย)", '<div id="rp-lost"></div>', "rp-lost") + "</div>";
+  }
+  function drawSales() {
+    var s = S.cur;
+    if (s.ctx.preset === "TODAY" || s.mode === "team" || s.mode === "none") {
+      var txt = s.mode === "team" ? "ไม่มีข้อมูลตัวอย่างของขอบเขตทีม (ผู้มาติดต่อไม่มีค่าตัวอย่าง)" : "ไม่มีข้อมูลตัวอย่างสำหรับช่วง/ขอบเขตนี้";
+      JCRM.chart.funnel("rp-funnel", { title: "Funnel ลูกค้า", stages: [], sample: { text: txt } });
+      JCRM.chart.hbar("rp-lost", { title: "เหตุผลที่ไม่สำเร็จ", items: [], sample: { text: txt } });
+      return;
+    }
+    var scope = s.mode === "all" ? "ALL" : s.branches[0];
+    JCRM.chart.funnel("rp-funnel", { title: "Funnel ลูกค้า", stages: JCRM.chart.funnelStages(scope, "kpi") });
+    JCRM.chart.hbar("rp-lost", { title: "เหตุผลที่ไม่สำเร็จ", items: JCRM.chart.lostReasonItems(scope), color: "--chart-lost", valueLabel: "จำนวน · ร้อยละ" });
+  }
+
+  function channelsTab() {
+    var s = S.cur, v = s.k.values, r = s.k.rates, today = s.ctx.preset === "TODAY";
+    var lr = D.kpis.org.leadResponse;
+    var respSub = null;
+    if (s.mode === "all") { respSub = "ฐาน " + fmt.int(lr.base) + " lead · ยังไม่ติดต่อ " + fmt.int(lr.notContacted); }
+    else if (s.mode === "branch") { respSub = "ฐาน " + DASH + " lead · ยังไม่ติดต่อ " + fmt.int(lr.notContactedByBranch[s.branches[0]]); }
+    var wc = r.WALKIN_CONVERSION || null;
+    var html = '<div class="rp-kpis">' +
+      kpi({ label: L.LEAD_RATE, rate: r.LEAD_RATE || null, code: "LEAD_RATE" }) +
+      kpi({ label: L.WALKIN_CONVERSION, rate: wc, sub: wc ? fmt.int(wc.num) + " / " + fmt.int(wc.den) : null, code: "WALKIN_CONVERSION" }) +
+      ui.kpiCard({ label: L.LEAD_RESPONSE_MIN, preset: s.ctx.preset, display: v.LEAD_RESPONSE_MIN === null || v.LEAD_RESPONSE_MIN === undefined ? DASH : fmt.minutes(v.LEAD_RESPONSE_MIN),
+        sub: today || s.mode === "team" || s.mode === "none" ? null : respSub, tooltip: "นาทีปฏิทิน [รอยืนยัน Q21] · เฉพาะ lead ช่องทางข้อความ (ข้อ 12.2)" }) + "</div>";
+    html += '<div class="rp-charts">' + card("แหล่งที่มาลูกค้า", periodSub() + " · ลูกค้าไม่ซ้ำตามช่องทางแรก", '<div id="rp-source"></div>', "rp-source") + "<div></div></div>";
+    if (today || s.mode === "team" || s.mode === "none") { return html + sampleFor(s.mode === "team" ? T.teamScopeNull : "ไม่มีข้อมูลตัวอย่างตารางช่องทางสำหรับช่วง/ขอบเขตนี้"); }
+    var chs = D.kpis.sources.channels;
+    var rows = s.branches.map(function (b) { var x = D.kpis.sources.byBranch[b], o = { branch: b, total: x.total }; chs.forEach(function (c) { o[c] = x[c]; }); return o; });
+    var tt = D.kpis.sources.total, sh = D.kpis.sources.totalShares, totalVals = { total: tt.total };
+    chs.forEach(function (c) { totalVals[c] = fmt.int(tt[c]) + " (" + fmt.rate(sh[c]) + ")"; });
+    var cols = [{ key: "branch", label: "สาขา", format: "branch" }].concat(chs.map(function (c) { return { key: c, label: JCRM.label("channels", c), format: "int", align: "end",
+      render: function (row) { return typeof row[c] === "string" ? esc(row[c]) : esc(fmt.int(row[c])); } }; })).concat([{ key: "total", label: "รวม", format: "int" }]);
+    return html + '<div class="card card--flush"><div class="card__header"><div><h3 class="card__title">ลูกค้าไม่ซ้ำตามช่องทางแรก</h3><p class="card__subtitle">คอลัมน์เว็บไซต์ซ่อนเพราะเป็น 0 ทั้งคอลัมน์ (ข้อ 13.3)</p></div></div>' +
+      ui.table({ id: "rp-ch", caption: "ลูกค้าไม่ซ้ำตามช่องทางแรก", stickyFirst: true, footer: false, rows: rows, columns: cols,
+        totalRow: s.mode === "all" ? { label: "รวม", values: totalVals, useRender: true } : null }) + "</div>";
+  }
+  function drawChannels() {
+    var s = S.cur;
+    if (s.ctx.preset === "TODAY" || s.mode === "team" || s.mode === "none") {
+      JCRM.chart.donut("rp-source", { title: "แหล่งที่มาลูกค้า", segments: [], sample: { text: s.mode === "team" ? T.teamScopeNull : "ไม่มีข้อมูลตัวอย่างสำหรับช่วง/ขอบเขตนี้" } });
+      return;
+    }
+    var obj = s.mode === "all" ? D.kpis.sources.total : D.kpis.sources.byBranch[s.branches[0]];
+    JCRM.chart.donut("rp-source", { title: "แหล่งที่มาลูกค้า", segments: JCRM.chart.sourceSegments(obj), centerValue: obj.total, centerLabel: L.UNIQUE_CUSTOMERS, tableLabel: "ช่องทางแรก" });
+  }
+
+  function staffTab() {
+    var s = S.cur, ctx = s.ctx;
+    var branches = JCRM.scopeBranches("report.staff_performance", "OWN");
+    if (!S.staffBranch || branches.indexOf(S.staffBranch) === -1) { S.staffBranch = branches.indexOf("JP1") !== -1 ? "JP1" : branches[0]; }
+    var sel = branches.length > 1 ? '<div class="field field--inline"><label class="label" for="rp-staff-branch">สาขา</label><select class="select" id="rp-staff-branch" data-jcrm-change="rp-staff-branch">' +
+      branches.map(function (b) { return '<option value="' + esc(b) + '"' + (b === S.staffBranch ? " selected" : "") + ">" + esc(JCRM.branchName(b)) + "</option>"; }).join("") + "</select></div>"
+      : '<div class="field field--inline"><span class="label">สาขา</span><span class="t-sm">' + esc(JCRM.branchName(S.staffBranch)) + "</span></div>";
+    var head = '<div class="rp-staff-bar">' + sel + '<p class="t-xs t-muted">ผูกผลงานด้วยผู้รับผิดชอบปัจจุบัน (owner) เท่านั้น · ติดตามตรงเวลา = Follow-up Performance (A19)</p></div>';
+    if (ctx.preset === "TODAY") { return head + sampleFor("ไม่มีข้อมูลตัวอย่างรายพนักงานของวันนี้"); }
+    if (S.staffBranch !== "JP1") { return head + sampleFor("ข้อมูลตัวอย่างรายพนักงานมีเฉพาะ " + JCRM.branchName("JP1")); }
+    var SJ = D.kpis.staffJP1, tm = D.kpis.teamJP1Sales, team = s.mode === "team";
+    var canDrill = JCRM.can("customer.read");
+    var rows = SJ.slices.filter(function (x) { return !team || x.staff; }).map(function (x) {
+      return { key: x.staff || "none", staff: x.staff, name: x.staff ? JCRM.staffName(x.staff) : "ไม่มีผู้รับผิดชอบ", leads: x.leads, opps: x.opportunities, sales: x.sales, amount: x.salesAmount,
+        conv: x.sales === null ? null : { num: x.sales, den: x.leads, display: fmt.pct(x.sales, x.leads) }, lostOpp: x.lostOpportunities, lostLead: x.lostLeads, openLeads: x.openLeads,
+        openOpps: x.openOpportunities, fu: null, overdue: x.tasksOverdue };
+    });
+    rows.push({ key: "team", staff: null, name: "ทีม " + tm.team, leads: tm.leads, opps: tm.opportunities, sales: tm.sales, amount: tm.salesAmount, conv: tm.convLeadToSale, lostOpp: null, lostLead: null, openLeads: null, openOpps: null, fu: null, overdue: tm.teamOverdueTasks, isTeam: true });
+    var t = SJ.total, rt = find(D.kpis.branchRates, "branch", "JP1");
+    return head + '<div class="card card--flush">' + ui.table({ id: "rp-staff", caption: "ผลงานรายพนักงาน " + JCRM.branchName("JP1"), stickyFirst: true, footer: false, rows: rows, rowKey: "key",
+      totalRow: team ? null : { label: "รวม " + JCRM.branchName("JP1"), values: { leads: t.leads, opps: t.opportunities, sales: t.sales, amount: t.salesAmount, conv: rt.CONV_LEAD_TO_SALE, lostOpp: t.lostOpportunities, lostLead: t.lostLeads, openLeads: t.openLeads, openOpps: t.openOpportunities, fu: rt.FOLLOWUP_COMPLETION, overdue: null } },
+      columns: [
+        { key: "name", label: "พนักงาน", render: function (r) { return r.staff && canDrill ? '<a href="' + esc(JCRM.link("customers", { owner: r.staff })) + '" title="ดูรายชื่อลูกค้าที่ดูแล">' + esc(r.name) + "</a>" : (r.isTeam ? "<strong>" + esc(r.name) + "</strong>" : esc(r.name)); } },
+        { key: "leads", label: "Leads", format: "int" }, { key: "opps", label: "Opportunities", format: "int" }, { key: "sales", label: "Sales", format: "int" },
+        { key: "amount", label: "ยอดขาย (บาท)", format: "moneyTable" }, { key: "conv", label: L.CONV_LEAD_TO_SALE, format: "rate" },
+        { key: "lostOpp", label: "Lost Opp", format: "int" }, { key: "lostLead", label: "Lost Lead", format: "int" }, { key: "openLeads", label: L.OPEN_LEADS, format: "int" },
+        { key: "openOpps", label: L.OPEN_OPPORTUNITIES, format: "int" }, { key: "fu", label: L.FOLLOWUP_COMPLETION, format: "rate" }, { key: "overdue", label: "งานเกินกำหนด", format: "int" }
+      ] }) + "</div>" + '<p class="rp-note">Conversion (Lead → ขาย) รายพนักงานคำนวณจาก Sales/Leads ในข้อ 13.6 · ติดตามตรงเวลารายพนักงานไม่มีในข้อ 13 จึงแสดง ' + DASH + (canDrill ? " · กดชื่อพนักงานเพื่อดูรายชื่อลูกค้า (ผ่านสิทธิ์ customer.read)" : "") + "</p>";
+  }
+
+  function branchesTab() {
+    var s = S.cur;
+    if (s.ctx.preset === "TODAY") {
+      var trs = D.kpis.today.rows.filter(function (x) { return s.mode === "all" || s.branches.indexOf(x.branch) !== -1; });
+      if (s.mode === "team" || s.mode === "none") { return sampleFor("ไม่มีข้อมูลตัวอย่างรายสาขาของวันนี้สำหรับขอบเขตนี้"); }
+      var tt = D.kpis.today.total;
+      return '<section class="rp-section"><h3>วันนี้ ' + esc(fmt.asOf()) + " (ข้อ 13.11)</h3>" + '<div class="card card--flush">' + ui.table({ id: "rp-today", caption: "วันนี้รายสาขา", stickyFirst: true, footer: false, rows: trs,
+        totalRow: s.mode === "all" ? { label: "รวม", values: tt, useRender: true } : null,
+        columns: [{ key: "branch", label: "สาขา", format: "branch" }, { key: "walkInVisits", label: "Walk-in", format: "int" }, { key: "onlinePhoneVisits", label: "ออนไลน์/โทร", format: "int" },
+          { key: "visits", label: "VISITS", format: "int" }, { key: "identifiedVisits", label: "Identified", format: "int" }, { key: "uniqueCustomers", label: "ลูกค้าไม่ซ้ำวันนี้", format: "int" },
+          { key: "uniqueSameDayLastWeek", label: "วันเดียวกันสัปดาห์ก่อน (ถึง " + fmt.time(D.meta.now, { suffix: false }) + ")", format: "int" },
+          { key: "growthDisplay", label: "เปลี่ยน", render: function (r) { return ui.delta(r.growthDisplay, ui.deltaTooltip("TODAY")) || esc(r.growthDisplay); } },
+          { key: "openVisits", label: "visit เปิดอยู่", format: "int" }] }) + "</div></section>";
+    }
+    if (s.mode === "none") { return sampleFor("ไม่มีข้อมูลตัวอย่างสำหรับ" + s.label); }
+    var team = s.mode === "team", tm = D.kpis.teamJP1Sales;
+    var rows = s.branches.map(function (b) {
+      var x = find(D.kpis.branches, "branch", b);
+      if (team) { return { branch: b, leads: tm.leads, opportunities: tm.opportunities, sales: tm.sales, salesAmount: tm.salesAmount }; }
+      var o = {}; Object.keys(x).forEach(function (k) { o[k] = x[k]; }); return o;
+    });
+    var t1 = '<section class="rp-section"><h3>ผลงานรายสาขา (ข้อ 13.2)</h3>' + (team ? '<p class="rp-note">' + esc(T.teamScopeNull) + " · แถวทีม JP1-SALES แสดงเฉพาะค่าที่ผูกพนักงาน (ข้อ 13.6)</p>" : "") + '<div class="card card--flush">' +
+      ui.table({ id: "rp-b1", caption: "ผลงานรายสาขา", stickyFirst: true, compact: true, footer: false, rows: rows, totalRow: s.mode === "all" ? { label: "รวม", values: D.kpis.branchesTotal, useRender: true } : null,
+        columns: [{ key: "branch", label: "สาขา", format: "branch" }, { key: "visits", label: "VISITS", format: "int" }, { key: "walkInVisits", label: "Walk-in", format: "int" }, { key: "onlinePhoneVisits", label: "ออนไลน์/โทร", format: "int" },
+          { key: "identifiedVisits", label: "Identified", format: "int" }, { key: "uniqueCustomers", label: "ลูกค้าไม่ซ้ำ", format: "int" }, { key: "newCustomers", label: "ใหม่", format: "int" }, { key: "returningCustomers", label: "เก่า", format: "int" },
+          { key: "leads", label: "Leads", format: "int" }, { key: "opportunities", label: "Opps", format: "int" }, { key: "sales", label: "Sales", format: "int" }, { key: "lostOpportunities", label: "Lost Opp", format: "int" }, { key: "lostLeads", label: "Lost Lead", format: "int" },
+          { key: "salesAmount", label: "ยอดขาย (บาท)", format: "moneyTable" }, { key: "salesAmountPrevious", label: "ยอดช่วงก่อน (บาท)", format: "moneyTable" },
+          { key: "salesAmountGrowthDisplay", label: "เปลี่ยน", render: function (r) { return r.salesAmountGrowthDisplay ? ui.delta(r.salesAmountGrowthDisplay, ui.deltaTooltip("LAST_30_DAYS")) : nul(); } }] }) + "</div></section>";
+    var rrows = s.branches.map(function (b) {
+      var x = find(D.kpis.branchRates, "branch", b);
+      if (team) { return { branch: b, CONV_LEAD_TO_SALE: tm.convLeadToSale }; }
+      var o = {}; Object.keys(x).forEach(function (k) { o[k] = x[k]; }); return o;
+    });
+    var orgR = D.kpis.org.rates;
+    var t2 = '<section class="rp-section"><h3>อัตรารายสาขา (ข้อ 13.2b)</h3><div class="card card--flush">' +
+      ui.table({ id: "rp-b2", caption: "อัตรารายสาขา", stickyFirst: true, compact: true, footer: false, rows: rrows,
+        totalRow: s.mode === "all" ? { label: "รวม", useRender: true, values: { LEAD_RATE: orgR.LEAD_RATE, OPPORTUNITY_RATE: orgR.OPPORTUNITY_RATE, CLOSE_RATE: orgR.CLOSE_RATE, LOST_RATE: orgR.LOST_RATE, CONV_LEAD_TO_SALE: orgR.CONV_LEAD_TO_SALE,
+          CONV_LEAD_TO_SALE_PREVIOUS: D.kpis.org.ratesPrevious.CONV_LEAD_TO_SALE, CONV_LEAD_TO_SALE_PP: D.kpis.org.ppDisplay.CONV_LEAD_TO_SALE, CONV_VISIT_TO_SALE: orgR.CONV_VISIT_TO_SALE, WALKIN_CONVERSION: orgR.WALKIN_CONVERSION,
+          CAPTURE_RATE: orgR.CAPTURE_RATE, OUTCOME_COMPLETION: orgR.OUTCOME_COMPLETION, FOLLOWUP_COMPLETION: orgR.FOLLOWUP_COMPLETION, REPEAT_RATE: orgR.REPEAT_RATE } } : null,
+        columns: [{ key: "branch", label: "สาขา", format: "branch" }, { key: "LEAD_RATE", label: L.LEAD_RATE, format: "rate" }, { key: "OPPORTUNITY_RATE", label: L.OPPORTUNITY_RATE, format: "rate" },
+          { key: "CLOSE_RATE", label: L.CLOSE_RATE, format: "rate" }, { key: "LOST_RATE", label: L.LOST_RATE, format: "rate" }, { key: "CONV_LEAD_TO_SALE", label: L.CONV_LEAD_TO_SALE, format: "rate" },
+          { key: "CONV_LEAD_TO_SALE_PREVIOUS", label: "Lead → ขาย ช่วงก่อน", format: "rate" },
+          { key: "CONV_LEAD_TO_SALE_PP", label: "เปลี่ยน (pp)", render: function (r) { return r.CONV_LEAD_TO_SALE_PP ? ui.delta(r.CONV_LEAD_TO_SALE_PP, ui.deltaTooltip("LAST_30_DAYS")) : nul(); } },
+          { key: "CONV_VISIT_TO_SALE", label: L.CONV_VISIT_TO_SALE, format: "rate" }, { key: "WALKIN_CONVERSION", label: L.WALKIN_CONVERSION, format: "rate" }, { key: "CAPTURE_RATE", label: L.CAPTURE_RATE, format: "rate" },
+          { key: "OUTCOME_COMPLETION", label: L.OUTCOME_COMPLETION, format: "rate" }, { key: "FOLLOWUP_COMPLETION", label: L.FOLLOWUP_COMPLETION, format: "rate" }, { key: "REPEAT_RATE", label: L.REPEAT_RATE, format: "rate" }] }) + "</div></section>";
+    if (team) { return t1 + t2 + sampleFor("ตารางค่าประกอบ ช่วงก่อนหน้า และ Funnel รายสาขา ไม่มีข้อมูลตัวอย่างของขอบเขตทีม"); }
+    var crow = s.branches.map(function (b) { return find(D.kpis.branchComponents, "branch", b); });
+    var t3 = '<section class="rp-section"><h3>ค่าประกอบรายสาขา (ข้อ 13.2b)</h3><div class="card card--flush">' +
+      ui.table({ id: "rp-b3", caption: "ค่าประกอบรายสาขา", stickyFirst: true, compact: true, footer: false, rows: crow, totalRow: s.mode === "all" ? { label: "รวม", values: D.kpis.branchComponentsTotal } : null,
+        columns: [{ key: "branch", label: "สาขา", format: "branch" }, { key: "salesWalkinOrigin", label: "Sales ต้นทาง Walk-in", format: "int" }, { key: "buyers", label: "ผู้ซื้อ", format: "int" }, { key: "repeatBuyers", label: "ผู้ซื้อซ้ำ", format: "int" },
+          { key: "visitsClosed", label: "visit ปิดแล้ว", format: "int" }, { key: "visitsUnrecorded", label: "UNRECORDED", format: "int" }, { key: "followupDenominator", label: "FOLLOW_UP ในตัวหาร", format: "int" },
+          { key: "followupOnTime", label: "ตรงเวลา", format: "int" }, { key: "followupLate", label: "เสร็จช้า", format: "int" }, { key: "followupOpenPastGrace", label: "เปิด·พ้นผ่อนผัน", format: "int" },
+          { key: "followupExcludedOverdueInGrace", label: "ตัดออก: เกินกำหนด·ในผ่อนผัน", format: "int" }, { key: "followupExcludedOpenDueToday", label: "ตัดออก: เปิด·due วันนี้", format: "int" }] }) + "</div></section>";
+    var prow = s.branches.map(function (b) { return find(D.kpis.branchPrevious, "branch", b); });
+    var gd = function (r) { var g = r.growthDisplay; return esc([g.visits, g.uniqueCustomers, g.leads, g.opportunities, g.sales].join(" · ")); };
+    var t4 = '<section class="rp-section"><h3>ช่วงก่อนหน้า ' + esc(fmt.rangeInclusive(D.meta.periods.LAST_30_DAYS_PREVIOUS.start, D.meta.periods.LAST_30_DAYS_PREVIOUS.endExclusive)) + " (ข้อ 13.2b)</h3><div class=\"card card--flush\">" +
+      ui.table({ id: "rp-b4", caption: "ช่วงก่อนหน้ารายสาขา", stickyFirst: true, compact: true, footer: false, rows: prow, totalRow: s.mode === "all" ? { label: "รวม", values: D.kpis.branchPreviousTotal, useRender: true } : null,
+        columns: [{ key: "branch", label: "สาขา", format: "branch" }, { key: "visits", label: "VISITS ก่อน", format: "int" }, { key: "uniqueCustomers", label: "ลูกค้าไม่ซ้ำ ก่อน", format: "int" }, { key: "leads", label: "Leads ก่อน", format: "int" },
+          { key: "opportunities", label: "Opps ก่อน", format: "int" }, { key: "sales", label: "Sales ก่อน", format: "int" }, { key: "growthDisplay", label: "เปลี่ยน V · U · L · O · S", render: gd }] }) + "</div></section>";
+    var t5 = '<section class="rp-section"><h3>Funnel รายสาขา (ร้อยละเทียบผู้มาติดต่อ)</h3><div class="rp-funnels">' + s.branches.map(function (b) {
+      return '<div class="card"><h4 class="rp-card-title">' + esc(JCRM.branchName(b)) + '</h4><div id="rp-fn-' + esc(b) + '"></div></div>';
+    }).join("") + "</div></section>";
+    return t1 + t2 + t3 + t4 + t5;
+  }
+  function drawBranches() {
+    var s = S.cur;
+    if (s.ctx.preset === "TODAY" || s.mode === "team" || s.mode === "none") { return; }
+    s.branches.forEach(function (b) { JCRM.chart.funnel("rp-fn-" + b, { title: "Funnel " + JCRM.branchName(b), stages: JCRM.chart.funnelStages(b, "kpi") }); });
+  }
+
+  /* ---------------------------------------------------------------------------
+     render
+     ------------------------------------------------------------------------ */
+  function render(ctx) {
+    S.cur = scopeOf(ctx);
+    S.cur.ctx = ctx;
+    var canStaff = JCRM.can("report.staff_performance");
+    var tabs = TABS.filter(function (t) { return t.id !== "staff" || canStaff; });
+    if (!JCRM.find(tabs, "id", S.tab)) { S.tab = "overview"; }
+    var header = ui.pageHeader({
+      title: "รายงาน",
+      lead: "ตัวเลขรวม ไม่มีข้อมูลส่วนบุคคล · ขอบเขต " + S.cur.label + (S.cur.mode === "team" ? " (ตัวเลขที่ผูกพนักงานใช้ผู้รับผิดชอบปัจจุบัน)" : ""),
+      actions: [{ label: "ส่งออก", variant: "secondary", icon: "download", permission: "report.export", action: "rp-export" }]
+    });
+    var note = S.cur.mode === "none" ? ui.sampleNote({ text: "ไม่มีข้อมูลตัวอย่างสำหรับ" + S.cur.label }) : "";
+    document.getElementById("page").innerHTML = header + note + ui.tabs({ id: "rp-tabs", label: "แท็บรายงาน", param: "tab", selected: S.tab, tabs: tabs.map(function (t) {
+      var html = { overview: overviewTab, customers: customersTab, sales: salesTab, channels: channelsTab, staff: staffTab, branches: branchesTab }[t.id]();
+      return { id: t.id, label: t.label, html: html };
+    }) }) + '<p class="proto-note" style="margin-top:var(--space-4)">ระบบจริงเรียก api.get_kpis / api.get_report (รหัส OVERVIEW · CUSTOMERS · SALES + LOST_REASONS · CHANNELS · STAFF · BRANCHES) ผ่าน RPC SECURITY DEFINER ที่ตัดขอบเขตตามสิทธิ์ · prototype เปิดเฉพาะช่วง วันนี้ และ 30 วันล่าสุด · ค่าที่ข้อ 13 ไม่มีแสดง ' + DASH + "</p>";
+    drawOverview(); drawSales(); drawChannels(); drawBranches();
+  }
+
+  /* ---------------------------------------------------------------------------
+     การกระทำ
+     ------------------------------------------------------------------------ */
+  document.addEventListener("jcrm:tabchange", function (e) { if (e.detail && e.detail.tabsId === "rp-tabs") { S.tab = e.detail.tab; } });
+  JCRM.on("rp-staff-branch", function (v) { S.staffBranch = v; if (S.cur) { render(JCRM.state()); JCRM.initTabs(document); } });
+  JCRM.on("rp-export", function () {
+    if (!JCRM.can("report.export")) { JCRM.toast(T.rpcDenied, "warning"); return; }
+    var s = S.cur, tab = JCRM.find(TABS, "id", S.tab) || TABS[0];
+    var preset = JCRM.find(D.meta.presets, "code", s.ctx.preset);
+    var range = s.ctx.preset === "TODAY" ? fmt.date(D.meta.now) : fmt.rangeInclusive(D.meta.periods.LAST_30_DAYS.start, D.meta.periods.LAST_30_DAYS.endExclusive);
+    var codes = tab.id === "sales" ? "SALES + LOST_REASONS" : tab.code;
+    var branchText = tab.id === "staff" ? JCRM.branchName(S.staffBranch) : s.label;
+    JCRM.dialog({
+      title: "ส่งออกรายงาน", size: "md",
+      body: '<dl class="stack-2 t-sm">' + [["แท็บ", tab.label], ["รหัสรายงาน", codes], ["ช่วงเวลา", preset.labelTh + " · " + range], ["ขอบเขต/สาขา", branchText], ["รูปแบบไฟล์", "รอยืนยัน"]].map(function (x) {
+        return '<div class="row-between"><dt class="t-muted">' + esc(x[0]) + "</dt><dd>" + esc(x[1]) + "</dd></div>";
+      }).join("") + '</dl><p class="alert" role="note" style="margin-top:var(--space-3)">' + JCRM.icon("info", "nav-icon") + "<span>ไฟล์มีเฉพาะตัวเลขรวม ไม่มีข้อมูลส่วนบุคคล และมีลายน้ำผู้ส่งออก · ไม่ต้องอนุมัติ · ไม่นับเพดานการส่งออกข้อมูลลูกค้า (ข้อ 8.2)</span></p>",
+      submitLabel: "ส่งออก", submitVariant: "primary",
+      onSubmit: function () {
+        JCRM.toast("ส่งออกรายงานแล้ว (prototype) · ระบบจริงเรียก api.record_report_export('" + tab.code + "', …) บันทึก REPORT_EXPORTED แล้วสร้างไฟล์ · prototype ไม่สร้างไฟล์", "success", { title: "prototype" });
+        return true;
+      }
+    });
+  });
+
+  JCRM.page({ id: "reports", render: render });
+})();
+</script>
+</body>
+</html>

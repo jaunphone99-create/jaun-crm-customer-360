@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตั้งค่าระบบ · Integration · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 18 · ตั้งค่าระบบ · Integration — CANONICAL v2.2 ข้อ 1.2 · 8.1 · 8.2 · 9.2.1 · 9.6 · 11.2 · 13.14 · sitemap-screen-specs ข้อ 21 · ไม่มี hex */
+.st-tabpanel { padding-top: var(--space-4); }
+.st-group { margin-bottom: var(--space-5); }
+.st-group .card__header { padding: var(--space-4) var(--space-5) 0; margin-bottom: var(--space-2); }
+.st-key { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-xs); color: var(--text-secondary-sunk); white-space: nowrap; }
+.st-value { font-variant-numeric: tabular-nums; }
+.st-limits { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); }
+.st-limits th, .st-limits td { border: 1px solid var(--border-subtle); padding: var(--space-1) var(--space-2); text-align: start; }
+.st-limits th { background: var(--surface-raised); font-weight: var(--fw-medium); color: var(--text-secondary-sunk); }
+.st-limits td[data-numeric] { text-align: end; }
+.st-json { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--fs-xs); background: var(--surface-raised); border-radius: var(--radius-sm); padding: 2px var(--space-1); overflow-wrap: anywhere; }
+</style>
+</head>
+<body data-page="settings" data-roles="BUSINESS_ADMIN SYSTEM_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* ============================================================================
+   หน้า 18 · ตั้งค่าระบบ · Integration (settings) · แท็บ เกณฑ์ธุรกิจ (BA) · เชิงเทคนิค (SA) · Integration (SA) · หน้าแรกของ SYSTEM_ADMIN
+   แหล่ง: CANONICAL v2.2 ข้อ 11.2 (คีย์ · ค่าเริ่มต้น · ผู้แก้ · รอยืนยันค่า) · 1.2 (clock) · 8.2 (export.limits) · 9.2.1 (allowed_sso_domains) · 9.6 (ตารางเวลางานระบบ)
+         8.1 (settings.business 🔐 · settings.system 🔐 · integration.manage 🔐) · 13.14 (Integration: ยังไม่เชื่อมต่อ (Phase 4) ยกเว้น MANUAL)
+   ระบบจริง: api.get_settings() (คืนเฉพาะคีย์ที่ผู้เรียกแก้ได้) · api.update_setting(p_key, p_value) · api.list_integration_logs(...)
+   prototype: ค่าที่แก้อยู่ในหน่วยความจำเท่านั้น · ป้ายหัวข้อภาษาไทยเป็นข้อเสนอของผู้ออกแบบ (sitemap-screen-specs ข้อ 21.4)
+   ========================================================================= */
+(function () {
+  "use strict";
+  var D = JCRM.data, ui = JCRM.ui, fmt = JCRM.fmt, esc = JCRM.esc;
+  var DASH = fmt.DASH, NOW = D.meta.now;
+
+  /* ค่าเริ่มต้นจาก D.settings (ข้อ 11.2) — แยกคีย์และค่าที่เขียนคู่กันด้วย " · " */
+  var DEFAULTS = {};
+  D.settings.forEach(function (row) {
+    var keys = row.key.split(" · "), vals = String(row.defaultValue).split(" · ");
+    keys.forEach(function (k, i) {
+      var raw = keys.length === vals.length ? vals[i] : row.defaultValue;
+      var v; try { v = JSON.parse(raw); } catch (e) { v = raw; }
+      DEFAULTS[k] = { value: v, raw: raw, editableBy: row.editableBy };
+    });
+  });
+  var values = {}, updated = {};
+  Object.keys(DEFAULTS).forEach(function (k) { values[k] = DEFAULTS[k].value; });
+  values["export.limits"] = D.exportLimits.map(function (l) { return { role: l.role, maxRows: l.maxRows, perDay: l.perDay, approver: l.approver, approverTh: l.approverTh }; });
+  values.env = null;                                   /* ค่าของ prototype ไม่มีในข้อ 13 → – */
+  values.clock = { as_of: D.meta.now };                /* seed/test (ข้อ 1.2 · 11.2) */
+
+  function roleLabel(code) { var r = JCRM.role(code); return r ? r.labelTh : DASH; }
+  function approverText(l) {
+    if (!l.approver) { return "ไม่ต้องอนุมัติ · เกินเพดาน = ปฏิเสธ"; }
+    return roleLabel(l.approver) + (l.role === "MARKETING" ? " ทุกครั้ง" : "") + (l.role === "EXECUTIVE" ? " (รอยืนยัน Q23)" : "");
+  }
+  function unitText(n, unit) { return fmt.int(n) + " " + unit; }
+  function pairText(v, unit) { return Array.isArray(v) ? fmt.int(v[0]) + " · " + fmt.int(v[1]) + " " + unit : DASH; }
+
+  /* หัวข้อ · หน่วย · ชนิดค่า · ข้อความผลกระทบ (ป้ายไทยเป็นข้อเสนอของผู้ออกแบบ · sitemap-screen-specs ข้อ 21.4) */
+  var GROUPS = [
+    { title: "เวลาทำการ", impact: "มีผลกับการนับนาทีและการส่งแจ้งเตือนในเวลาทำการรอบถัดไป", items: [
+      { key: "business_hours", label: "เวลาทำการ (ค่าเริ่มต้นทุกสาขา · แต่ละสาขาตั้งทับได้ด้วยคีย์รหัสสาขา)", type: "hours", note: "รอยืนยัน Q4 · ยังไม่รองรับวันหยุด (ข้อ 11.1)" }] },
+    { title: "การแจ้งเตือนตามเวลา", impact: "มีผลกับการแจ้งเตือนรอบถัดไป", items: [
+      { key: "sla.followup_remind_min", label: "เตือนก่อนถึงเวลาติดตาม", type: "int", unit: "นาที" },
+      { key: "sla.lead_unassigned_min", label: "แจ้งเมื่อ Lead ไม่มีผู้รับผิดชอบเกิน", type: "int", unit: "นาที" },
+      { key: "sla.lead_not_contacted_min", label: "แจ้งเมื่อ Lead ยังไม่ถูกติดต่อเกิน", type: "int", unit: "นาที" },
+      { key: "sla.visitor_waiting_min", label: "แจ้งเมื่อลูกค้ารอคิวเกิน", type: "int", unit: "นาที" },
+      { key: "sla.visit_in_service_min", label: "แจ้งเมื่อให้บริการนานโดยยังไม่บันทึกผลเกิน", type: "int", unit: "นาที" },
+      { key: "sla.opportunity_stale_days", label: "โอกาสขายไม่มีความเคลื่อนไหว (ผู้รับผิดชอบ · ผู้จัดการสาขา)", type: "pair", unit: "วัน", names: ["ผู้รับผิดชอบ", "ผู้จัดการสาขา"] },
+      { key: "escalation.overdue_hours", label: "ส่งต่องานเกินกำหนด (หัวหน้าทีม · ผู้จัดการสาขา)", type: "pair", unit: "ชั่วโมง", names: ["หัวหน้าทีม", "ผู้จัดการสาขา"] }] },
+    { title: "คุณภาพข้อมูล", impact: "มีผลกับศูนย์คุณภาพข้อมูลเมื่อคำนวณครั้งถัดไป", items: [
+      { key: "dq.lead_without_outcome_days", label: "Lead ค้างไม่มีผลเมื่อเกิน", type: "int", unit: "วัน" },
+      { key: "dq.won_without_txn_days", label: "ปิดขายแต่ไม่มีเลขธุรกรรมเมื่อเกิน", type: "int", unit: "วัน" },
+      { key: "dq.visit_unrecorded_days", label: "ช่วงแสดงรายการไม่ได้บันทึกผลการให้บริการ", type: "int", unit: "วัน" }] },
+    { title: "ป้ายและเอกสาร", impact: "มีผลกับป้ายลูกค้าใหม่และใบเสนอราคาที่ส่งหลังบันทึก", items: [
+      { key: "badge.new_customer_days", label: "ป้ายลูกค้าใหม่", type: "int", unit: "วัน" },
+      { key: "quotation.valid_days", label: "อายุใบเสนอราคา", type: "int", unit: "วัน" }] },
+    { title: "เวลาส่งการแจ้งเตือนสรุป", impact: "มีผลกับการแจ้งเตือนสรุปรอบถัดไป", items: [
+      { key: "notify.duplicate_digest_time", label: "สรุปลูกค้าอาจซ้ำ", type: "time" },
+      { key: "notify.data_missing_time", label: "แจ้งข้อมูลลูกค้าไม่ครบ", type: "time" }] },
+    { title: "การส่งออก", impact: "มีผลกับคำขอส่งออกที่ยื่นหลังบันทึก", items: [
+      { key: "export.limits", label: "เพดานการส่งออก", type: "limits", note: "รอยืนยัน Q7 · ผู้อนุมัติของผู้บริหาร รอยืนยัน Q23" },
+      { key: "export.link_ttl_hours", label: "อายุไฟล์ส่งออก", type: "int", unit: "ชั่วโมง" },
+      { key: "export.max_downloads", label: "ดาวน์โหลดได้สูงสุด", type: "int", unit: "ครั้ง" }] },
+    { title: "ความปลอดภัย", impact: "มีผลกับการนับครั้งถัดไป", items: [
+      { key: "security.reveal_per_hour", label: "เปิดดูข้อมูลติดต่อต่อชั่วโมง (เกินแล้วปฏิเสธ)", type: "int", unit: "ครั้ง" },
+      { key: "security.search_per_hour", label: "ค้นหาต่อชั่วโมง", type: "int", unit: "ครั้ง" },
+      { key: "security.search_miss_per_hour", label: "ค้นหาไม่พบต่อชั่วโมงก่อนระงับ", type: "int", unit: "ครั้ง" },
+      { key: "security.link_per_day", label: "ผูกลูกค้าจากสาขาอื่นต่อวันก่อนแจ้งผู้จัดการ", type: "int", unit: "ครั้ง" },
+      { key: "security.customer_view_per_hour", label: "เปิดดูข้อมูลลูกค้าต่อชั่วโมงก่อนแจ้งเตือน (แจ้งเท่านั้น ไม่บล็อก)", type: "int", unit: "ครั้ง" },
+      { key: "security.login_ip_per_15min", label: "จำกัดการเข้าสู่ระบบต่อ IP ต่อ 15 นาที", type: "int", unit: "ครั้ง" }] },
+    { title: "อุปกรณ์ counter", impact: "มีผลกับอุปกรณ์ counter เมื่อโหลดหน้าใหม่", items: [
+      { key: "session.shared_counter_idle_min", label: "ล็อกหน้าจอเมื่อไม่มีการใช้งาน", type: "int", unit: "นาที" }] },
+    { title: "PDPA", impact: "มีผลกับความยินยอมและการทำข้อมูลนิรนามที่บันทึกหลังบันทึก", items: [
+      { key: "pdpa.current_notice_version", label: "ฉบับประกาศความเป็นส่วนตัวปัจจุบัน", type: "text", note: "เนื้อความประกาศ รอยืนยัน Q9" },
+      { key: "dsr.anonymize_per_day", label: "ทำข้อมูลนิรนามได้สูงสุดต่อวันต่อผู้ใช้", type: "int", unit: "รายการ" }] }
+  ];
+  var SYSTEM_ITEMS = [
+    { key: "env", label: "สภาพแวดล้อม", type: "env", note: "dev · staging · prod (ค่าของ prototype ไม่มีในข้อ 13)" },
+    { key: "clock", label: "นาฬิกาอ้างอิงของรายงาน", type: "clock" },
+    { key: "allowed_sso_domains", label: "โดเมนที่อนุญาตให้ใช้ SSO", type: "domains", note: "รอยืนยัน Q5" }
+  ];
+  /* ตารางเวลางานระบบ (ข้อ 9.6 · Asia/Bangkok → cron UTC) — อ่านอย่างเดียว · data.js ไม่มีตารางนี้ จึงคัดจาก CANONICAL */
+  var CRON = [
+    ["app.job_close_stale_visits", "00:05 น. ทุกวัน", "5 17 * * *", "visit ที่ยังไม่ปิดของวันก่อนหน้า → เสร็จสิ้น + ไม่ได้บันทึกผล"],
+    ["app.job_expire_quotations", "00:10 น. ทุกวัน", "10 17 * * *", "ใบเสนอราคาเลยวันใช้ได้ → หมดอายุ"],
+    ["app.job_retention", "02:00 น. ทุกวัน", "0 19 * * *", "ทำข้อมูลนิรนามตามระยะเวลาเก็บ แล้วลบ log ที่ครบกำหนด"],
+    ["app.job_expire_exports", "ทุกชั่วโมง นาทีที่ 15", "15 * * * *", "ไฟล์ส่งออกเกินอายุ → หมดอายุ"],
+    ["app.job_notifications", "ทุก 5 นาที", "*/5 * * * *", "สร้างการแจ้งเตือนตามเวลา"],
+    ["Edge Function cron-export-cleanup", DASH, DASH, "ลบไฟล์ใน Storage จาก api.svc_expired_export_files() (รอยืนยัน)"]
+  ];
+
+  /* ----------------------------------------------------------- แสดงค่า */
+  function display(item) {
+    var v = values[item.key];
+    switch (item.type) {
+      case "int": return esc(v === null || v === undefined ? DASH : unitText(v, item.unit));
+      case "pair": return esc(pairText(v, item.unit));
+      case "time": return esc(v ? v + " น." : DASH);
+      case "text": return esc(v || DASH);
+      case "hours":
+        var def = v && v["default"];
+        var rows = [esc("ทุกสาขา (ค่าเริ่มต้น) " + (def ? def[0] + "–" + def[1] + " น." : DASH))];
+        Object.keys(v || {}).filter(function (k) { return k !== "default"; }).forEach(function (b) { rows.push(esc(JCRM.branchName(b) + " " + v[b][0] + "–" + v[b][1] + " น.")); });
+        if (rows.length === 1) { rows.push('<span class="t-xs t-muted">ไม่มีค่าเฉพาะสาขาในข้อมูลตัวอย่าง</span>'); }
+        return rows.join("<br>");
+      case "limits":
+        return '<table class="st-limits"><caption class="sr-only">เพดานการส่งออก</caption><thead><tr><th scope="col">ยื่นในบทบาท</th><th scope="col">แถว/ครั้ง</th><th scope="col">ครั้ง/วัน</th><th scope="col">ผู้อนุมัติ</th></tr></thead><tbody>' +
+          v.map(function (l) { return "<tr><td>" + esc(roleLabel(l.role)) + "</td><td data-numeric>" + esc(fmt.int(l.maxRows)) + "</td><td data-numeric>" + esc(fmt.int(l.perDay)) + "</td><td>" + esc(approverText(l)) + "</td></tr>"; }).join("") + "</tbody></table>";
+      case "env": return v ? '<span class="st-json">"' + esc(v) + '"</span>' : esc(DASH);
+      case "clock": return '<span class="st-json">' + esc(JSON.stringify(v)) + "</span>";
+      case "domains": return '<span class="st-json">' + esc(JSON.stringify(v || [])) + "</span>" + (!v || !v.length ? '<span class="cell-sub">ยังไม่ได้ตั้งค่า (ปุ่ม SSO จะใช้ไม่ได้)</span>' : "");
+      default: return esc(String(v));
+    }
+  }
+  function lastUpdated(key) { var u = updated[key]; return u ? esc(JCRM.staffName(u.by) + " · " + fmt.dateTime(u.at)) : '<span class="is-null">' + DASH + "</span>"; }
+  function editButton(item, perm) {
+    var acc = JCRM.access(perm);
+    if (!acc.visible) { return ""; }
+    return ui.button({ label: "แก้ไข", variant: "ghost", size: "sm", action: acc.allowed ? "st-edit" : null, id: item.key, disabledReason: acc.allowed ? null : acc.reason });
+  }
+  function settingsTable(items, perm, id) {
+    return ui.table({
+      id: id, caption: "ค่าตั้ง", rowKey: "key",
+      columns: [
+        { key: "label", label: "หัวข้อ", render: function (it) { return esc(it.label) + (it.note ? '<span class="cell-sub">' + esc(it.note) + "</span>" : ""); } },
+        { key: "key", label: "คีย์", render: function (it) { return '<span class="st-key">' + esc(it.key) + "</span>"; } },
+        { key: "value", label: "ค่า", render: function (it) { return '<span class="st-value">' + display(it) + "</span>"; } },
+        { key: "updated", label: "ปรับล่าสุด", hide: "tablet", render: function (it) { return lastUpdated(it.key); } },
+        { key: "key", label: "การกระทำ", render: function (it) { return editButton(it, perm); } }
+      ],
+      rows: items, footer: false
+    });
+  }
+
+  /* ----------------------------------------------------------- แท็บ */
+  function mfaBar(perm) { var a = JCRM.access(perm); return a.visible && !a.allowed ? '<div class="section">' + ui.state("mfa") + "</div>" : ""; }
+  function businessPanel() {
+    return '<div class="st-tabpanel">' + mfaBar("settings.business") +
+      '<p class="t-sm t-muted section">แก้ได้ด้วยสิทธิ์ settings.business 🔐 (ต้องยืนยัน MFA ในเซสชันนี้) · อ่านผ่าน api.get_settings() ซึ่งคืนเฉพาะคีย์ที่คุณแก้ได้ · ค่าเริ่มต้นทั้งหมดรอยืนยันค่า (ข้อ 11.2)</p>' +
+      GROUPS.map(function (g, i) {
+        return '<section class="card card--flush st-group" aria-labelledby="st-g' + i + '"><div class="card__header"><div><h2 class="card__title" id="st-g' + i + '">' + esc(g.title) + "</h2>" +
+          '<p class="card__subtitle">' + esc(g.impact) + "</p></div>" + ui.badge("ค่าเริ่มต้น รอยืนยัน", "warning", "badge--square") + "</div>" + settingsTable(g.items, "settings.business", "st-biz-" + i) + "</section>";
+      }).join("") + "</div>";
+  }
+  function systemPanel() {
+    return '<div class="st-tabpanel">' + mfaBar("settings.system") +
+      '<p class="t-sm t-muted section">แก้ได้ด้วยสิทธิ์ settings.system 🔐 · ผู้ดูแลระบบไม่มีสิทธิ์ข้อมูลลูกค้าใด ๆ (ข้อ 7.1)</p>' +
+      '<section class="card card--flush st-group" aria-labelledby="st-sys"><div class="card__header"><div><h2 class="card__title" id="st-sys">ค่าเชิงเทคนิค</h2>' +
+      '<p class="card__subtitle">app.clock() = coalesce(as_of, now()) เมื่อสภาพแวดล้อมไม่ใช่ prod · prod ใช้เวลาปัจจุบันเสมอ (ข้อ 1.2)</p></div></div>' +
+      settingsTable(SYSTEM_ITEMS, "settings.system", "st-system") +
+      '<div style="padding:var(--space-3) var(--space-5)"><p class="alert alert--warning" role="note">สภาพแวดล้อม prod ต้องเป็น null (clock.as_of)</p></div></section>' +
+      '<section class="card card--flush st-group" aria-labelledby="st-cron"><div class="card__header"><div><h2 class="card__title" id="st-cron">ตารางเวลางานระบบ (อ่านอย่างเดียว)</h2>' +
+      '<p class="card__subtitle">pg_cron รันในฐานข้อมูลในฐานะ postgres · ตั้งใน migration *_cron.sql (Supabase เท่านั้น) · เวลา Asia/Bangkok แปลงเป็น cron UTC (ข้อ 9.6)</p></div>' + ui.badge("รอยืนยัน pg_cron หรือ scheduler ภายนอก", "warning", "badge--square") + "</div>" +
+      ui.table({ id: "st-cron-table", caption: "ตารางเวลางานระบบ", rowKey: 0, footer: false,
+        columns: [
+          { key: 0, label: "งาน", render: function (r) { return '<span class="st-key">' + esc(r[0]) + "</span>"; } },
+          { key: 1, label: "เวลา (Asia/Bangkok)" },
+          { key: 2, label: "cron (UTC)", render: function (r) { return r[2] === DASH ? '<span class="is-null">' + DASH + "</span>" : '<span class="st-key">' + esc(r[2]) + "</span>"; } },
+          { key: 3, label: "หน้าที่" }
+        ], rows: CRON }) + "</section></div>";
+  }
+  function integrationPanel() {
+    var rows = D.sourceSystems.map(function (s) { return { code: s.code, label: s.labelTh, statusTh: s.integrationStatusTh }; });
+    return '<div class="st-tabpanel">' + mfaBar("integration.manage") +
+      '<p class="t-sm t-muted section">จัดการด้วยสิทธิ์ integration.manage 🔐 · การส่งข้อมูลออกนอกระบบต้องให้ผู้บริหารอนุมัติ (ข้อ 8.1) · V1 ผูกเลขธุรกรรมด้วยมือเท่านั้น</p>' +
+      '<section class="card card--flush st-group" aria-labelledby="st-int"><div class="card__header"><div><h2 class="card__title" id="st-int">ระบบต้นทาง</h2><p class="card__subtitle">ref.source_systems (ข้อ 5.7 · รอยืนยัน Q14)</p></div></div>' +
+      ui.table({ id: "st-int-table", caption: "ระบบต้นทาง", rowKey: "code", footer: false,
+        columns: [
+          { key: "label", label: "ระบบต้นทาง" },
+          { key: "code", label: "รหัส", format: "code" },
+          { key: "statusTh", label: "สถานะ", render: function (r) { return r.statusTh ? ui.badge(r.statusTh, "neutral", "badge--square") : ui.badge("ใช้งานอยู่", "success", "badge--square") + ' <span class="t-xs t-muted">(ป้ายรอยืนยัน)</span>'; } },
+          { key: "code", label: "การกระทำ", render: function (r) { return r.statusTh ? ui.button({ label: "ตั้งค่าการเชื่อมต่อ", variant: "ghost", size: "sm", disabledReason: D.meta.texts.stateLocked + " · Phase 4" }) : ""; } }
+        ], rows: rows }) + "</section>" +
+      '<section class="card st-group" aria-labelledby="st-int-set"><h2 class="card__title" id="st-int-set">ตั้งค่าการเชื่อมต่อ</h2>' + ui.state("locked", { phase: "4", compact: true, text: "LINE OA · Meta · POS · ระบบซ่อม · ผ่อน · สัญญา เชื่อมต่อใน Phase 4 (ข้อ 14.5)" }) + "</section>" +
+      '<section class="card card--flush st-group" aria-labelledby="st-int-log"><div class="card__header"><div><h2 class="card__title" id="st-int-log">บันทึกการเชื่อมต่อ</h2><p class="card__subtitle">api.list_integration_logs(...) · audit.integration_logs · ชื่อคอลัมน์จริงตาม data dictionary</p></div></div>' +
+      ui.table({ id: "st-int-log-table", caption: "บันทึกการเชื่อมต่อ", rowKey: "id", footer: false,
+        columns: [{ key: "at", label: "เวลา" }, { key: "system", label: "ระบบต้นทาง" }, { key: "result", label: "ผล" }, { key: "detail", label: "รายละเอียด" }],
+        rows: [], empty: { title: "ยังไม่มีบันทึกการเชื่อมต่อ" } }) + "</section></div>";
+  }
+
+  function render() {
+    var biz = JCRM.access("settings.business").visible, sys = JCRM.access("settings.system").visible, integ = JCRM.access("integration.manage").visible;
+    var header = ui.pageHeader({ title: "ตั้งค่าระบบ · Integration", lead: "แก้เกณฑ์ธุรกิจ/ความปลอดภัย (ผู้ดูแลข้อมูลธุรกิจ) และค่าเชิงเทคนิค/สถานะ integration (ผู้ดูแลระบบ) ตาม app.settings (ข้อ 11.2)" });
+    var tabs = ui.tabs({
+      id: "st-tabs", label: "กลุ่มการตั้งค่า", param: "tab", selected: biz ? "business" : "system",
+      tabs: [
+        { id: "business", label: "เกณฑ์ธุรกิจ", hidden: !biz, html: biz ? businessPanel() : "" },
+        { id: "system", label: "เชิงเทคนิค", hidden: !sys, html: sys ? systemPanel() : "" },
+        { id: "integration", label: "Integration", hidden: !integ, html: integ ? integrationPanel() : "" }
+      ]
+    });
+    document.getElementById("page").innerHTML = header + tabs;
+  }
+  function rerender() { render(); JCRM.initTabs(document); }
+
+  /* ----------------------------------------------------------- แก้ไขค่า */
+  function findItem(key) {
+    var all = SYSTEM_ITEMS.slice();
+    GROUPS.forEach(function (g) { all = all.concat(g.items); });
+    return JCRM.find(all, "key", key);
+  }
+  function groupOf(key) { return GROUPS.filter(function (g) { return !!JCRM.find(g.items, "key", key); })[0] || null; }
+  function positiveInt(v) { return v !== null && Number(v) >= 1 && Math.floor(Number(v)) === Number(v) ? null : "ต้องเป็นจำนวนเต็มมากกว่า 0"; }
+  JCRM.on("st-edit", function (key) {
+    var item = findItem(key); if (!item) { return; }
+    var isSystem = !!JCRM.find(SYSTEM_ITEMS, "key", key);
+    var perm = isSystem ? "settings.system" : "settings.business";
+    var acc = JCRM.access(perm); if (!acc.allowed) { JCRM.toast(acc.reason || D.meta.texts.rpcDenied, "warning"); return; }
+    var v = values[key], fields = [], g = groupOf(key);
+    switch (item.type) {
+      case "int":
+        fields = [{ name: "v", label: item.label + " (" + item.unit + ")", type: "number", required: true, min: 1, value: v, validate: positiveInt, minMessage: "ต้องเป็นจำนวนเต็มมากกว่า 0" }]; break;
+      case "pair":
+        fields = [
+          { name: "a", label: item.names[0] + " (" + item.unit + ")", type: "number", required: true, min: 1, value: v[0], width: "half", validate: positiveInt, minMessage: "ต้องเป็นจำนวนเต็มมากกว่า 0" },
+          { name: "b", label: item.names[1] + " (" + item.unit + ")", type: "number", required: true, min: 1, value: v[1], width: "half", minMessage: "ต้องเป็นจำนวนเต็มมากกว่า 0",
+            validate: function (x, vals) { return positiveInt(x) || (Number(x) > Number(vals.a) ? null : "ค่าที่สองต้องมากกว่าค่าแรก"); } }]; break;
+      case "time":
+        fields = [{ name: "v", label: item.label + " (HH:mm)", type: "time", required: true, value: v }]; break;
+      case "text":
+        fields = [{ name: "v", label: item.label, type: "text", required: true, maxLength: 40, value: v }]; break;
+      case "hours":
+        fields = [
+          { name: "open", label: "เวลาเปิด · ทุกสาขา (ค่าเริ่มต้น)", type: "time", required: true, value: v["default"][0], width: "half" },
+          { name: "close", label: "เวลาปิด · ทุกสาขา (ค่าเริ่มต้น)", type: "time", required: true, value: v["default"][1], width: "half", validate: function (x, vals) { return x > vals.open ? null : "เวลาปิดต้องหลังเวลาเปิด"; } },
+          { name: "branch", label: "+ ตั้งเวลาเฉพาะสาขา", type: "select", placeholder: "ไม่ตั้ง", options: D.branches.map(function (b) { return { value: b.code, label: b.name }; }) },
+          { name: "b_open", label: "เวลาเปิดของสาขา", type: "time", width: "half", visibleWhen: { field: "branch", truthy: true }, requiredWhen: { field: "branch", truthy: true } },
+          { name: "b_close", label: "เวลาปิดของสาขา", type: "time", width: "half", visibleWhen: { field: "branch", truthy: true }, requiredWhen: { field: "branch", truthy: true },
+            validate: function (x, vals) { return !vals.branch || x > vals.b_open ? null : "เวลาปิดต้องหลังเวลาเปิด"; } },
+          { name: "holiday", type: "static", html: '<p class="help">ยังไม่รองรับวันหยุด (ข้อ 11.1) · ค่าเฉพาะสาขาทับค่าเริ่มต้น</p>' }]; break;
+      case "limits":
+        v.forEach(function (l) {
+          fields.push({ name: "rows_" + l.role, label: roleLabel(l.role) + " · แถวสูงสุด/ครั้ง", type: "number", required: true, min: 1, value: l.maxRows, width: "half", validate: positiveInt, minMessage: "ต้องเป็นจำนวนเต็มมากกว่า 0" });
+          fields.push({ name: "day_" + l.role, label: roleLabel(l.role) + " · ครั้ง/วัน", type: "number", required: true, min: 1, value: l.perDay, width: "half", validate: positiveInt, minMessage: "ต้องเป็นจำนวนเต็มมากกว่า 0" });
+        });
+        fields.push({ name: "approver_note", type: "static", html: '<p class="help">ผู้อนุมัติกำหนดตามบทบาทที่ยื่น (ข้อ 8.2) · แก้ในหน้านี้ได้เฉพาะเพดาน</p>' }); break;
+      case "env":
+        fields = [{ name: "v", label: "สภาพแวดล้อม", type: "radio", required: true, inline: true, value: v, options: ["dev", "staging", "prod"].map(function (x) { return { value: x, label: x }; }) }]; break;
+      case "clock":
+        fields = [
+          { name: "none", label: "ไม่ตั้ง (as_of = null · ใช้เวลาปัจจุบัน)", type: "checkbox", value: !v.as_of },
+          { name: "asof", label: "as_of (เวลา Asia/Bangkok)", type: "datetime", value: v.as_of ? v.as_of.slice(0, 16) : "", visibleWhen: { field: "none", equals: false }, requiredWhen: { field: "none", equals: false } }]; break;
+      case "domains":
+        fields = [{ name: "v", label: "โดเมน (บรรทัดละ 1 โดเมน)", type: "textarea", rows: 3, maxLength: 500, value: (v || []).join("\n"), help: "เว้นว่าง = ยังไม่ได้ตั้งค่า · Google ตรวจ hd ใน Custom Access Token Hook (ข้อ 9.2.1)",
+          validate: function (x) { var bad = String(x).split(/\n+/).map(function (d) { return d.trim(); }).filter(Boolean).filter(function (d) { return !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(d); }); return bad.length ? "รูปแบบโดเมนไม่ถูกต้อง: " + bad.join(", ") : null; } }]; break;
+    }
+    JCRM.dialog({
+      title: "แก้ไข · " + item.label, size: "md",
+      intro: '<p class="t-sm"><span class="st-key">' + esc(key) + "</span> · " + esc(g ? g.impact : "มีผลเมื่อบันทึก") + " · ต้องยืนยัน MFA ในเซสชันนี้</p>",
+      fields: fields, submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (f) {
+        switch (item.type) {
+          case "int": values[key] = f.v; break;
+          case "pair": values[key] = [f.a, f.b]; break;
+          case "time": case "text": values[key] = String(f.v).trim(); break;
+          case "hours":
+            var nv = { "default": [f.open, f.close] };
+            Object.keys(values[key]).forEach(function (k) { if (k !== "default") { nv[k] = values[key][k]; } });
+            if (f.branch) { nv[f.branch] = [f.b_open, f.b_close]; }
+            values[key] = nv; break;
+          case "limits":
+            values[key] = values[key].map(function (l) { return { role: l.role, maxRows: f["rows_" + l.role], perDay: f["day_" + l.role], approver: l.approver, approverTh: l.approverTh }; }); break;
+          case "env":
+            if (f.v === "prod" && values.clock && values.clock.as_of) { return { errors: { v: "สภาพแวดล้อม prod ต้องตั้ง clock.as_of เป็น null ก่อน" } }; }
+            values[key] = f.v; break;
+          case "clock":
+            if (!f.none && values.env === "prod") { return { errors: { asof: "สภาพแวดล้อม prod ต้องเป็น null" } }; }
+            values[key] = { as_of: f.none ? null : f.asof + ":00+07:00" }; break;
+          case "domains":
+            values[key] = String(f.v || "").split(/\n+/).map(function (d) { return d.trim().toLowerCase(); }).filter(Boolean); break;
+        }
+        updated[key] = { by: JCRM.currentStaffCode(), at: NOW };
+        JCRM.toast("บันทึกการตั้งค่าแล้ว (prototype) · ระบบจริงเรียก api.update_setting และบันทึก SETTINGS_UPDATED", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  JCRM.page({ id: "settings", render: render, branchPicker: false });
+})();
+</script>
+</body>
+</html>

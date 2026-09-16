@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ศูนย์คุณภาพข้อมูล · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 12 · ศูนย์คุณภาพข้อมูล — CANONICAL v2.2 ข้อ 12.3 · 13.12 · 13.14 · sitemap-screen-specs ข้อ 15 · ไม่มี hex (ใช้ token เท่านั้น) */
+.dq-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.dq-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) minmax(0, 1fr); gap: var(--space-4); align-items: stretch; }
+.dq-side { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-4); background: var(--surface-card); display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.dq-side__label { font-size: var(--fs-xs); color: var(--text-secondary); font-weight: var(--fw-medium); }
+.dq-mid { display: flex; flex-direction: column; gap: var(--space-2); align-items: center; justify-content: center; text-align: center; padding: var(--space-3); background: var(--surface-subtle); border-radius: var(--radius-md); font-size: var(--fs-sm); }
+.dq-score { font-size: var(--fs-h2); font-weight: var(--fw-semibold); color: var(--text-heading); font-variant-numeric: tabular-nums; }
+.dq-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-1) var(--space-3); font-size: var(--fs-sm); margin: 0; }
+.dq-dl dt { color: var(--text-secondary); }
+.dq-dl dd { margin: 0; min-width: 0; }
+.dq-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+.dq-count-zero { color: var(--success-text); font-weight: var(--fw-semibold); }
+.dq-perm { display: block; }
+.dq-demo-row td:first-child .badge { margin-inline-end: var(--space-1); }
+.dq-ack-done { color: var(--success-text); font-size: var(--fs-xs); }
+.dq-detail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+@media (max-width: 1279px) {
+  .dq-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dq-pair { grid-template-columns: minmax(0, 1fr); }
+  .dq-detail-inline { display: none; }
+}
+@media (max-width: 767px) {
+  .dq-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dq-actions { justify-content: flex-start; }
+}
+</style>
+</head>
+<body data-page="data-quality" data-roles="STAFF SUPERVISOR BRANCH_MANAGER OPERATIONS EXECUTIVE BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* ============================================================================
+   หน้า 12 · ศูนย์คุณภาพข้อมูล (data-quality)
+   แหล่ง: CANONICAL v2.2 ข้อ 12.2–12.4 (สูตร · เป้า) · 13.1 · 13.2b (อัตรา) · 13.10 (งานเกินกำหนด) · 13.11 (วันนี้) · 13.12 (จำนวน) · 13.14 (คู่ซ้ำ)
+         สิทธิ์ข้อ 8.1 (data_quality.view/resolve · customer.merge 🔐 · lead.assign · lead.update · task.update · transaction.link · visit.update)
+   ระบบจริง: api.get_kpis · api.get_report('DATA_QUALITY') · api.list_data_quality_issues · api.merge_customers · api.decide_duplicate
+            · api.save_contact · api.assign_owner · api.acknowledge_unrecorded_visit (ข้อ 9.6)
+   prototype: การแก้/ตัดสิน/รับทราบเก็บในหน่วยความจำของหน้าเท่านั้น (โหลดหน้าใหม่ = ค่าเดิม)
+   ========================================================================= */
+(function () {
+  "use strict";
+  var D = JCRM.data, ui = JCRM.ui, fmt = JCRM.fmt, esc = JCRM.esc;
+  var DASH = fmt.DASH;
+  var BR4 = ["JP1", "JP2", "JP3", "JP4"];
+  /* Phase ต่อปัญหา: ข้อ 14.1 เขียน "1 / 2" · แยกตาม sitemap-screen-specs ข้อ 15.10 (หมายเหตุผู้เขียน S16: ลูกค้า/visit = 1 · Lead/งาน/โอกาสขาย = 2) */
+  var PHASE = { DUPLICATE_SUSPECTED: "1", MISSING_PHONE: "1", INVALID_PHONE: "1", LEAD_WITHOUT_OWNER: "2", LEAD_WITHOUT_OUTCOME: "2",
+    OVERDUE_FOLLOWUP: "2", INCOMPLETE_CUSTOMER: "1", WON_WITHOUT_TRANSACTION: "2", VISIT_UNRECORDED: "1" };
+  var TARGET_KPIS = ["CAPTURE_RATE", "OUTCOME_COMPLETION", "FOLLOWUP_COMPLETION", "DUPLICATE_RATE", "MISSING_REQUIRED_RATE"];
+  var PERIOD_KPIS = ["CAPTURE_RATE", "OUTCOME_COMPLETION", "FOLLOWUP_COMPLETION"];   /* สองตัวหลังเป็นค่า ณ ตอนนี้ (ไม่ขึ้นกับช่วงเวลา) */
+  var UNBOUND_HELP = "ตัวเลขนี้ไม่ผูกกับพนักงาน จึงไม่แสดงสำหรับขอบเขตของคุณ";
+  var NOW = D.meta.now;
+
+  var state = {
+    issue: null,
+    resolved: {},        /* { ISSUE_CODE: { JP1: n, ALL: n } } — จำนวนที่แก้ในหน้านี้ (หักออกจากจำนวนที่แสดง) */
+    decisions: {},       /* { newCustomerNo: { status, by, at } } — คู่ซ้ำที่ตัดสินแล้ว */
+    fixed: {},           /* { "ISSUE|สาขา": true } — แถวสาธิตที่แก้แล้ว */
+    acks: {},            /* { "สาขา": { by, at } } — รับทราบ visit ไม่บันทึกผล (แถวสาธิต) */
+    drawer: null,
+    first: true
+  };
+  var initialIssue = JCRM.param("issue");
+  if (JCRM.find(D.dataQualityIssues, "code", initialIssue)) { state.issue = initialIssue; }
+
+  function me() { return JCRM.currentStaffCode(); }
+  function narrow() { try { return window.matchMedia("(max-width: 1279px)").matches; } catch (e) { return false; } }
+  function issueDef(code) { return JCRM.find(D.dataQualityIssues, "code", code); }
+  function branchLabel(b) { return b === "ALL" ? "ทุกสาขา" : JCRM.branchName(b); }
+
+  /* ---------------------------------------------------------------- model */
+  function model(ctx) {
+    var top = JCRM.topScope("data_quality.view");
+    var readable = JCRM.scopeBranches("data_quality.view", "OWN");
+    var branch = ctx.branch === "ALL" && readable.length === 1 ? readable[0] : ctx.branch;
+    var big = top === "BRANCH" || top === "ORGANIZATION";
+    var dq = JCRM.select.dataQualityFor(undefined, { branch: branch }) || { issues: [], targets: [], empty: false };
+    var issues = D.dataQualityIssues.map(function (def) {
+      var it = JCRM.find(dq.issues, "code", def.code) || {};
+      var base = it.count === undefined ? null : it.count;
+      var row = JCRM.find(D.kpis.dataQuality.issues, "code", def.code);
+      /* ทีมออนไลน์ส่วนกลาง: ข้อ 13.12 รวม = JP1+JP2+JP3+JP4 จึงเป็น 0 (คำนวณจากตัวเลขที่พิมพ์) */
+      if (base === null && big && branch !== "ALL" && BR4.indexOf(branch) === -1 && row) {
+        base = row.total - BR4.reduce(function (s, b) { return s + row.byBranch[b]; }, 0);
+      }
+      return { code: def.code, labelTh: def.labelTh, fixPermission: def.fixPermission, fixNote: def.fixNote || null, count: adjust(def.code, branch, base) };
+    });
+    var allZero = issues.every(function (i) { return i.count === 0; });
+    return { ctx: ctx, top: top, big: big, branch: branch, issues: issues, allZero: allZero, emptyScope: !!ctx.scope.isEmptyScope };
+  }
+  function adjust(code, branch, base) {
+    if (base === null || base === undefined) { return null; }
+    var r = state.resolved[code] || {}, less = 0;
+    if (branch === "ALL") { Object.keys(r).forEach(function (k) { less += r[k]; }); } else { less = r[branch] || 0; }
+    return Math.max(0, base - less);
+  }
+  function markResolved(code, branch) {
+    state.resolved[code] = state.resolved[code] || {};
+    state.resolved[code][branch] = (state.resolved[code][branch] || 0) + 1;
+  }
+  function issueOf(m, code) { return JCRM.find(m.issues, "code", code); }
+
+  /* ------------------------------------------------------------ KPI cards */
+  function rateFor(m, kpi) {
+    var ctx = m.ctx;
+    if (m.emptyScope || !m.big) { return null; }
+    if (ctx.preset === "TODAY" && PERIOD_KPIS.indexOf(kpi) !== -1) {
+      if (kpi !== "CAPTURE_RATE") { return null; }
+      var tr = m.branch === "ALL" ? D.kpis.today.total : JCRM.find(D.kpis.today.rows, "branch", m.branch);
+      return tr && tr.visits ? { num: tr.identifiedVisits, den: tr.visits, display: fmt.pct(tr.identifiedVisits, tr.visits) } : null;   /* ข้อ 12.2 จากข้อ 13.11 */
+    }
+    var dq = JCRM.select.dataQualityFor(undefined, { branch: m.branch });
+    var t = dq ? JCRM.find(dq.targets, "kpi", kpi) : null;
+    return t ? t.rate : null;
+  }
+  function kpiCards(m) {
+    return TARGET_KPIS.map(function (kpi) {
+      var rate = rateFor(m, kpi);
+      var goal = D.kpiTargets[kpi];
+      var goalText = "เป้า " + (goal.op === ">=" ? "≥ " : "< ") + goal.pct + "%";
+      var isPeriod = PERIOD_KPIS.indexOf(kpi) !== -1;
+      var note = null;
+      if (!rate) {
+        if (!isPeriod && (m.emptyScope || !m.big)) { note = UNBOUND_HELP; }
+        else if (m.big && !m.emptyScope && m.ctx.preset === "TODAY" && isPeriod) { note = "ไม่มีข้อมูลตัวอย่างสำหรับวันนี้"; }
+        else if (m.big && !m.emptyScope && !isPeriod) { note = "ข้อมูลตัวอย่างไม่มีตัวหารรายสาขา (นับตามสาขาแรกของลูกค้า)"; }
+      }
+      return ui.kpiCard({
+        label: D.kpiLabels[kpi],
+        display: rate ? fmt.rate(rate) : DASH,
+        preset: isPeriod ? m.ctx.preset : null,
+        asOf: !isPeriod,
+        target: rate ? { num: rate.num, den: rate.den, kpi: kpi } : null,
+        sub: rate ? fmt.int(rate.num) + " / " + fmt.int(rate.den) : null,
+        foot: rate ? "" : '<span class="t-xs">' + esc(goalText) + "</span>",
+        note: note,
+        icon: "target"
+      });
+    }).join("");
+  }
+
+  /* --------------------------------------------------------- issue table */
+  var FIX_TEXT = {
+    DUPLICATE_SUSPECTED: "ผู้มีสิทธิ์รวมลูกค้า (MFA) · ผู้ตัดสินต้องไม่ใช่ผู้สร้างรายการ",
+    VISIT_UNRECORDED: "ผู้มีสิทธิ์แก้ visit · แก้ผลหลังข้ามวันไม่ได้ จึงบันทึกการรับทราบ"
+  };
+  function fixByCell(i) {
+    var meta = D.permissionMeta[i.fixPermission] || {};
+    var text = FIX_TEXT[i.code] || meta.labelTh || i.fixPermission;
+    return '<span class="dq-perm">' + esc(text) + '</span><span class="cell-sub code">' + esc(i.fixPermission) + (meta.requiresAal2Row ? " 🔐" : "") + "</span>";
+  }
+  function countCell(c) {
+    if (c === null) { return '<span class="is-null">' + DASH + "</span>"; }
+    if (c === 0) { return '<span class="dq-count-zero">0</span> <span class="t-xs t-muted">ไม่มีรายการ</span>'; }
+    return esc(fmt.int(c));
+  }
+  function issueTable(m) {
+    return ui.table({
+      id: "dq-issues", caption: "รายการที่ต้องแก้ไข", rowKey: "code", rowAction: "dq-open", selected: state.issue ? [state.issue] : [],
+      columns: [
+        { key: "labelTh", label: "ปัญหา", render: function (r) { return '<span class="t-medium">' + esc(r.labelTh) + '</span><span class="cell-sub code">' + esc(r.code) + "</span>"; } },
+        { key: "count", label: "จำนวน", align: "end", render: function (r) { return countCell(r.count); } },
+        { key: "fixPermission", label: "แก้โดย", hide: "tablet", render: fixByCell },
+        { key: "code", label: "Phase", render: function (r) { return ui.badge("Phase " + PHASE[r.code], "neutral", "badge--square"); } },
+        { key: "code", label: "การกระทำ", render: function (r) { return ui.button({ label: "ดูรายการ", variant: "ghost", size: "sm", action: "dq-open", id: r.code }); } }
+      ],
+      rows: m.issues,
+      footer: { shown: m.issues.length, total: m.issues.length, unit: "ประเภทปัญหา" },
+      mobileCard: function (r) {
+        return ui.listCard({ action: "dq-open", id: r.code, title: r.labelTh, meta: ["จำนวน " + (r.count === null ? DASH : fmt.int(r.count)) + (r.count === 0 ? " · ไม่มีรายการ" : ""), "Phase " + PHASE[r.code]] });
+      }
+    });
+  }
+
+  /* ------------------------------------------------------------- details */
+  function demoCaption() {
+    return '<p class="proto-note">แถวสาธิตแสดงคอลัมน์และปุ่มแก้ตามสิทธิ์ของคุณ · ข้อมูลตัวอย่างไม่มีรายละเอียดของปัญหานี้ ค่าที่ข้อ 13 ไม่มีจึงแสดง –</p>';
+  }
+  function sampleBar(count) {
+    return ui.sampleNote({ text: "ไม่มีรายละเอียดรายการ · ทั้งหมด " + (count === null ? DASH : fmt.int(count)) + " รายการ" });
+  }
+  function demoBadge() { return ui.badge("แถวสาธิต", "neutral", "badge--square"); }
+  /* ปุ่มแก้ของแถวสาธิต: แถวที่ api.list_data_quality_issues คืนอยู่ในขอบเขตที่ผู้ใช้ดูได้แล้ว → ตัดสินด้วยสิทธิ์ของสาขา (ข้อ 8.0) */
+  function fixButton(m, o) {
+    var acc = JCRM.access(o.permission);
+    if (!acc.visible) { return ""; }
+    var reason = acc.allowed ? null : acc.reason;
+    if (!reason && m.branch !== "ALL" && JCRM.scopeBranches(o.permission, "OWN").indexOf(m.branch) === -1) { reason = D.meta.texts.reasonOutOfBranch; }
+    return ui.button({ label: o.label, variant: o.variant || "secondary", size: "sm", action: reason ? null : o.action, id: o.id, href: reason ? null : o.href, disabledReason: reason });
+  }
+  function demoTable(m, code, columns, actionHtml, extraRow) {
+    var cols = columns.map(function (c) { return '<th scope="col">' + esc(c) + "</th>"; }).join("") + '<th scope="col">การกระทำ</th>';
+    var cells = columns.map(function (c, i) {
+      var v = extraRow && extraRow[i] !== undefined && extraRow[i] !== null ? extraRow[i] : '<span class="is-null">' + DASH + "</span>";
+      return "<td>" + (i === 0 ? demoBadge() : "") + v + "</td>";
+    }).join("") + '<td><div class="dq-actions">' + actionHtml + "</div></td>";
+    return '<div class="table-wrap"><table class="table table--compact"><caption class="sr-only">แถวสาธิต ' + esc(issueDef(code).labelTh) + "</caption><thead><tr>" + cols +
+      '</tr></thead><tbody><tr class="dq-demo-row">' + cells + "</tr></tbody></table></div>";
+  }
+  function fixedKey(code, m) { return code + "|" + m.branch; }
+
+  function detailBody(m, code) {
+    var it = issueOf(m, code);
+    if (!it) { return ""; }
+    if (it.count === 0) { return ui.state("empty", { title: "ไม่มีรายการ", text: "ไม่มี" + it.labelTh + "ใน" + branchLabel(m.branch) + " ตามขอบเขตของคุณ", compact: true }); }
+    if (code === "DUPLICATE_SUSPECTED") { return duplicateDetail(m, it); }
+    if (code === "OVERDUE_FOLLOWUP") { return overdueDetail(m, it); }
+    return genericDetail(m, it);
+  }
+
+  /* DUPLICATE_SUSPECTED — การ์ดเปรียบเทียบคู่ (ข้อ 6.7 · 13.14) */
+  function visiblePairs(m) {
+    return D.duplicatePairs.filter(function (p) {
+      if (state.decisions[p.newCustomerNo] || p.status !== "PENDING") { return false; }
+      var a = JCRM.customer(p.newCustomerNo), c = JCRM.customer(p.candidateCustomerNo);
+      if (!a || !c) { return false; }
+      var fb = a.firstBranch || a.branch;
+      if (m.branch !== "ALL" && fb !== m.branch) { return false; }
+      return JCRM.can("data_quality.view", { customer: JCRM.customerCtx(a) }) && JCRM.can("data_quality.view", { customer: JCRM.customerCtx(c) });
+    });
+  }
+  function customerSide(title, cu) {
+    var readable = JCRM.can("customer.read", { customer: JCRM.customerCtx(cu) });
+    var name = JCRM.customerName(cu.customerNo);
+    var phone = JCRM.find(cu.contacts || [], "type", "PHONE");
+    return '<div class="dq-side"><span class="dq-side__label">' + esc(title) + "</span>" +
+      '<div class="row">' + ui.avatar(cu.displayName, "sm") + "<div>" + (readable ? '<a class="t-medium" href="' + esc(JCRM.link("customer-360", { c: cu.customerNo })) + '">' + esc(name) + "</a>" : '<span class="t-medium">' + esc(name) + "</span>") +
+      '<span class="cell-sub code">' + esc(cu.customerNo) + "</span></div></div>" +
+      '<dl class="dq-dl"><dt>เบอร์ (ปิดบัง)</dt><dd>' + esc(phone ? phone.masked : DASH) + "</dd>" +
+      "<dt>สาขาแรก</dt><dd>" + esc(JCRM.branchName(cu.firstBranch || null)) + "</dd>" +
+      "<dt>รู้จักครั้งแรก</dt><dd>" + esc(cu.firstSeenAt ? fmt.dateTime(cu.firstSeenAt) : DASH) + "</dd>" +
+      "<dt>ผู้ดูแล</dt><dd>" + esc(JCRM.staffName(cu.owner)) + "</dd></dl></div>";
+  }
+  function duplicateDetail(m, it) {
+    var pairs = visiblePairs(m);
+    if (!pairs.length) { return sampleBar(it.count); }
+    return pairs.map(function (p) {
+      var a = JCRM.customer(p.newCustomerNo), c = JCRM.customer(p.candidateCustomerNo);
+      var accA = JCRM.access("customer.merge", { customer: JCRM.customerCtx(a) }), accC = JCRM.access("customer.merge", { customer: JCRM.customerCtx(c) });
+      var actions = "";
+      if (accA.visible) {
+        var reason = !accA.allowed ? accA.reason : (!accC.allowed ? accC.reason : (p.createdBy === me() ? "ผู้สร้างรายการตัดสินเองไม่ได้" : null));
+        actions = ui.button({ label: "ยืนยันว่าคนละคน", variant: "secondary", action: reason ? null : "dq-not-dup", id: p.newCustomerNo, disabledReason: reason }) +
+          ui.button({ label: "รวมลูกค้า", variant: "danger", action: reason ? null : "dq-merge", id: p.newCustomerNo, disabledReason: reason });
+      }
+      return '<article class="stack" aria-label="คู่ลูกค้าที่อาจซ้ำ ' + esc(a.customerNo) + " กับ " + esc(c.customerNo) + '"><div class="dq-pair">' +
+        customerSide("ลูกค้าที่สร้างใหม่", a) +
+        '<div class="dq-mid"><span class="t-xs t-muted">คะแนน</span><span class="dq-score">' + esc(fmt.int(p.score)) + "</span>" +
+        "<span>" + esc(p.reasonTh) + "</span>" +
+        '<span class="t-xs">สร้างโดย ' + esc(JCRM.staffName(p.createdBy)) + " · " + esc(fmt.date(p.createdAt)) + "</span>" +
+        '<span class="t-xs">เหตุผลที่ยังสร้าง: ' + esc(JCRM.label("duplicateOverrideReasons", p.overrideReason)) + "</span>" +
+        ui.status("duplicateStatus", p.status) + "</div>" +
+        customerSide("ลูกค้าที่มีอยู่", c) + "</div>" +
+        (actions ? '<div class="dq-actions">' + actions + "</div>" : '<p class="t-xs t-muted">บทบาทของคุณดูรายการได้ แต่ไม่มีสิทธิ์รวมลูกค้าหรือยืนยันว่าคนละคน (customer.merge)</p>') +
+        '<p class="t-sm t-muted">' + esc(fmt.showing(pairs.length, it.count)) + " รายการ</p></article>";
+    }).join('<hr class="divider">') + (pairs.length < (it.count || 0) || it.count === null ? sampleBar(it.count) : "");
+  }
+
+  /* OVERDUE_FOLLOWUP — งาน FOLLOW_UP เกินกำหนดที่ระบุชื่อ (ข้อ 13.10 #2 #3 #4) */
+  function overdueDetail(m, it) {
+    var rows = D.tasksKwan.rows.filter(function (r) {
+      return r.group === "overdue" && r.type === "FOLLOW_UP" && (m.branch === "ALL" || r.branch === m.branch) && JCRM.can("data_quality.view", { branch: r.branch, owner: r.owner });
+    });
+    if (!rows.length) { return sampleBar(it.count); }
+    return ui.table({
+      id: "dq-overdue", caption: "ติดตามเกินกำหนด", rowKey: "no",
+      columns: [
+        { key: "title", label: "ชื่องาน", render: function (r) { return '<span class="t-medium">' + esc(r.title) + '</span><span class="cell-sub">งาน #' + esc(r.no) + " · " + esc(JCRM.label("taskTypes", r.type)) + "</span>"; } },
+        { key: "customerNo", label: "ลูกค้า", render: function (r) { return '<a href="' + esc(JCRM.link("customer-360", { c: r.customerNo })) + '">' + esc(JCRM.customerName(r.customerNo)) + '</a><span class="cell-sub code">' + esc(r.customerNo) + "</span>"; } },
+        { key: "dueAt", label: "ครบกำหนด", format: "dateTime" },
+        { key: "owner", label: "ผู้รับผิดชอบ", format: "staff" },
+        { key: "no", label: "การกระทำ", render: function (r) {
+          return ui.permButton({ label: "เปิดงาน", variant: "secondary", size: "sm", href: JCRM.link("tasks", { group: "overdue" }), permission: "task.update", ctx: { branch: r.branch, owner: r.owner } });
+        } }
+      ],
+      rows: rows, footer: { shown: rows.length, total: it.count, unit: "รายการ" },
+      mobileCard: function (r) { return ui.listCard({ href: JCRM.link("tasks", { group: "overdue" }), title: r.title, meta: [JCRM.customerName(r.customerNo), fmt.dateTime(r.dueAt), JCRM.staffName(r.owner)] }); }
+    });
+  }
+
+  /* ปัญหาอื่น — ข้อมูลตัวอย่างไม่มีรายละเอียด: แถบ C-STATE-SAMPLE + แถวสาธิต (คอลัมน์ตาม sitemap-screen-specs ข้อ 15.5) */
+  function genericDetail(m, it) {
+    var code = it.code, key = fixedKey(code, m), done = state.fixed[key];
+    var branchCell = m.branch === "ALL" ? null : esc(JCRM.branchName(m.branch));
+    var html = sampleBar(it.count);
+    if (done) { return html + '<p class="t-sm t-success">แก้แถวสาธิตของ' + esc(branchLabel(m.branch)) + "แล้วในหน้านี้ (prototype · ไม่มีการบันทึกจริง)</p>"; }
+    var t;
+    switch (code) {
+      case "MISSING_PHONE":
+        t = demoTable(m, code, ["ลูกค้า", "ช่องทางแรก", "สาขา", "ผู้ดูแล"], fixButton(m, { label: "เพิ่มเบอร์", permission: "data_quality.resolve", action: "dq-fix-phone", id: code }), [null, null, branchCell, null]);
+        break;
+      case "INVALID_PHONE":
+        t = demoTable(m, code, ["ลูกค้า", "เบอร์ปิดบัง", "ผู้ดูแล"], fixButton(m, { label: "แก้เบอร์", permission: "data_quality.resolve", action: "dq-fix-phone", id: code }));
+        break;
+      case "LEAD_WITHOUT_OWNER":
+        t = demoTable(m, code, ["เลข Lead", "ลูกค้า", "สร้างเมื่อ", "ช่องทาง"], fixButton(m, { label: "มอบหมาย", permission: "lead.assign", action: "dq-assign", id: code }));
+        break;
+      case "LEAD_WITHOUT_OUTCOME":
+        t = demoTable(m, code, ["เลข Lead", "ลูกค้า", "สถานะ", "สร้างเมื่อ (เกิน 14 วัน)", "ผู้รับผิดชอบ"], fixButton(m, { label: "เปิด Lead", permission: "lead.update", href: JCRM.link("leads", {}) }));
+        break;
+      case "INCOMPLETE_CUSTOMER":
+        t = demoTable(m, code, ["ลูกค้า", "ช่องที่ขาด"], fixButton(m, { label: "เติมข้อมูล", permission: "data_quality.resolve", action: "dq-fix-incomplete", id: code }), [null, "นามสกุล · จังหวัด · ความสนใจ"]);
+        break;
+      case "WON_WITHOUT_TRANSACTION":
+        t = demoTable(m, code, ["เลขโอกาสขาย", "ลูกค้า", "ปิดการขายเมื่อ", "ยอด (บาท)"], fixButton(m, { label: "ผูกเลขธุรกรรม", permission: "transaction.link", action: "dq-fix-txn", id: code }));
+        break;
+      case "VISIT_UNRECORDED":
+        var ack = state.acks[m.branch];
+        var ackCell = ack ? '<span class="dq-ack-done">รับทราบแล้ว · ' + esc(JCRM.staffName(ack.by)) + " · " + esc(fmt.dateTime(ack.at)) + "</span>" : null;
+        t = demoTable(m, code, ["เลข visit", "สาขา", "วันที่", "ผู้รับ", "รับทราบ"],
+          ack ? "" : fixButton(m, { label: "รับทราบ", variant: "primary", permission: "visit.update", action: "dq-ack", id: code }), [null, branchCell, null, null, ackCell]) +
+          '<p class="t-xs t-muted">หลังรับทราบ แถวยังอยู่และจำนวนไม่ลด เพราะสูตรข้อ 12.3 ไม่ตัดรายการที่รับทราบ (หมายเหตุผู้เขียน S27)</p>';
+        break;
+      default:
+        t = "";
+    }
+    return html + demoCaption() + t;
+  }
+
+  function detailSection(m) {
+    if (!state.issue || m.allZero) { return ""; }
+    var it = issueOf(m, state.issue);
+    if (!it) { return ""; }
+    return '<section class="card dq-detail-inline section" id="dq-detail" aria-labelledby="dq-detail-title"><div class="card__header dq-detail-head"><div>' +
+      '<h2 class="card__title" id="dq-detail-title">' + esc(it.labelTh) + " (" + esc(it.count === null ? DASH : fmt.int(it.count)) + ")</h2>" +
+      '<p class="card__subtitle">รายละเอียด · ' + esc(branchLabel(m.branch)) + "</p></div>" +
+      ui.button({ label: "ปิดรายละเอียด", variant: "ghost", size: "sm", action: "dq-close" }) + "</div>" +
+      '<div class="stack">' + detailBody(m, state.issue) + "</div></section>";
+  }
+
+  /* ---------------------------------------------------------------- render */
+  function scopeText(m) {
+    var top = m.top;
+    if (top === "ORGANIZATION" || top === "BRANCH") { return "ขอบเขต: " + branchLabel(m.branch); }
+    if (top === "TEAM") { return "ขอบเขต: " + D.scopeLabels.TEAM + " · " + branchLabel(m.branch); }
+    return "ขอบเขต: " + D.scopeLabels.OWN + " · " + branchLabel(m.branch);
+  }
+  function render(ctx) {
+    var m = model(ctx);
+    var host = document.getElementById("page");
+    var header = ui.pageHeader({
+      title: "ศูนย์คุณภาพข้อมูล",
+      lead: "วัดว่าข้อมูลถูกบันทึกครบตามเป้า และพาไปแก้แต่ละรายการ (ข้อ 12.3)",
+      meta: '<span class="chip">' + esc(scopeText(m)) + "</span>",
+      actions: [ui.branchSelect({ id: "dq-branch", permission: "data_quality.view", value: ctx.branch, action: "dq-branch" })]
+    });
+    var kpis = '<section class="section" aria-labelledby="dq-kpi-title"><h2 class="section__title" id="dq-kpi-title">เป้าหมายคุณภาพข้อมูล</h2>' +
+      '<div class="kpi-grid dq-kpis">' + kpiCards(m) + "</div>" +
+      '<p class="t-xs t-muted" style="margin-top:var(--space-2)">ช่วงเวลามีผลกับสามการ์ดแรกเท่านั้น · อัตราข้อมูลซ้ำและข้อมูลจำเป็นไม่ครบเป็นค่า ณ ตอนนี้ · ผ่าน/ต่ำกว่าเป้าเทียบด้วยค่าที่ยังไม่ปัด (ข้อ 1.3)</p></section>';
+    var issues = m.allZero ?
+      '<section class="card section">' + ui.state("empty", { title: "ไม่มีรายการที่ต้องแก้ไข", text: "ไม่มีรายการคุณภาพข้อมูลใน" + branchLabel(m.branch) + "ตามขอบเขตของคุณ" }) + "</section>" :
+      '<section class="card card--flush section" aria-labelledby="dq-issues-title"><div class="card__header"><div><h2 class="card__title" id="dq-issues-title">รายการที่ต้องแก้ไข</h2>' +
+      '<p class="card__subtitle">เรียงตามข้อ 12.3 · รายการระดับลูกค้าผูกสาขาด้วยสาขาแรกของลูกค้า · ไม่ได้บันทึกผลการให้บริการนับ 7 วันล่าสุด</p></div></div>' + issueTable(m) + "</section>";
+    host.innerHTML = header + kpis + issues + detailSection(m);
+    refreshDrawer(m);
+    if (state.first) {
+      state.first = false;
+      if (state.issue && narrow() && !m.allZero) { openDrawer(m); }
+    }
+  }
+  function rerender() { render(JCRM.state()); JCRM.initTabs(document); }
+
+  /* ------------------------------------------------------ drawer (< 1280px) */
+  function drawerTitle(m) {
+    var it = issueOf(m, state.issue);
+    return it ? it.labelTh + " (" + (it.count === null ? DASH : fmt.int(it.count)) + ")" : "";
+  }
+  function openDrawer(m) {
+    if (state.drawer) { refreshDrawer(m); return; }
+    state.drawer = JCRM.drawer({
+      title: drawerTitle(m), ref: branchLabel(m.branch), wide: true,
+      body: '<div class="stack" data-dq-drawer-body>' + detailBody(m, state.issue) + "</div>",
+      footer: ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }),
+      onCancel: function () { state.drawer = null; }
+    });
+  }
+  function refreshDrawer(m) {
+    if (!state.drawer || !state.drawer.el || !state.drawer.el.isConnected) { state.drawer = null; return; }
+    var body = state.drawer.el.querySelector("[data-dq-drawer-body]");
+    var title = state.drawer.el.querySelector(".drawer__title");
+    if (!state.issue || m.allZero) { state.drawer.close(); state.drawer = null; return; }
+    if (body) { body.innerHTML = detailBody(m, state.issue); }
+    if (title) { title.textContent = drawerTitle(m); }
+  }
+  function setIssueParam(code) {
+    try { var u = new window.URL(window.location.href); if (code) { u.searchParams.set("issue", code); } else { u.searchParams.delete("issue"); } window.history.replaceState(null, "", u.toString()); } catch (e) { /* file:// บางเบราว์เซอร์ */ }
+  }
+
+  /* ---------------------------------------------------------------- actions */
+  JCRM.on("dq-branch", function (value) { JCRM.setBranch(value); });
+  JCRM.on("dq-open", function (code) {
+    if (!issueDef(code)) { return; }
+    state.issue = code;
+    setIssueParam(code);
+    var m = model(JCRM.state());
+    rerender();
+    if (narrow()) { openDrawer(m); }
+    else { var sec = document.getElementById("dq-detail"); if (sec) { sec.scrollIntoView({ block: "start", behavior: "smooth" }); var h = document.getElementById("dq-detail-title"); if (h) { h.setAttribute("tabindex", "-1"); h.focus({ preventScroll: true }); } } }
+  });
+  JCRM.on("dq-close", function () { state.issue = null; setIssueParam(null); rerender(); });
+
+  function pairOf(newNo) { return JCRM.find(D.duplicatePairs, "newCustomerNo", newNo); }
+  function fieldChoice(name, label, a, c, key) {
+    var va = a[key], vc = c[key];
+    if (va === vc || (!va && !vc)) {
+      return { name: name, label: label, type: "static", html: '<p class="t-sm">' + esc(va || DASH) + ' <span class="t-muted">(เหมือนกันทั้งสองราย)</span></p>' };
+    }
+    return { name: name, label: label, type: "radio", required: true, requiredMessage: "เลือกค่า" + label + "ที่จะเก็บ", inline: true,
+      options: [{ value: a.customerNo, label: (va || DASH) + " (" + a.customerNo + ")" }, { value: c.customerNo, label: (vc || DASH) + " (" + c.customerNo + ")" }] };
+  }
+  JCRM.on("dq-merge", function (newNo) {
+    var p = pairOf(newNo); if (!p) { return; }
+    var a = JCRM.customer(p.newCustomerNo), c = JCRM.customer(p.candidateCustomerNo);
+    JCRM.dialog({
+      title: "รวมลูกค้า " + a.customerNo + " กับ " + c.customerNo, size: "lg",
+      intro: '<div class="alert" role="note"><span aria-hidden="true">i</span><div><p class="alert__title">ต้องยืนยันตัวตนสองขั้นตอน (MFA) ในเซสชันนี้</p><p>ต้องมีสิทธิ์รวมลูกค้า (customer.merge) กับลูกค้าทั้งสองราย · ผู้ตัดสินต้องไม่ใช่ผู้สร้างรายการ (ข้อ 6.7 · 12.3)</p></div></div>' +
+        '<p class="t-sm" style="margin-top:var(--space-3)">ย้ายไปลูกค้าที่เก็บไว้อัตโนมัติ: ช่องทางติดต่อ · visit · การติดต่อ · Lead · โอกาสขาย · ใบเสนอราคา · งาน · เลขธุรกรรม · โน้ต · ความยินยอม · Tag · สาขาที่เชื่อม</p>' +
+        '<p class="t-sm">สาขาแรก · ช่องทางแรก · แหล่งที่มา · รู้จักครั้งแรก มาจากรายที่รู้จักก่อน (ไม่ใช่ตัวเลือก) · ลูกค้าที่ถูกรวมเปลี่ยนสถานะเป็น MERGED และเปิดเลขเดิมแล้วพาไปลูกค้าที่เก็บไว้ · V1 ไม่มีการยกเลิกการรวม</p>',
+      fields: [
+        { name: "survivor", label: "เก็บเลขลูกค้า", type: "radio", required: true, requiredMessage: "เลือกลูกค้าที่จะเก็บไว้",
+          options: [{ value: c.customerNo, label: c.customerNo + " · " + JCRM.customerName(c.customerNo) + " (ลูกค้าที่มีอยู่)" }, { value: a.customerNo, label: a.customerNo + " · " + JCRM.customerName(a.customerNo) + " (ลูกค้าที่สร้างใหม่)" }] },
+        fieldChoice("pick_first_name", "ชื่อ", a, c, "firstName"),
+        fieldChoice("pick_last_name", "นามสกุล", a, c, "lastName"),
+        fieldChoice("pick_nickname", "ชื่อเล่น", a, c, "nickname"),
+        fieldChoice("pick_province", "จังหวัด", a, c, "province"),
+        { name: "reason", label: "เหตุผลที่รวม", type: "textarea", required: true, piiWarn: true, maxLength: 2000, rows: 2 }
+      ],
+      ack: true, submitLabel: "รวมลูกค้า", submitVariant: "danger",
+      onSubmit: function (v) {
+        var merged = v.survivor === a.customerNo ? c.customerNo : a.customerNo;
+        state.decisions[p.newCustomerNo] = { status: "MERGED", by: me(), at: NOW, survivor: v.survivor };
+        markResolved("DUPLICATE_SUSPECTED", a.firstBranch || a.branch);
+        JCRM.toast("รวม " + merged + " เข้ากับ " + v.survivor + " แล้ว (prototype · ไม่มีการบันทึกจริง) · ระบบจริงเรียก api.merge_customers และบันทึก CUSTOMER_MERGED", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+  JCRM.on("dq-not-dup", function (newNo) {
+    var p = pairOf(newNo); if (!p) { return; }
+    var a = JCRM.customer(p.newCustomerNo), c = JCRM.customer(p.candidateCustomerNo);
+    JCRM.dialog({
+      title: "ยืนยันว่าคนละคน", size: "md",
+      intro: '<p class="t-sm">' + esc(JCRM.customerName(a.customerNo) + " (" + a.customerNo + ") กับ " + JCRM.customerName(c.customerNo) + " (" + c.customerNo + ")") + " · สถานะรายการจะเป็น “ยืนยันคนละคน” (ต้องยืนยัน MFA · ผู้ตัดสินต้องไม่ใช่ผู้สร้างรายการ)</p>",
+      fields: [{ name: "note", label: "หมายเหตุ", type: "textarea", required: true, piiWarn: true, maxLength: 2000, rows: 3 }],
+      submitLabel: "ยืนยันว่าคนละคน", submitVariant: "primary",
+      onSubmit: function () {
+        state.decisions[p.newCustomerNo] = { status: "NOT_DUPLICATE", by: me(), at: NOW };
+        markResolved("DUPLICATE_SUSPECTED", a.firstBranch || a.branch);
+        JCRM.toast("ยืนยันว่าคนละคนแล้ว (prototype · ไม่มีการบันทึกจริง) · ระบบจริงเรียก api.decide_duplicate", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  function currentModel() { return model(JCRM.state()); }
+  function finishFix(code, message) {
+    var m = currentModel();
+    state.fixed[fixedKey(code, m)] = true;
+    markResolved(code, m.branch);
+    JCRM.toast(message + " (prototype · ไม่มีการบันทึกจริง)", "success");
+    rerender();
+    return true;
+  }
+  function phoneError(v) {
+    var d = String(v || "").replace(/[\s-]/g, "");
+    if (!/^\d+$/.test(d)) { return "กรอกเฉพาะตัวเลข"; }
+    if (/^0[689]\d{8}$/.test(d) || /^0[2-7]\d{7}$/.test(d)) { return null; }
+    return "รูปแบบเบอร์ไม่ถูกต้อง: มือถือ 10 หลักขึ้นต้น 06 08 09 หรือเบอร์บ้าน 9 หลักขึ้นต้น 02–07 (ข้อ 6.4)";
+  }
+  JCRM.on("dq-fix-phone", function (code) {
+    var isNew = code === "MISSING_PHONE";
+    JCRM.dialog({
+      title: isNew ? "เพิ่มเบอร์โทรศัพท์" : "แก้เบอร์โทรศัพท์", size: "sm",
+      intro: '<p class="t-sm">ระบบจริงบันทึกผ่าน api.save_contact (normalize และปิดบังในฐานข้อมูล) · หน้าจอแสดงเฉพาะค่าปิดบัง</p>' + (isNew ? "" : '<p class="t-sm">เบอร์ปัจจุบัน (ปิดบัง): ' + DASH + "</p>"),
+      fields: [{ name: "phone", label: isNew ? "เบอร์โทรศัพท์" : "เบอร์โทรศัพท์ใหม่", type: "tel", required: true, placeholder: "08X-XXX-XXXX", validate: phoneError }],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function () { return finishFix(code, isNew ? "เพิ่มเบอร์แล้ว" : "แก้เบอร์แล้ว"); }
+    });
+  });
+  JCRM.on("dq-fix-incomplete", function (code) {
+    JCRM.dialog({
+      title: "เติมข้อมูลลูกค้า", size: "md",
+      intro: '<p class="t-sm">รายการนี้ขาด นามสกุล · จังหวัด · และไม่มี Lead/โอกาสขายที่ระบุความสนใจ (ข้อ 12.3) · เติมอย่างน้อยหนึ่งช่องเพื่อให้พ้นเงื่อนไข</p>',
+      fields: [
+        { name: "last_name", label: "นามสกุล", type: "text", maxLength: 100, width: "half" },
+        { name: "province", label: "จังหวัด", type: "select", ref: "provinces", width: "half", help: D.provincesNote },
+        { name: "interest_note", label: "ความสนใจ", type: "static", html: '<p class="t-sm t-muted">บันทึกผ่าน Lead หรือโอกาสขายของลูกค้า (หน้า 05)</p>' }
+      ],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        if (!String(v.last_name || "").trim() && !v.province) { return { errors: { last_name: "กรอกนามสกุลหรือเลือกจังหวัดอย่างน้อยหนึ่งช่อง" } }; }
+        return finishFix(code, "เติมข้อมูลลูกค้าแล้ว");
+      }
+    });
+  });
+  JCRM.on("dq-fix-txn", function (code) {
+    var manual = JCRM.find(D.sourceSystems, "code", "MANUAL");
+    JCRM.dialog({
+      title: "ผูกเลขธุรกรรม", size: "md",
+      intro: '<p class="t-sm">โอกาสขาย: ' + DASH + " · V1 ผูกด้วยมือและเพิ่มได้อย่างเดียว (ข้อ 19.2 ข้อ 6)</p>",
+      fields: [
+        { name: "type", label: "ประเภทธุรกรรม", type: "select", ref: "transactionTypes", required: true },
+        { name: "source", label: "ระบบต้นทาง", type: "static", html: '<p class="t-sm">' + esc(manual ? manual.labelTh : DASH) + ' <span class="code">MANUAL</span></p>' },
+        { name: "external_no", label: "เลขธุรกรรม", type: "text", required: true, maxLength: 60, width: "half", validate: function (v) { return /\s/.test(v) ? "เลขธุรกรรมต้องไม่มีช่องว่าง" : null; } },
+        { name: "transacted_at", label: "วันเวลาทำธุรกรรม", type: "datetime", required: true, width: "half" },
+        { name: "amount", label: "ยอด (บาท)", type: "money", min: 0, width: "half" }
+      ],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function () { return finishFix(code, "ผูกเลขธุรกรรมแล้ว"); }
+    });
+  });
+  JCRM.on("dq-assign", function (code) {
+    var m = currentModel();
+    var branches = m.branch === "ALL" ? JCRM.scopeBranches("lead.assign", "OWN") : [m.branch];
+    var options = D.staff.filter(function (s) { return s.status === "ACTIVE" && s.assignments.some(function (a) { return a.branch && branches.indexOf(a.branch) !== -1; }); })
+      .map(function (s) { return { value: s.staffCode, label: s.displayName + " · " + s.staffCode }; });
+    var reasons = JCRM.refList("ownershipChangeReasons").map(function (r) { return { value: r.code, label: r.labelTh, disabled: r.code === "BRANCH_TRANSFER" }; });
+    JCRM.dialog({
+      title: "มอบหมาย Lead (แถวสาธิต)", size: "md",
+      intro: '<p class="t-sm">ปัจจุบัน: ยังไม่มีผู้รับผิดชอบ · เปลี่ยนผู้รับผิดชอบได้ทางเดียวผ่าน api.assign_owner (ข้อ 9.4.2) · “ย้ายสาขา” ใช้เมื่อเปลี่ยนสาขาเท่านั้น</p>',
+      fields: [
+        { name: "to_staff", label: "ผู้รับผิดชอบใหม่", type: "select", required: true, options: options, help: "พนักงานที่ใช้งานอยู่และมีบทบาทในสาขาของรายการ" },
+        { name: "reason", label: "เหตุผล", type: "select", required: true, requiredMessage: "เลือกเหตุผล", options: reasons },
+        { name: "note", label: "หมายเหตุ", type: "text", piiWarn: true, maxLength: 200 }
+      ],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) { return finishFix(code, "มอบหมาย Lead ให้ " + JCRM.staffName(v.to_staff) + " แล้ว"); }
+    });
+  });
+  JCRM.on("dq-ack", function () {
+    var m = currentModel();
+    JCRM.confirm({
+      title: "รับทราบว่าไม่ได้บันทึกผล (แถวสาธิต)",
+      message: "ผลการให้บริการของ visit ที่ข้ามวันแล้วแก้ไม่ได้ การรับทราบจะบันทึกชื่อและเวลาของคุณ",
+      confirmLabel: "รับทราบ", variant: "primary",
+      onConfirm: function () {
+        state.acks[m.branch] = { by: me(), at: NOW };
+        JCRM.toast("รับทราบแล้ว (prototype · ไม่มีการบันทึกจริง) · ระบบจริงเรียก api.acknowledge_unrecorded_visit", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  JCRM.page({ id: "data-quality", render: render });
+})();
+</script>
+</body>
+</html>

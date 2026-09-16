@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>คำขอส่งออกข้อมูล · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 15 · คำขอส่งออกข้อมูล — CANONICAL v2.2 ข้อ 8.2 · 9.8 · 11.1 · 13.14 · sitemap-screen-specs ข้อ 18 · ไม่มี hex */
+.ex-tabpanel { padding-top: var(--space-4); }
+.ex-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; font-size: var(--fs-sm); }
+.ex-dl dt { color: var(--text-secondary); }
+.ex-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.ex-limits { width: 100%; border-collapse: collapse; font-size: var(--fs-xs); }
+.ex-limits th, .ex-limits td { border: 1px solid var(--border-subtle); padding: var(--space-1) var(--space-2); text-align: start; vertical-align: top; }
+.ex-limits th { background: var(--surface-raised); color: var(--text-secondary-sunk); font-weight: var(--fw-medium); }
+.ex-limits td[data-numeric] { text-align: end; }
+.ex-download { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
+.ex-watermark { font-size: var(--fs-xs); color: var(--text-secondary); }
+.ex-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
+</style>
+</head>
+<body data-page="exports" data-roles="BRANCH_MANAGER MARKETING EXECUTIVE BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* ============================================================================
+   หน้า 15 · คำขอส่งออกข้อมูล (exports)
+   แหล่ง: CANONICAL v2.2 ข้อ 4.8 (audit.export_status) · 5.8 (ref.export_reasons) · 8.1 (customer.export 🔐 · export.approve 🔐) · 8.2 (เพดาน · ผู้อนุมัติ · ดาวน์โหลด)
+         9.8 (generate-export · signed URL 60 วินาที) · 11.1 (EXPORT_APPROVAL_REQUIRED · EXPORT_DECIDED · EXPORT_READY) · 13.14 (EX-2026-000031 · EX-2026-000030)
+   ระบบจริง: api.list_export_requests · api.request_export · api.decide_export · api.record_export_download → Edge Function generate-export
+   prototype: คำขอใหม่ การตัดสิน และจำนวนดาวน์โหลดเก็บในหน่วยความจำ · ไม่มีไฟล์และไม่ดาวน์โหลดจริง
+   ========================================================================= */
+(function () {
+  "use strict";
+  var D = JCRM.data, ui = JCRM.ui, fmt = JCRM.fmt, esc = JCRM.esc;
+  var DASH = fmt.DASH, NOW = D.meta.now;
+  var MAX_DL = D.settingValues["export.max_downloads"], TTL_H = D.settingValues["export.link_ttl_hours"];
+  /* คอลัมน์ที่ได้ต่อบทบาทที่ยื่น (ข้อ 8.2 · ป้ายไทยตาม sitemap-screen-specs ข้อ 18.5) */
+  var COLUMNS_TH = {
+    BRANCH_MANAGER: "รหัสลูกค้า · ชื่อ · สถานะลูกค้า · ช่องทางแรก · จังหวัด · ติดต่อล่าสุด · เบอร์ปิดบัง",
+    MARKETING: "รหัสลูกค้า · ชื่อ + เบอร์ (ยินยอม PHONE/SMS) · อีเมล (ยินยอม EMAIL) · LINE (ยินยอม LINE)",
+    BUSINESS_ADMIN: "โปรไฟล์ + ช่องทางติดต่อ + Tag + ความยินยอมปัจจุบัน",
+    EXECUTIVE: "โปรไฟล์ + ช่องทางติดต่อ + Tag + ความยินยอมปัจจุบัน"
+  };
+  var requests = D.exportRequests.map(function (x) {
+    var c = {}; Object.keys(x).forEach(function (k) { c[k] = x[k]; });
+    c.note = null; c.filters = null; c.generatedAt = null; c.decidedBy = null; c.decidedAt = null; c.rejectReason = null;
+    return c;
+  });
+  var state = { tab: null, openedFromParam: false };
+  var drawerCtl = null;
+
+  function me() { return JCRM.currentStaffCode(); }
+  function roleLabel(code) { var r = JCRM.role(code); return r ? r.labelTh : DASH; }
+  function limitOf(role) { return JCRM.find(D.exportLimits, "role", role); }
+  /* ผู้อนุมัติเป็นป้ายไทย (ข้อ 8.2 · data.js เก็บเป็นรหัสบทบาท) */
+  function approverText(lim) {
+    if (!lim) { return DASH; }
+    if (!lim.approver) { return "ไม่ต้องอนุมัติ · เกินเพดาน = ปฏิเสธ"; }
+    return roleLabel(lim.approver) + (lim.role === "MARKETING" ? " ทุกครั้ง" : "") + (lim.role === "EXECUTIVE" ? " (รอยืนยัน Q23)" : "");
+  }
+  function reasonOf(code) { return JCRM.find(D.exportReasons, "code", code); }
+  function plusHours(iso, h) {
+    var days = Math.floor(h / 24), rest = h - days * 24;
+    var key = fmt.addDays(fmt.dayKey(iso), days), hh = Number(iso.slice(11, 13)) + rest;
+    if (hh >= 24) { key = fmt.addDays(key, 1); hh -= 24; }
+    return key + "T" + String(100 + hh).slice(1) + iso.slice(13);
+  }
+  /* บทบาทที่ผู้ใช้ยื่นได้ (มี customer.export ในบทบาทนั้น · ข้อ 8.2) */
+  function exportRoles() {
+    return JCRM.roleCodes().filter(function (r) { return D.permissions["customer.export"][r] && limitOf(r); });
+  }
+  function mine() { return requests.filter(function (x) { return x.requester === me(); }); }
+  /* รออนุมัติ: ผู้อนุมัติกำหนดตาม requested_as_role · ผู้อนุมัติ ≠ ผู้ขอ (ข้อ 8.2) — ตรรกะเดียวกับ JCRM.select.exportsFor */
+  function pending() {
+    var roles = JCRM.roleCodes();
+    return requests.filter(function (x) { var lim = limitOf(x.requestedAsRole); return x.status === "REQUESTED" && lim && lim.approver && roles.indexOf(lim.approver) !== -1 && x.requester !== me(); });
+  }
+  function canRequest() { return JCRM.access("customer.export").visible; }
+  function canApprove() { return JCRM.access("export.approve").visible; }
+  function sortDesc(list) { return list.slice().sort(function (a, b) { return -fmt.compareIso(a.requestedAt, b.requestedAt); }); }
+
+  /* --------------------------------------------------------- ดาวน์โหลด (ข้อ 8.2) */
+  function downloadInfo(x) {
+    if (["GENERATED", "DOWNLOADED", "EXPIRED"].indexOf(x.status) === -1) { return null; }
+    var reason = null;
+    if (x.requester !== me()) { reason = "ดาวน์โหลดได้เฉพาะผู้ขอ"; }
+    else if (x.status === "EXPIRED") { reason = "ไฟล์หมดอายุแล้ว"; }
+    else if ((x.downloads || 0) >= MAX_DL) { reason = "ดาวน์โหลดครบ " + fmt.int(MAX_DL) + " ครั้งแล้ว"; }
+    else if (x.generatedAt && fmt.compareIso(NOW, plusHours(x.generatedAt, TTL_H)) >= 0) { reason = "ไฟล์หมดอายุแล้ว"; }
+    else { var acc = JCRM.access("customer.export"); if (!acc.allowed) { reason = acc.reason; } }
+    return { count: (x.downloads || 0) + "/" + MAX_DL + " ครั้ง", reason: reason };
+  }
+  function watermark(x) {
+    var s = JCRM.staff(x.requester);
+    return "ไฟล์มีลายน้ำ ส่งออกโดย " + (s ? s.staffCode : DASH) + " · " + x.exportNo + " · " + (x.generatedAt ? fmt.dateTime(x.generatedAt) : DASH) +
+      " · หมดอายุ " + (x.generatedAt ? fmt.dateTime(plusHours(x.generatedAt, TTL_H)) : DASH);
+  }
+  function rowNote(x) {
+    var parts = [];
+    var r = reasonOf(x.reason);
+    if (r && r.isMarketing) { parts.push("เฉพาะลูกค้าที่ยินยอมรับข่าวสาร"); }
+    if (x.status === "REQUESTED" && x.waitingFor) { parts.push("รอ" + JCRM.staffName(x.waitingFor)); }
+    else if (x.status === "REQUESTED") { var lim = limitOf(x.requestedAsRole); parts.push("รอ" + (lim && lim.approver ? roleLabel(lim.approver) : DASH) + "อนุมัติ"); }
+    if (x.fileDeletedAt) { parts.push("ไฟล์ถูกลบ " + fmt.date(x.fileDeletedAt)); }
+    if (x.status === "REJECTED" && x.rejectReason) { parts.push("ไม่อนุมัติ"); }
+    return parts.join(" · ");
+  }
+
+  /* --------------------------------------------------------- ตาราง */
+  function table(list, kind) {
+    return ui.table({
+      id: "ex-" + kind, caption: kind === "mine" ? "คำขอของฉัน" : "คำขอรออนุมัติ", rowKey: "exportNo", rowAction: "ex-open",
+      columns: [
+        { key: "exportNo", label: "เลขคำขอ", format: "code", sub: function (x) { return esc(rowNote(x)); } },
+        { key: "requester", label: "ผู้ขอ", render: function (x) { var s = JCRM.staff(x.requester); return esc((s ? s.staffCode + " " + s.displayName : DASH) + " · " + roleLabel(x.requestedAsRole)); } },
+        { key: "requestedAt", label: "ยื่นเมื่อ", format: "dateTime" },
+        { key: "reason", label: "เหตุผล", render: function (x) { return esc(JCRM.label("exportReasons", x.reason)); } },
+        { key: "rows", label: "จำนวนแถว", format: "int" },
+        { key: "status", label: "สถานะ", format: "status:exportStatus" },
+        { key: "downloads", label: "ดาวน์โหลด", render: function (x) { var d = downloadInfo(x); return d ? esc(d.count) : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "exportNo", label: "การกระทำ", render: function (x) { return '<div class="ex-actions">' + rowButtons(x, kind) + "</div>"; } }
+      ],
+      rows: sortDesc(list),
+      empty: kind === "mine" ? { title: "ยังไม่มีคำขอส่งออก" } :
+        { title: "ไม่มีคำขอที่รอคุณอนุมัติ", text: "คุณอนุมัติได้เฉพาะคำขอที่ยื่นในบทบาท" + approvableRolesText() + " และต้องไม่ใช่คำขอของคุณเอง (ข้อ 8.2)" },
+      footer: list.length ? { shown: list.length, total: list.length, unit: "คำขอ" } : false
+    });
+  }
+  function approvableRolesText() {
+    var roles = JCRM.roleCodes();
+    var list = D.exportLimits.filter(function (l) { return l.approver && roles.indexOf(l.approver) !== -1; }).map(function (l) { return roleLabel(l.role); });
+    return list.length ? list.join(" · ") : DASH;
+  }
+  function rowButtons(x, kind) {
+    if (kind === "pending") {
+      return ui.permButton({ label: "พิจารณา", variant: "secondary", size: "sm", action: "ex-open", id: x.exportNo, permission: "export.approve",
+        extra: { ok: x.requester !== me(), reason: "ผู้อนุมัติต้องไม่ใช่ผู้ขอ" } });
+    }
+    var out = "";
+    var d = downloadInfo(x);
+    if (d) { out += ui.button({ label: "ดาวน์โหลด", variant: "secondary", size: "sm", icon: "download", action: d.reason ? null : "ex-download", id: x.exportNo, disabledReason: d.reason }); }
+    if (x.status === "APPROVED") { out += ui.button({ label: "จำลอง: ระบบสร้างไฟล์แล้ว", variant: "ghost", size: "sm", action: "ex-simulate-generated", id: x.exportNo }); }
+    return out;
+  }
+
+  /* --------------------------------------------------------- render */
+  function render() {
+    var showMine = canRequest(), showPending = canApprove();
+    var pend = showPending ? pending() : [];
+    if (!state.tab) { state.tab = showPending && pend.length ? "pending" : (showMine ? "mine" : "pending"); }
+    var header = ui.pageHeader({
+      title: "คำขอส่งออกข้อมูล",
+      lead: "ยื่น อนุมัติ และดาวน์โหลดไฟล์ส่งออกข้อมูลลูกค้าภายใต้เพดานและผู้อนุมัติตามข้อ 8.2 · ตัวเลขเพดานทั้งหมดรอยืนยัน (Q7)",
+      actions: [{ label: "+ ขอส่งออกข้อมูลลูกค้า", variant: "secondary", icon: "download", action: "ex-new", permission: "customer.export" }]
+    });
+    var notFound = "";
+    var wanted = JCRM.param("ex");
+    if (wanted && !JCRM.find(mine().concat(pend), "exportNo", wanted) && !state.openedFromParam) {
+      notFound = '<div class="section">' + ui.state("notfound", { compact: true, text: wanted }) + "</div>";
+    }
+    var tabs = ui.tabs({
+      id: "ex-tabs", label: "คำขอส่งออก", selected: state.tab,
+      tabs: [
+        { id: "mine", label: "คำขอของฉัน", hidden: !showMine, html: '<div class="ex-tabpanel"><div class="card card--flush">' + (showMine ? table(mine(), "mine") : "") + "</div>" + downloadNote() + "</div>" },
+        { id: "pending", label: "รออนุมัติ", count: pend.length, hidden: !showPending, html: '<div class="ex-tabpanel"><div class="card card--flush">' + (showPending ? table(pend, "pending") : "") + "</div></div>" }
+      ]
+    });
+    document.getElementById("page").innerHTML = header + notFound + tabs;
+  }
+  function downloadNote() {
+    return '<p class="t-xs t-muted" style="margin-top:var(--space-3)">ดาวน์โหลดได้เฉพาะผู้ขอ · บัญชีใช้งานอยู่ · ยืนยัน MFA · สถานะพร้อมดาวน์โหลด/ดาวน์โหลดแล้ว · ไม่เกิน ' + esc(fmt.int(MAX_DL)) + " ครั้ง · ภายใน " + esc(fmt.int(TTL_H)) +
+      " ชั่วโมงหลังสร้างไฟล์ · ระบบจริงเรียก api.record_export_download ด้วย JWT ของผู้ขอ แล้ว generate-export ออกลิงก์อายุ 60 วินาที · ไม่มีบทบาทใดได้โน้ต สรุปการติดต่อ สรุปธุรกรรม หรือ IMEI</p>";
+  }
+  function rerender() { render(); JCRM.initTabs(document); }
+  document.addEventListener("jcrm:tabchange", function (e) { if (e.detail && e.detail.tabsId === "ex-tabs") { state.tab = e.detail.tab; } });
+
+  /* --------------------------------------------------------- drawer รายละเอียด/พิจารณา */
+  function closeDrawer() { if (drawerCtl && drawerCtl.el && drawerCtl.el.isConnected) { drawerCtl.close(); } drawerCtl = null; }
+  function openDetail(no) {
+    var x = JCRM.find(requests, "exportNo", no); if (!x) { return; }
+    var isPending = JCRM.find(pending(), "exportNo", no), isMine = x.requester === me();
+    if (!isPending && !isMine) { JCRM.toast(D.meta.texts.stateNotFound, "warning"); return; }
+    closeDrawer();
+    var s = JCRM.staff(x.requester), lim = limitOf(x.requestedAsRole), reason = reasonOf(x.reason);
+    var d = downloadInfo(x);
+    var body = '<div class="stack"><div class="row">' + ui.status("exportStatus", x.status) + "</div>" +
+      '<dl class="ex-dl"><dt>ผู้ขอ</dt><dd>' + esc(s ? s.staffCode + " " + s.displayName : DASH) + "</dd>" +
+      "<dt>บทบาทที่ยื่น</dt><dd>" + esc(roleLabel(x.requestedAsRole)) + "</dd>" +
+      "<dt>ยื่นเมื่อ</dt><dd>" + esc(fmt.dateTime(x.requestedAt)) + "</dd>" +
+      "<dt>เหตุผล</dt><dd>" + esc(JCRM.label("exportReasons", x.reason)) + "</dd>" +
+      "<dt>หมายเหตุ</dt><dd>" + esc(x.note || DASH) + "</dd>" +
+      "<dt>ตัวกรองที่บันทึกตอนยื่น</dt><dd>" + esc(x.filters || DASH) + "</dd>" +
+      "<dt>จำนวนแถว</dt><dd>" + esc(x.rows === null || x.rows === undefined ? DASH : fmt.int(x.rows) + " แถว") + (x.filterTh ? " (" + esc(x.filterTh) + ")" : "") + "</dd>" +
+      "<dt>คอลัมน์ที่จะได้</dt><dd>" + esc(COLUMNS_TH[x.requestedAsRole] || DASH) + "</dd>" +
+      "<dt>ผู้อนุมัติ</dt><dd>" + esc(approverText(lim)) + "</dd>" +
+      "<dt>ผู้ตัดสิน</dt><dd>" + esc(x.decidedBy ? JCRM.staffName(x.decidedBy) + " · " + fmt.dateTime(x.decidedAt) : DASH) + "</dd>" +
+      (x.rejectReason ? "<dt>เหตุผลที่ปฏิเสธ</dt><dd>" + esc(x.rejectReason) + "</dd>" : "") +
+      (x.fileDeletedAt ? "<dt>ไฟล์</dt><dd>ถูกลบ " + esc(fmt.date(x.fileDeletedAt)) + "</dd>" : "") + "</dl>" +
+      (reason && reason.isMarketing ? '<p class="alert" role="note">เหตุผลกลุ่มการตลาด: ระบบส่งออกเฉพาะลูกค้าที่ยินยอมรับข่าวสาร (ทุกบทบาท · ข้อ 8.2)</p>' : "") +
+      (d ? '<div class="ex-download">' + ui.button({ label: "ดาวน์โหลด (" + d.count + ")", variant: "secondary", icon: "download", action: d.reason ? null : "ex-download", id: x.exportNo, disabledReason: d.reason }) +
+        '<span class="ex-watermark">' + esc(watermark(x)) + "</span></div>" : "") + "</div>";
+    var footer = ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" });
+    if (isPending) {
+      footer += '<span class="spacer"></span>' +
+        ui.permButton({ label: "ปฏิเสธ", variant: "danger-outline", action: "ex-reject", id: x.exportNo, permission: "export.approve", extra: { ok: x.requester !== me(), reason: "ผู้อนุมัติต้องไม่ใช่ผู้ขอ" } }) +
+        ui.permButton({ label: "อนุมัติ", variant: "primary", action: "ex-approve", id: x.exportNo, permission: "export.approve", extra: { ok: x.requester !== me(), reason: "ผู้อนุมัติต้องไม่ใช่ผู้ขอ" } });
+    }
+    drawerCtl = JCRM.drawer({ title: isPending ? "พิจารณาคำขอส่งออก" : "คำขอส่งออก", ref: x.exportNo, wide: true, body: body, footer: footer, onCancel: function () { drawerCtl = null; } });
+  }
+  JCRM.on("ex-open", openDetail);
+
+  JCRM.on("ex-approve", function (no) {
+    var x = JCRM.find(pending(), "exportNo", no); if (!x) { return; }
+    JCRM.confirm({
+      title: "อนุมัติคำขอ " + no + "?",
+      message: fmt.int(x.rows) + " แถว · " + JCRM.label("exportReasons", x.reason) + " · หลังอนุมัติระบบสร้างไฟล์และแจ้งผู้ขอ",
+      confirmLabel: "อนุมัติ", variant: "primary",
+      onConfirm: function () {
+        x.status = "APPROVED"; x.decidedBy = me(); x.decidedAt = NOW; x.waitingFor = null;
+        closeDrawer();
+        JCRM.toast("อนุมัติ " + no + " แล้ว (prototype · ไม่มีการบันทึกจริง) · ระบบจริงเรียก api.decide_export แจ้ง EXPORT_DECIDED ถึงผู้ขอ แล้ว generate-export สร้างไฟล์และแจ้ง EXPORT_READY", "success");
+        state.tab = pending().length ? "pending" : state.tab;
+        rerender();
+        return true;
+      }
+    });
+  });
+  JCRM.on("ex-reject", function (no) {
+    var x = JCRM.find(pending(), "exportNo", no); if (!x) { return; }
+    JCRM.dialog({
+      title: "ปฏิเสธคำขอ " + no, size: "md",
+      fields: [{ name: "reason", label: "เหตุผลที่ปฏิเสธ", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 3 }],
+      submitLabel: "ปฏิเสธคำขอ", submitVariant: "danger-outline",
+      onSubmit: function (v) {
+        x.status = "REJECTED"; x.decidedBy = me(); x.decidedAt = NOW; x.rejectReason = v.reason; x.waitingFor = null;
+        closeDrawer();
+        JCRM.toast("ปฏิเสธ " + no + " แล้ว (prototype · ไม่มีการบันทึกจริง) · ระบบจริงแจ้ง EXPORT_DECIDED ถึงผู้ขอ", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+  JCRM.on("ex-download", function (no) {
+    var x = JCRM.find(requests, "exportNo", no); if (!x) { return; }
+    var d = downloadInfo(x);
+    if (!d || d.reason) { JCRM.toast(d ? d.reason : D.meta.texts.reasonStatus, "warning"); return; }
+    x.downloads = (x.downloads || 0) + 1; x.status = "DOWNLOADED";
+    closeDrawer();
+    JCRM.toast("ดาวน์โหลด (prototype) · ครั้งที่ " + x.downloads + "/" + MAX_DL + " · เบราว์เซอร์ของ prototype ไม่ดาวน์โหลดไฟล์จริง · ระบบจริงบันทึก EXPORT_DOWNLOADED", "info", { duration: 7000 });
+    rerender();
+  });
+  JCRM.on("ex-simulate-generated", function (no) {
+    var x = JCRM.find(requests, "exportNo", no); if (!x || x.status !== "APPROVED") { return; }
+    x.status = "GENERATED"; x.generatedAt = NOW; x.downloads = 0;
+    JCRM.toast("จำลองว่า generate-export สร้างไฟล์ " + no + " แล้ว (prototype) · ระบบจริงแจ้ง EXPORT_READY ถึงผู้ขอ", "info");
+    rerender();
+  });
+
+  /* --------------------------------------------------------- ยื่นคำขอ (ข้อ 8.2) */
+  function limitsTable(role) {
+    var lim = limitOf(role); if (!lim) { return ""; }
+    return '<table class="ex-limits"><caption class="sr-only">เพดานการส่งออกของบทบาท ' + esc(roleLabel(role)) + "</caption><thead><tr><th scope=\"col\">ยื่นในบทบาท</th><th scope=\"col\">แถวสูงสุด/ครั้ง</th><th scope=\"col\">ครั้ง/วัน</th><th scope=\"col\">ผู้อนุมัติ</th><th scope=\"col\">คอลัมน์ที่ได้</th></tr></thead><tbody>" +
+      "<tr><td>" + esc(roleLabel(role)) + "</td><td data-numeric>" + esc(fmt.int(lim.maxRows)) + "</td><td data-numeric>" + esc(fmt.int(lim.perDay)) + "</td><td>" + esc(approverText(lim)) + "</td><td>" + esc(COLUMNS_TH[role]) + "</td></tr></tbody></table>" +
+      '<p class="help">ตัวเลขเพดาน รอยืนยัน (Q7) · ไม่มีบทบาทใดได้โน้ต สรุปการติดต่อ สรุปธุรกรรม หรือ IMEI</p>';
+  }
+  function todayCount(role) {
+    var day = fmt.dayKey(NOW);
+    return requests.filter(function (x) { return x.requester === me() && x.requestedAsRole === role && fmt.dayKey(x.requestedAt) === day; }).length;
+  }
+  JCRM.on("ex-new", function () {
+    var roles = exportRoles();
+    if (!roles.length) { var acc = JCRM.access("customer.export"); JCRM.toast(acc.reason || D.meta.texts.rpcDenied, "warning"); return; }
+    var role = roles[0];
+    var branchOpts = JCRM.scopeBranches("customer.export", "OWN");
+    var fields = [];
+    fields.push(roles.length > 1 ? { name: "role", label: "ยื่นในบทบาท", type: "select", required: true, options: roles.map(function (r) { return { value: r, label: roleLabel(r) }; }) } :
+      { name: "role_static", label: "ยื่นในบทบาท", type: "static", html: '<p class="t-sm">' + esc(roleLabel(role)) + "</p>" + limitsTable(role) });
+    if (role === "BRANCH_MANAGER" && branchOpts.length === 1) {
+      fields.push({ name: "branch_lock", label: "สาขา", type: "static", html: '<p class="t-sm">' + esc(JCRM.branchName(branchOpts[0])) + ' <span class="t-muted">(ล็อกตามสาขาที่คุณเป็นผู้จัดการ)</span></p>' });
+    } else {
+      fields.push({ name: "branch", label: "สาขา", type: "select", width: "half", placeholder: "ทุกสาขา", options: branchOpts.map(function (b) { return { value: b, label: JCRM.branchName(b) }; }) });
+    }
+    fields.push({ name: "lifecycle", label: "สถานะลูกค้า", type: "select", width: "half", placeholder: "ทั้งหมด", ref: "lifecycleStages" });
+    fields.push({ name: "firstChannel", label: "ช่องทางแรก", type: "select", width: "half", placeholder: "ทั้งหมด", ref: "channels" });
+    fields.push({ name: "lastActivity", label: "ติดต่อล่าสุด", type: "select", width: "half", placeholder: "ทั้งหมด",
+      options: D.meta.presets.map(function (p) { return { value: p.code, label: p.labelTh + (p.enabled ? "" : " — " + D.meta.texts.presetDisabled), disabled: !p.enabled }; }) });
+    fields.push({ name: "reason", label: "เหตุผล", type: "select", required: true, ref: "exportReasons" });
+    fields.push({ name: "marketing_note", type: "static", html: '<p class="alert" role="note">ระบบจะส่งออกเฉพาะลูกค้าที่ยินยอมรับข่าวสาร (ทุกบทบาท)</p>', visibleWhen: { field: "reason", equals: "MARKETING_CAMPAIGN" } });
+    fields.push({ name: "note", label: "หมายเหตุ", type: "textarea", piiWarn: true, maxLength: 500, rows: 2, requiredWhen: { field: "reason", equals: "OTHER" }, requiredMessage: "กรอกหมายเหตุเมื่อเลือกอื่น ๆ" });
+    fields.push({ name: "count_note", type: "static", html: '<p class="help">ครั้งต่อวันนับทุกคำขอที่ยื่นในวันนี้ รวมคำขอที่ไม่อนุมัติ · จำนวนแถวที่ตรงตัวกรองระบบนับตอนยื่น (prototype แสดง –) · ' +
+      (role === "BRANCH_MANAGER" ? "ผู้จัดการสาขาไม่ต้องรออนุมัติ · เกินเพดานระบบปฏิเสธ" : "คำขอรอ" + esc(approverText(limitOf(role))) + "อนุมัติ") + "</p>" });
+    JCRM.dialog({
+      title: "ขอส่งออกข้อมูลลูกค้า", size: "md", fields: fields, cancelLabel: "ยกเลิก", submitLabel: "ส่งคำขอ", submitVariant: "primary",
+      onSubmit: function (v) {
+        var asRole = v.role || role, lim = limitOf(asRole);
+        if (todayCount(asRole) >= lim.perDay) { return { errors: { reason: "ยื่นคำขอในบทบาท" + roleLabel(asRole) + "ครบ " + fmt.int(lim.perDay) + " ครั้งในวันนี้แล้ว (รวมคำขอที่ไม่อนุมัติ)" } }; }
+        var n = D.runningNumbers["EX:2026"] + requests.filter(function (x) { return x.createdHere; }).length + 1;
+        var no = "EX-2026-" + String(1000000 + n).slice(1);
+        var filters = [
+          (branchOpts.length === 1 && asRole === "BRANCH_MANAGER") ? JCRM.branchName(branchOpts[0]) : (v.branch ? JCRM.branchName(v.branch) : "ทุกสาขาในสิทธิ์"),
+          v.lifecycle ? JCRM.label("lifecycleStages", v.lifecycle) : null, v.firstChannel ? JCRM.label("channels", v.firstChannel) : null,
+          v.lastActivity ? "ติดต่อล่าสุด " + (JCRM.find(D.meta.presets, "code", v.lastActivity) || { labelTh: DASH }).labelTh : null
+        ].filter(Boolean).join(" · ");
+        var x = { exportNo: no, requester: me(), requestedAsRole: asRole, requestedAt: NOW, reason: v.reason, rows: null, filterTh: reasonOf(v.reason).isMarketing ? "ยินยอม MARKETING" : null,
+          status: lim.approver ? "REQUESTED" : "APPROVED", waitingFor: null, downloads: null, note: v.note || null, filters: filters, generatedAt: null, decidedBy: null, decidedAt: null, rejectReason: null, createdHere: true };
+        requests.push(x);
+        state.tab = "mine";
+        JCRM.toast(lim.approver ? "ยื่นคำขอ " + no + " แล้ว · รอ" + approverText(lim) + "อนุมัติ (prototype · ไม่มีการบันทึกจริง) · ระบบจริงแจ้ง EXPORT_APPROVAL_REQUIRED ถึงผู้อนุมัติ" :
+          "ยื่นคำขอ " + no + " แล้ว · อนุมัติทันที (ไม่ต้องรออนุมัติ) (prototype) · ระบบจริงสร้างไฟล์ด้วย generate-export แล้วแจ้ง EXPORT_READY", "success", { duration: 7000 });
+        rerender();
+        return true;
+      }
+    });
+  });
+
+  JCRM.page({ id: "exports", render: function () {
+    render();
+    var no = JCRM.param("ex");
+    if (no && !state.openedFromParam && JCRM.find(mine().concat(canApprove() ? pending() : []), "exportNo", no)) {
+      state.openedFromParam = true;
+      var inPending = JCRM.find(pending(), "exportNo", no);
+      if (inPending) { state.tab = "pending"; render(); }
+      window.setTimeout(function () { openDetail(no); }, 0);
+    }
+  }, branchPicker: false });
+})();
+</script>
+</body>
+</html>

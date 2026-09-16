@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ใบเสนอราคา · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 19 · ใบเสนอราคา — CANONICAL v2.2 ข้อ 4.4 · 4.6 · 6.10 · 13.7 · 14.9 · 19.3 ข้อ 5 · sitemap-screen-specs ข้อ 22 · ไม่มี hex */
+.qt-mobile-add { display: none; }
+.kv { display: grid; grid-template-columns: minmax(120px, 34%) minmax(0, 1fr); gap: var(--space-2) var(--space-4); font-size: var(--fs-sm); }
+.kv dt { color: var(--text-secondary); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.qt-section { display: flex; flex-direction: column; gap: var(--space-2); padding-block: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.qt-section:first-child { padding-top: 0; }
+.qt-section:last-child { border-bottom: 0; }
+.qt-section__title { font-size: var(--fs-h4); font-weight: var(--fw-semibold); color: var(--text-heading); }
+.qt-items .input, .qt-items .select { min-height: var(--control-h); font-size: var(--fs-xs); padding: var(--space-1) var(--space-2); }
+.qt-items td { vertical-align: top; }
+.qt-items .qt-num { width: 88px; }
+.qt-items .qt-model { min-width: 140px; }
+.qt-total { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding-top: var(--space-2); border-top: 2px solid var(--border-default); font-weight: var(--fw-semibold); }
+.qt-total strong { font-size: var(--fs-h3); color: var(--text-heading); font-variant-numeric: tabular-nums; }
+@media (max-width: 767px) {
+  .qt-desktop-add { display: none; }
+  .qt-mobile-add { display: inline-flex; }
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .kv dd { margin-bottom: var(--space-2); }
+}
+</style>
+</head>
+<body data-page="quotations" data-roles="STAFF SUPERVISOR BRANCH_MANAGER OPERATIONS EXECUTIVE BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var D = JCRM.data, fmt = JCRM.fmt, ui = JCRM.ui, esc = JCRM.esc, DASH = fmt.DASH, T = D.meta.texts;
+  var NOW = D.meta.now, TODAY = fmt.dayKey(NOW);
+  var VALID_DAYS = D.settingValues["quotation.valid_days"];    /* 7 วัน [รอยืนยัน] (ข้อ 4.6 · 11.2) */
+  var TABS = [{ id: "all", status: "", label: "ทั้งหมด" }, { id: "draft", status: "DRAFT", label: "ร่าง" }, { id: "sent", status: "SENT", label: "ส่งแล้ว" },
+    { id: "accepted", status: "ACCEPTED", label: "ตอบรับ" }, { id: "rejected", status: "REJECTED", label: "ปฏิเสธ" }, { id: "expired", status: "EXPIRED", label: "หมดอายุ" }];
+  var OPEN_STAGES = ["INTERESTED", "QUOTATION", "FOLLOW_UP"];
+
+  var S = {
+    ctx: null, tab: null, owner: "", sentRange: "",
+    over: {}, created: [],
+    nextQt: D.runningNumbers["QT:2026"] + 1,    /* ตัวนับ QT:2026 หลัง seed = 1,772 (ข้อ 13.0 ข้อ 8) */
+    drawer: null, drawerId: null, paramHandled: false
+  };
+
+  function isNil(v) { return v === null || v === undefined || v === ""; }
+  function me() { return S.ctx ? S.ctx.staffCode : JCRM.currentStaffCode(); }
+  function pad6(n) { var s = String(n); while (s.length < 6) { s = "0" + s; } return s; }
+  function copy(o) { var x = {}; Object.keys(o || {}).forEach(function (k) { x[k] = o[k]; }); return x; }
+  function satang(v) {
+    var s = String(v == null ? "" : v).trim(); if (!s) { return null; }
+    var p = s.split("."), i = parseInt(p[0] || "0", 10) || 0, f = ((p[1] || "") + "00").slice(0, 2);
+    return (i * 100 + (parseInt(f, 10) || 0)) * (s.charAt(0) === "-" ? -1 : 1);
+  }
+  function addDays(dayKey, n) { return fmt.addDays(dayKey, n); }
+
+  /* ---------------------------------------------------------------------------
+     โมเดลใบเสนอราคา: QT-2026-001702 (ข้อ 13.7) + ร่างที่สร้างในหน้านี้
+     หมายเหตุผู้เขียน: ข้อ 13.7 พิมพ์เฉพาะยอดรวม 49,900 → จำนวนและราคา/หน่วยของใบตัวอย่างแสดง "–" (sitemap ข้อ 22.8)
+     ------------------------------------------------------------------------ */
+  function samples() {
+    return D.quotations.map(function (q) {
+      return { id: q.quotationNo, quotationNo: q.quotationNo, opportunityNo: q.opportunityNo, customerNo: q.customerNo, branch: q.branch, owner: q.owner || null, ownerUnknown: isNil(q.owner),
+        status: q.status, items: (q.items || []).map(function (it) { return { productType: it.productType || null, productModel: it.productModel, variant: it.variant || null, quantity: null, unitPrice: null, discountAmount: null }; }),
+        totalAmount: q.totalAmount, sentAt: q.sentAt || null, sentChannel: q.sentChannel || null, validUntil: q.validUntil || null, expiredAt: q.expiredAt || null,
+        installmentMonths: null, termsNote: null, createdAt: null, sample: true };
+    });
+  }
+  function allQuotations() {
+    return samples().concat(S.created.map(copy)).map(function (q) {
+      var o = S.over[q.id]; if (o) { Object.keys(o).forEach(function (k) { q[k] = o[k]; }); }
+      return q;
+    });
+  }
+  function findQt(id) { return allQuotations().filter(function (q) { return q.id === id; })[0] || null; }
+  function readable(q) { return JCRM.can("quotation.read", { branch: q.branch, owner: q.owner, viaCustomer: JCRM.customerCtx(q.customerNo) }); }
+  function rowCtx(q) { return { branch: q.branch, owner: q.owner }; }
+  function setOver(id, patch) { S.over[id] = S.over[id] || {}; Object.keys(patch).forEach(function (k) { S.over[id][k] = patch[k]; }); }
+  function opsForCreate() {
+    return D.opportunities.filter(function (o) {
+      return OPEN_STAGES.indexOf(o.stage) !== -1 && JCRM.can("opportunity.read", { branch: o.branch, owner: o.owner, viaCustomer: JCRM.customerCtx(o.customerNo) }) && JCRM.can("quotation.create", { branch: o.branch, owner: o.owner });
+    });
+  }
+  function createGate(op) {
+    var a = JCRM.access("quotation.create", { branch: op.branch, owner: op.owner });
+    if (!a.visible) { return { visible: false }; }
+    var reason = a.reason === T.reasonOwn ? "สร้างได้เฉพาะโอกาสขายที่คุณเป็นผู้รับผิดชอบ" : (a.reason === T.reasonTeam ? "สร้างได้เฉพาะโอกาสขายของสมาชิกในทีมคุณ" : a.reason);
+    return { visible: true, allowed: a.allowed, reason: reason };
+  }
+
+  /* ---------------------------------------------------------------------------
+     render
+     ------------------------------------------------------------------------ */
+  function selectHtml(id, label, options, value, action) {
+    return '<div class="field field--inline"><label class="label" for="' + esc(id) + '">' + esc(label) + '</label><select class="select" id="' + esc(id) + '" data-jcrm-change="' + esc(action) + '">' +
+      options.map(function (o) { return '<option value="' + esc(o.value) + '"' + (String(o.value) === String(value || "") ? " selected" : "") + ">" + esc(o.label) + "</option>"; }).join("") + "</select></div>";
+  }
+  function ownerCell(q) { return q.ownerUnknown ? '<span class="is-null">' + DASH + "</span>" : esc(JCRM.staffName(q.owner)); }
+  function render(ctx) {
+    S.ctx = ctx;
+    var host = document.getElementById("page");
+    var base = JCRM.select.quotationsFor(undefined, { branch: ctx.branch });
+    if (!base) { host.innerHTML = ui.noPermission({ roles: ctx.screen.roles }); return; }
+    var tabParam = JCRM.qs("tab");
+    S.tab = S.tab || (JCRM.find(TABS, "id", tabParam) ? tabParam : "all");
+    var rb = JCRM.scopeBranches("quotation.read", "OWN");
+    var effB = ctx.branch === "ALL" && rb.length === 1 ? rb[0] : ctx.branch;
+    var rows = allQuotations().filter(function (q) {
+      if (!readable(q) || (effB !== "ALL" && q.branch !== effB)) { return false; }
+      if (S.owner && (S.owner === "none" ? !q.ownerUnknown : q.owner !== S.owner)) { return false; }
+      if (S.sentRange === "TODAY" && (!q.sentAt || fmt.dayKey(q.sentAt) !== TODAY)) { return false; }
+      if (S.sentRange === "LAST_30_DAYS" && (!q.sentAt || fmt.dayKey(q.sentAt) < D.meta.periods.LAST_30_DAYS.start || fmt.dayKey(q.sentAt) >= D.meta.periods.LAST_30_DAYS.endExclusive)) { return false; }
+      return true;
+    });
+    var addBtn = { label: "+ สร้างใบเสนอราคา", variant: "accent", permission: "quotation.create", action: "qt-create" };
+    var header = ui.pageHeader({ title: "ใบเสนอราคา", lead: "สร้างจากโอกาสขาย · ส่งแล้วแก้ได้เฉพาะสถานะ · ใช้ได้ " + fmt.int(VALID_DAYS) + " วันหลังส่ง (quotation.valid_days · รอยืนยัน)",
+      actions: [JCRM.raw('<span class="qt-desktop-add">' + ui.permButton(addBtn) + "</span>"), JCRM.raw('<span class="qt-mobile-add">' + ui.permButton({ label: "สร้างใบเสนอราคา", variant: "accent", permission: "quotation.create", action: "qt-create", icon: "plus", iconOnly: true }) + "</span>")] });
+    var owners = [];
+    rows.forEach(function (q) { if (q.owner && owners.indexOf(q.owner) === -1) { owners.push(q.owner); } });
+    var filters = '<div class="filter-bar filter-bar--panel" role="group" aria-label="ตัวกรองใบเสนอราคา">' +
+      ui.branchSelect({ id: "qt-branch", permission: "quotation.read", value: ctx.branch, action: "qt-branch" }) +
+      selectHtml("qt-owner", "ผู้รับผิดชอบ", [{ value: "", label: "ทั้งหมด" }].concat(owners.map(function (c) { return { value: c, label: JCRM.staffName(c) }; })).concat([{ value: "none", label: DASH + " (ไม่มีในข้อมูลตัวอย่าง)" }]), S.owner, "qt-owner") +
+      selectHtml("qt-sent", "วันที่ส่ง", [{ value: "", label: "ทั้งหมด" }, { value: "TODAY", label: "วันนี้" }, { value: "LAST_30_DAYS", label: "30 วันล่าสุด" }], S.sentRange, "qt-sent") + "</div>";
+    var tabs = TABS.map(function (t) {
+      var list = rows.filter(function (q) { return !t.status || q.status === t.status; })
+        .sort(function (a, b) { return -fmt.compareIso(a.sentAt || a.createdAt || "2000-01-01", b.sentAt || b.createdAt || "2000-01-01"); });
+      TABLES[t.id] = list;
+      var sample = list.length ? ui.sampleNote({ text: "ข้อมูลตัวอย่างมีเฉพาะรายการที่ระบุชื่อ" }) : "";
+      return { id: t.id, label: t.label, html: sample + '<div class="card card--flush" id="qt-table-' + esc(t.id) + '"></div>' };
+    });
+    host.innerHTML = header + filters + ui.tabs({ id: "qt-tabs", label: "สถานะใบเสนอราคา", param: "tab", selected: S.tab, tabs: tabs }) +
+      '<p class="proto-note" style="margin-top:var(--space-4)">สร้างร่าง ส่ง และบันทึกผลตอบรับ เก็บในหน่วยความจำของหน้านี้เท่านั้น · ระบบจริง INSERT/UPDATE crm.quotations + crm.quotation_items ผ่าน RLS · ส่ง = UPDATE status = SENT + sent_channel_code แล้ว trigger ตั้ง sent_at · valid_until · สร้าง interaction QUOTATION_SENT และเลื่อนขั้นโอกาสขายอัตโนมัติ (ข้อ 4.4 · 19.3 ข้อ 5) · ผู้รับผิดชอบของใบเสนอราคาเปลี่ยนไม่ได้ (ข้อ 9.4.2)</p>';
+    TABS.forEach(function (t) { mountTable(t.id); });
+  }
+  var TABLES = {};
+  function mountTable(id) {
+    var rows = TABLES[id] || [];
+    JCRM.table.mount("qt-table-" + id, {
+      caption: "ใบเสนอราคา", rowKey: "id", rowAction: "qt-open",
+      columns: [
+        { key: "quotationNo", label: "เลขใบเสนอราคา", render: function (q) { return '<span class="code">' + esc(q.quotationNo) + "</span>"; } },
+        { key: "customerNo", label: "ลูกค้า", render: function (r) { return '<a class="nowrap" href="' + esc(JCRM.link("customer-360", { c: r.customerNo })) + '">' + esc(JCRM.customerName(r.customerNo)) + "</a>"; } },
+        { key: "opportunityNo", label: "โอกาสขาย", render: function (q) { return '<a class="code" href="' + esc(JCRM.link("pipeline", { op: q.opportunityNo })) + '">' + esc(q.opportunityNo) + "</a>"; } },
+        { key: "items", label: "สินค้า", render: function (q) { var it = q.items[0]; return it ? esc([it.productModel, it.variant].filter(Boolean).join(" ")) + (q.items.length > 1 ? " +" + fmt.int(q.items.length - 1) : "") : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "totalAmount", label: "ยอดรวม (บาท)", format: "moneyTable" },
+        { key: "status", label: "สถานะ", format: "status:quotationStatuses" },
+        { key: "sentAt", label: "ส่งเมื่อ", format: "date" },
+        { key: "sentChannel", label: "ช่องทางที่ส่ง", format: "channel", hide: "tablet" },
+        { key: "validUntil", label: "ใช้ได้ถึง", format: "date" },
+        { key: "owner", label: "ผู้รับผิดชอบ", render: ownerCell },
+        { key: "branch", label: "สาขา", format: "branch", hide: "tablet" }
+      ],
+      rows: rows, footer: { shown: rows.length, total: null, unit: "รายการ" },
+      empty: { title: "ยังไม่มีใบเสนอราคา", compact: true },
+      mobileCard: function (q) {
+        return ui.listCard({ action: "qt-open", id: q.id, avatar: JCRM.customerName(q.customerNo), title: JCRM.customerName(q.customerNo),
+          meta: [q.quotationNo + " · " + q.opportunityNo, (q.items[0] ? q.items[0].productModel : DASH) + " · " + fmt.money(q.totalAmount), q.sentAt ? "ส่ง " + fmt.date(q.sentAt) + " · ใช้ได้ถึง " + fmt.date(q.validUntil) : "ยังไม่ส่ง"],
+          badges: ui.status("quotationStatuses", q.status) });
+      }
+    });
+  }
+  function rerender() { if (S.ctx) { render(JCRM.state()); JCRM.initTabs(document); } }
+  function closeDrawer() { if (S.drawer) { S.drawer.close(); S.drawer = null; S.drawerId = null; } }
+  function refreshDrawer() { if (S.drawer && S.drawerId) { var id = S.drawerId; S.drawer.close(); S.drawer = null; openDrawer(id); } }
+
+  /* ---------------------------------------------------------------------------
+     ตารางรายการสินค้า (แก้ได้เฉพาะ DRAFT)
+     ------------------------------------------------------------------------ */
+  function itemRowHtml(it, i) {
+    return '<tr data-qt-row="' + i + '"><td><select class="select" data-qt-f="productType" aria-label="ประเภทสินค้าแถว ' + (i + 1) + '"><option value="">' + esc(DASH) + "</option>" +
+      D.productTypes.map(function (p) { return '<option value="' + esc(p.code) + '"' + (p.code === it.productType ? " selected" : "") + ">" + esc(p.labelTh) + "</option>"; }).join("") + "</select></td>" +
+      '<td><input class="input qt-model" data-qt-f="productModel" value="' + esc(it.productModel || "") + '" maxlength="120" aria-label="รุ่นแถว ' + (i + 1) + '"></td>' +
+      '<td><input class="input" data-qt-f="variant" value="' + esc(it.variant || "") + '" maxlength="60" aria-label="ตัวเลือกแถว ' + (i + 1) + '"></td>' +
+      '<td data-numeric><input class="input qt-num" type="number" inputmode="numeric" min="1" data-qt-f="quantity" value="' + esc(isNil(it.quantity) ? "" : it.quantity) + '" aria-label="จำนวนแถว ' + (i + 1) + '"></td>' +
+      '<td data-numeric><input class="input qt-num" type="number" step="0.01" inputmode="decimal" min="0.01" data-qt-f="unitPrice" value="' + esc(isNil(it.unitPrice) ? "" : it.unitPrice) + '" aria-label="ราคาต่อหน่วยแถว ' + (i + 1) + '"></td>' +
+      '<td data-numeric><input class="input qt-num" type="number" step="0.01" inputmode="decimal" min="0" data-qt-f="discountAmount" value="' + esc(isNil(it.discountAmount) ? "" : it.discountAmount) + '" aria-label="ส่วนลดแถว ' + (i + 1) + '"></td>' +
+      '<td data-numeric><span data-qt-line="' + i + '">' + esc(DASH) + "</span></td>" +
+      '<td>' + ui.button({ label: "ลบสินค้าแถว " + (i + 1), variant: "ghost", size: "sm", icon: "x", iconOnly: true, attrs: 'data-qt-del="' + i + '"' }) + "</td></tr>";
+  }
+  function itemsEditorHtml(items) {
+    return '<div class="table-wrap qt-items"><table class="table table--compact"><caption class="sr-only">รายการสินค้าในใบเสนอราคา</caption><thead><tr>' +
+      '<th scope="col">ประเภทสินค้า</th><th scope="col">รุ่น<span class="req" aria-hidden="true">*</span></th><th scope="col">ตัวเลือก</th><th scope="col" data-numeric>จำนวน<span class="req" aria-hidden="true">*</span></th>' +
+      '<th scope="col" data-numeric>ราคา/หน่วย (บาท)<span class="req" aria-hidden="true">*</span></th><th scope="col" data-numeric>ส่วนลด (บาท)</th><th scope="col" data-numeric>ยอด (บาท)</th><th scope="col"><span class="sr-only">ลบ</span></th></tr></thead>' +
+      '<tbody id="qt-items-body">' + items.map(itemRowHtml).join("") + "</tbody></table></div>" +
+      ui.button({ label: "+ เพิ่มสินค้า", variant: "secondary", size: "sm", attrs: "data-qt-add" }) +
+      '<p class="error-text" hidden></p>';
+  }
+  function readItems(panel) {
+    return JCRM.$$("#qt-items-body tr", panel).map(function (tr) {
+      var get = function (f) { var el = tr.querySelector('[data-qt-f="' + f + '"]'); return el ? el.value.trim() : ""; };
+      return { productType: get("productType") || null, productModel: get("productModel"), variant: get("variant") || null,
+        quantity: get("quantity") === "" ? null : parseInt(get("quantity"), 10), unitPrice: get("unitPrice") === "" ? null : get("unitPrice"), discountAmount: get("discountAmount") === "" ? null : get("discountAmount") };
+    });
+  }
+  function lineTotal(it) {
+    var p = satang(it.unitPrice), d = satang(it.discountAmount) || 0, q = it.quantity;
+    if (p === null || !q) { return null; }
+    return (p * q - d) / 100;
+  }
+  function syncTotals(panel) {
+    var items = readItems(panel), total = 0, known = true;
+    items.forEach(function (it, i) {
+      var v = lineTotal(it), el = panel.querySelector('[data-qt-line="' + i + '"]');
+      if (el) { el.textContent = v === null ? DASH : fmt.moneyTable(v); }
+      if (v === null) { known = false; } else { total += v; }
+    });
+    var tot = panel.querySelector("[data-qt-total]");
+    if (tot) { tot.textContent = known && items.length ? fmt.money(total) : DASH; }
+    return { items: items, total: known ? total : null };
+  }
+  function validateItems(items) {
+    if (!items.length) { return "ต้องมีสินค้าอย่างน้อย 1 รายการ"; }
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i], n = "แถวที่ " + (i + 1) + ": ";
+      if (!it.productModel) { return n + "กรอกรุ่น"; }
+      if (!it.quantity || it.quantity < 1) { return n + "จำนวนต้องไม่น้อยกว่า 1"; }
+      var p = satang(it.unitPrice);
+      if (p === null || p <= 0) { return n + "ราคา/หน่วยต้องมากกว่า 0"; }
+      var d = satang(it.discountAmount) || 0;
+      if (d < 0) { return n + "ส่วนลดต้องไม่ติดลบ"; }
+      if (d > p * it.quantity) { return n + "ส่วนลดต้องไม่มากกว่ายอดก่อนลด"; }
+    }
+    return null;
+  }
+  function bindItems(panel) {
+    var rerenderItems = function (items) {
+      panel.querySelector("#qt-items-body").innerHTML = items.map(itemRowHtml).join("");
+      syncTotals(panel);
+    };
+    panel.addEventListener("input", function () { syncTotals(panel); });
+    panel.addEventListener("change", function () { syncTotals(panel); });
+    panel.addEventListener("click", function (e) {
+      var add = e.target.closest ? e.target.closest("[data-qt-add]") : null;
+      if (add) { e.preventDefault(); var items = readItems(panel); items.push({ productType: null, productModel: "", variant: null, quantity: 1, unitPrice: null, discountAmount: null }); rerenderItems(items); return; }
+      var del = e.target.closest ? e.target.closest("[data-qt-del]") : null;
+      if (del) {
+        e.preventDefault();
+        var list = readItems(panel);
+        if (list.length <= 1) { JCRM.toast("ต้องมีสินค้าอย่างน้อย 1 รายการ", "warning"); return; }
+        list.splice(Number(del.getAttribute("data-qt-del")), 1);
+        rerenderItems(list);
+      }
+    });
+    syncTotals(panel);
+  }
+
+  /* ---------------------------------------------------------------------------
+     Drawer: ดู · แก้ร่าง · สร้าง (640px · sitemap ข้อ 22.5)
+     ------------------------------------------------------------------------ */
+  function kv(rows) { return '<dl class="kv">' + rows.map(function (r) { return '<div style="display:contents"><dt>' + esc(r[0]) + "</dt><dd>" + r[1] + "</dd></div>"; }).join("") + "</dl>"; }
+  function txt(v) { return isNil(v) ? '<span class="t-muted">' + DASH + "</span>" : esc(v); }
+  function itemsViewHtml(q) {
+    return '<div class="table-wrap"><table class="table table--compact"><caption class="sr-only">รายการสินค้า</caption><thead><tr><th scope="col">ประเภทสินค้า</th><th scope="col">รุ่น</th><th scope="col">ตัวเลือก</th>' +
+      '<th scope="col" data-numeric>จำนวน</th><th scope="col" data-numeric>ราคา/หน่วย (บาท)</th><th scope="col" data-numeric>ส่วนลด (บาท)</th></tr></thead><tbody>' +
+      q.items.map(function (it) {
+        return "<tr><td>" + txt(it.productType ? JCRM.label("productTypes", it.productType) : null) + "</td><td>" + txt(it.productModel) + "</td><td>" + txt(it.variant) + "</td>" +
+          "<td data-numeric>" + txt(isNil(it.quantity) ? null : fmt.int(it.quantity)) + "</td><td data-numeric>" + txt(isNil(it.unitPrice) ? null : fmt.moneyTable(it.unitPrice)) + "</td><td data-numeric>" + txt(isNil(it.discountAmount) ? null : fmt.moneyTable(it.discountAmount)) + "</td></tr>";
+      }).join("") + '</tbody><tfoot><tr class="is-total"><th scope="row" colspan="5">ยอดรวม (บาท)</th><td data-numeric>' + txt(isNil(q.totalAmount) ? null : fmt.moneyTable(q.totalAmount)) + "</td></tr></tfoot></table></div>";
+  }
+  function openDrawer(id) {
+    var q = findQt(id);
+    if (!q || !readable(q)) {
+      S.drawer = JCRM.drawer({ title: "ใบเสนอราคา", ref: id, wide: true, body: ui.state("notfound", {}), footer: ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }), onCancel: function () { S.drawer = null; } });
+      S.drawerId = null; return;
+    }
+    var upd = JCRM.access("quotation.update", rowCtx(q));
+    if (q.status === "DRAFT" && upd.allowed) { openEditor(q); return; }
+    var head = '<div class="qt-section"><div class="badge-row">' + ui.status("quotationStatuses", q.status) + "</div>" +
+      '<p class="t-h3"><a href="' + esc(JCRM.link("customer-360", { c: q.customerNo })) + '">' + esc(JCRM.customerName(q.customerNo)) + '</a> <span class="code">' + esc(q.customerNo) + "</span></p>" +
+      '<p class="t-sm t-muted">โอกาสขาย <a class="code" href="' + esc(JCRM.link("pipeline", { op: q.opportunityNo })) + '">' + esc(q.opportunityNo) + "</a> · " + esc(JCRM.branchName(q.branch)) + "</p></div>";
+    var items = '<div class="qt-section"><h3 class="qt-section__title">รายการสินค้า</h3>' + itemsViewHtml(q) +
+      (q.sample ? '<p class="t-xs t-muted">ข้อมูลตัวอย่างพิมพ์เฉพาะยอดรวม จำนวนและราคา/หน่วยจึงแสดง ' + DASH + " (ข้อ 13.7)</p>" : "") + "</div>";
+    var cond = '<div class="qt-section"><h3 class="qt-section__title">เงื่อนไข</h3>' + kv([["ผ่อน (เดือน)", txt(isNil(q.installmentMonths) ? null : fmt.int(q.installmentMonths))], ["เงื่อนไขเพิ่มเติม", txt(q.termsNote)]]) + "</div>";
+    var send = '<div class="qt-section"><h3 class="qt-section__title">ข้อมูลการส่ง</h3>' + kv([
+      ["ส่งเมื่อ", txt(q.sentAt ? fmt.dateTime(q.sentAt) : null)],
+      ["ช่องทางที่ส่ง", q.sentChannel ? ui.channel(q.sentChannel) : txt(null)],
+      ["ใช้ได้ถึง", txt(q.validUntil ? fmt.date(q.validUntil) : null)],
+      ["หมดอายุเมื่อ", txt(q.expiredAt ? fmt.date(q.expiredAt) : null)],
+      ["ผู้รับผิดชอบ", ownerCell(q)]
+    ]) + '<p class="t-xs t-muted">หลังส่งแก้ได้เฉพาะสถานะ (ข้อ 9.4.2) · ระบบเปลี่ยนเป็นหมดอายุด้วยงาน app.job_expire_quotations เวลา 00:00 ของวันถัดจากใช้ได้ถึง</p></div>';
+    var footer = ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }) + '<span class="spacer"></span>';
+    if (q.status === "SENT") {
+      footer += ui.permButton({ label: "ลูกค้าปฏิเสธ", variant: "danger-outline", action: "qt-reject", id: q.id, permission: "quotation.update", ctx: rowCtx(q) }) +
+        ui.permButton({ label: "ลูกค้าตอบรับ", variant: "primary", action: "qt-accept", id: q.id, permission: "quotation.update", ctx: rowCtx(q) });
+    } else if (q.status === "ACCEPTED") {
+      footer += ui.button({ label: "ปิดการขายที่โอกาสขาย", variant: "primary", href: JCRM.link("pipeline", { op: q.opportunityNo }) });
+    } else if (q.status === "DRAFT") {
+      footer += ui.button({ label: "แก้ไขร่าง", variant: "secondary", disabledReason: upd.visible ? upd.reason : T.rpcDenied });
+    }
+    var extra = q.status === "ACCEPTED" ? '<p class="alert" role="note">' + JCRM.icon("info", "nav-icon") + "<span>การตอบรับไม่ปิดการขายอัตโนมัติ · ปิดการขายที่โอกาสขาย (ข้อ 4.6)</span></p>" :
+      (q.status === "EXPIRED" || q.status === "REJECTED" ? '<p class="alert" role="note">' + JCRM.icon("info", "nav-icon") + "<span>ใบนี้อ่านอย่างเดียว</span></p>" : "");
+    S.drawer = JCRM.drawer({ title: "ใบเสนอราคา · " + JCRM.customerName(q.customerNo), ref: q.quotationNo, wide: true, body: head + items + cond + send + extra, footer: footer, onCancel: function () { S.drawer = null; S.drawerId = null; } });
+    S.drawerId = q.id;
+  }
+
+  function openEditor(q, opLock) {
+    var creating = !q;
+    var ops = opsForCreate();
+    var op = q ? JCRM.find(D.opportunities, "opportunityNo", q.opportunityNo) : (opLock ? JCRM.find(D.opportunities, "opportunityNo", opLock) : null);
+    var items = q ? q.items.map(copy) : (op && op.items ? op.items.map(function (it) { return { productType: it.productType || null, productModel: it.productModel, variant: it.variant || null, quantity: 1, unitPrice: it.unitPrice, discountAmount: null }; })
+      : [{ productType: null, productModel: "", variant: null, quantity: 1, unitPrice: null, discountAmount: null }]);
+    var fields = [];
+    if (op && (opLock || q)) {
+      fields.push({ name: "opportunity_no", type: "hidden", value: op.opportunityNo });
+      fields.push({ name: "op_static", type: "static", label: "โอกาสขาย", html: '<p class="t-sm"><span class="code">' + esc(op.opportunityNo) + "</span> · " + esc(JCRM.customerName(op.customerNo)) + " · " + esc(JCRM.branchName(op.branch)) +
+        ' · ผู้รับผิดชอบ ' + esc(JCRM.staffName(op.owner)) + '</p><p class="help">ลูกค้าและสาขาของใบเสนอราคาคัดลอกจากโอกาสขายด้วย trigger (ข้อ 19.1 ข้อ 6)</p>' });
+    } else {
+      fields.push({ name: "opportunity_no", label: "โอกาสขาย", type: "select", required: true, requiredMessage: "เลือกโอกาสขาย",
+        options: ops.map(function (o) { return { value: o.opportunityNo, label: o.opportunityNo + " · " + JCRM.customerName(o.customerNo) + " · " + JCRM.label("opportunityStages", o.stage) }; }),
+        help: ops.length ? "โอกาสขายที่เปิดอยู่และคุณสร้างใบเสนอราคาได้" : "ไม่มีโอกาสขายที่เปิดอยู่ในสิทธิ์ของคุณ (ข้อมูลตัวอย่างมีเฉพาะ OP-2026-002998)" });
+    }
+    fields.push({ name: "items", type: "static", label: "รายการสินค้า", html: itemsEditorHtml(items) });
+    fields.push({ name: "installment_months", label: "ผ่อน (เดือน)", type: "number", min: 0, width: "half", value: q ? q.installmentMonths : null });
+    fields.push({ name: "terms_note", label: "เงื่อนไขเพิ่มเติม", type: "textarea", piiWarn: true, maxLength: 2000, rows: 2, value: q ? q.termsNote : "" });
+    fields.push({ name: "total_static", type: "static", label: "", html: '<div class="qt-total"><span>ยอดรวม (บาท)</span><strong data-qt-total>' + esc(DASH) + "</strong></div>" });
+    var footer = ui.button({ label: "ยกเลิก", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }) + '<span class="spacer"></span>' +
+      ui.button({ label: "บันทึกร่าง", variant: "accent", attrs: "data-jcrm-overlay-submit" }) + ui.button({ label: "ส่ง", variant: "primary", attrs: "data-qt-send" });
+    var ctl = JCRM.drawer({
+      title: creating ? "สร้างใบเสนอราคา" : "แก้ไขร่างใบเสนอราคา", ref: q ? q.quotationNo : "เลขออกเมื่อบันทึก (ตัวนับ QT:2026)", wide: true,
+      fields: fields, footer: footer,
+      onSubmit: function (v, ctl2) { return save(v, ctl2, q, false); }
+    });
+    bindItems(ctl.el);
+    ctl.el.addEventListener("click", function (e) {
+      if (!e.target.closest || !e.target.closest("[data-qt-send]")) { return; }
+      e.preventDefault();
+      var v = JCRM.form.read(ctl.el, fields), errs = JCRM.form.validate(fields, v);
+      if (!JCRM.form.showErrors(ctl.el, fields, errs)) { return; }
+      save(v, ctl, q, true);
+    });
+  }
+  function save(v, ctl, q, thenSend) {
+    var res = syncTotals(ctl.el), err = validateItems(res.items);
+    if (err) { JCRM.form.showErrors(ctl.el, [{ name: "items", label: "รายการสินค้า" }], { items: err }); return false; }
+    var opNo = v.opportunity_no, op = JCRM.find(D.opportunities, "opportunityNo", opNo);
+    if (!op) { return { errors: { opportunity_no: "เลือกโอกาสขาย" } }; }
+    var gate = createGate(op);
+    if (!gate.visible || !gate.allowed) { return { errors: { opportunity_no: gate.reason || T.rpcDenied } }; }
+    var id = q ? q.id : "QT-2026-" + pad6(S.nextQt);
+    if (!q) { S.nextQt += 1; }
+    var model = { id: id, quotationNo: id, opportunityNo: op.opportunityNo, customerNo: op.customerNo, branch: op.branch, owner: q ? q.owner : me(), ownerUnknown: q ? q.ownerUnknown : false,
+      status: "DRAFT", items: res.items, totalAmount: res.total, sentAt: q ? q.sentAt : null, sentChannel: null, validUntil: null, expiredAt: null,
+      installmentMonths: isNil(v.installment_months) ? null : v.installment_months, termsNote: v.terms_note || null, createdAt: q && q.createdAt ? q.createdAt : NOW, sample: false };
+    if (q) { setOver(id, model); } else { S.created.push(model); }
+    rerender();
+    if (thenSend) { ctl.close(); S.drawer = null; sendDialog(id); return true; }
+    JCRM.toast((q ? "บันทึกร่าง " : "สร้างร่าง ") + id + " แล้วในหน้านี้ (ไม่บันทึกจริง) · ยอดรวม " + fmt.money(res.total), "success", { title: "prototype" });
+    return true;
+  }
+
+  /* ส่ง (DRAFT → SENT) — UPDATE status + sent_channel_code เท่านั้น · trigger ตั้ง sent_at และ valid_until = วันที่ส่ง + 7 วัน */
+  function sendDialog(id) {
+    var q = findQt(id); if (!q) { return; }
+    var until = addDays(TODAY, VALID_DAYS);
+    var op = JCRM.find(D.opportunities, "opportunityNo", q.opportunityNo);
+    JCRM.dialog({
+      title: "ส่งใบเสนอราคา", size: "sm",
+      intro: '<p class="t-sm">' + esc(q.quotationNo + " · " + JCRM.customerName(q.customerNo) + " · " + fmt.money(q.totalAmount)) + "</p>",
+      fields: [{ name: "sent_channel", label: "ช่องทางที่ส่ง", type: "select", ref: "channels", required: true, requiredMessage: "เลือกช่องทางที่ส่ง" },
+        { name: "valid_static", type: "static", label: "", html: '<p class="help">ใช้ได้ถึง ' + esc(fmt.date(until)) + " (วันที่ส่ง + " + fmt.int(VALID_DAYS) + " วัน · quotation.valid_days [รอยืนยัน])</p>" }],
+      submitLabel: "ส่ง", submitVariant: "primary",
+      onSubmit: function (v) {
+        setOver(id, { status: "SENT", sentAt: NOW, sentChannel: v.sent_channel, validUntil: until });
+        rerender();
+        var stage = op ? (op.stage === "INTERESTED" ? "สนใจ → เสนอราคา" : (op.stage === "FOLLOW_UP" ? "รอตัดสินใจ → เสนอราคา" : null)) : null;
+        JCRM.toast("ส่งใบเสนอราคา " + id + " แล้ว (" + JCRM.label("channels", v.sent_channel) + ") · ใช้ได้ถึง " + fmt.date(until) +
+          " · ระบบจริงสร้าง interaction QUOTATION_SENT" + (stage ? " และเลื่อนขั้น " + q.opportunityNo + " " + stage + " อัตโนมัติ" : ""), "success", { title: "prototype" });
+        return true;
+      }
+    });
+  }
+
+  /* ---------------------------------------------------------------------------
+     การกระทำ
+     ------------------------------------------------------------------------ */
+  JCRM.on("qt-open", function (id) { openDrawer(id); });
+  JCRM.on("qt-branch", function (v) { JCRM.setBranch(v); });
+  JCRM.on("qt-owner", function (v) { S.owner = v || ""; rerender(); });
+  JCRM.on("qt-sent", function (v) { S.sentRange = v || ""; rerender(); });
+  document.addEventListener("jcrm:tabchange", function (e) { if (e.detail && e.detail.tabsId === "qt-tabs") { S.tab = e.detail.tab; } });
+  JCRM.on("qt-create", function () {
+    if (!JCRM.can("quotation.create")) { JCRM.toast(T.rpcDenied, "warning"); return; }
+    openEditor(null, null);
+  });
+  JCRM.on("qt-accept", function (id) { decide(id, "ACCEPTED", "ลูกค้าตอบรับ", "บันทึกว่าลูกค้าตอบรับใบเสนอราคานี้? การตอบรับไม่ปิดการขายอัตโนมัติ", "primary"); });
+  JCRM.on("qt-reject", function (id) { decide(id, "REJECTED", "ลูกค้าปฏิเสธ", "บันทึกว่าลูกค้าปฏิเสธใบเสนอราคานี้?", "danger-outline"); });
+  function decide(id, status, label, message, variant) {
+    var q = findQt(id); if (!q) { return; }
+    var acc = JCRM.access("quotation.update", rowCtx(q));
+    if (!acc.allowed) { JCRM.toast(acc.visible ? acc.reason : T.rpcDenied, "warning"); return; }
+    if (q.status !== "SENT") { JCRM.toast(T.reasonStatus, "warning"); return; }
+    JCRM.confirm({ title: label, message: message, confirmLabel: label, variant: variant,
+      onConfirm: function () {
+        setOver(id, { status: status });
+        rerender(); refreshDrawer();
+        JCRM.toast("บันทึก " + id + " เป็น" + JCRM.label("quotationStatuses", status) + " แล้ว" + (status === "ACCEPTED" ? " · ปิดการขายที่โอกาสขาย " + q.opportunityNo : ""), "success", { title: "prototype" });
+        return true;
+      } });
+  }
+
+  var ctx0 = JCRM.page({ id: "quotations", render: render });
+  if (ctx0 && ctx0.allowed && !S.paramHandled) {
+    S.paramHandled = true;
+    var qtParam = JCRM.param("qt"), opParam = JCRM.param("op");
+    if (qtParam) {
+      var hit = allQuotations().filter(function (q) { return q.quotationNo === qtParam; })[0];
+      if (hit) { openDrawer(hit.id); }
+      else { S.drawer = JCRM.drawer({ title: "ใบเสนอราคา", ref: qtParam, wide: true, body: ui.state("notfound", {}), footer: ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }), onCancel: function () { S.drawer = null; } }); }
+    } else if (opParam) {
+      var op = JCRM.find(D.opportunities, "opportunityNo", opParam);
+      var gate = op ? createGate(op) : null;
+      if (!op) { JCRM.toast("ไม่พบโอกาสขาย " + opParam + " ในข้อมูลตัวอย่าง", "warning"); }
+      else if (!gate.visible) { JCRM.toast("บทบาทของคุณไม่มีสิทธิ์สร้างใบเสนอราคา", "warning"); }
+      else if (!gate.allowed) { JCRM.toast(gate.reason, "warning"); }
+      else { openEditor(null, opParam); }
+    }
+  }
+})();
+</script>
+</body>
+</html>

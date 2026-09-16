@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>หน้าหลัก · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 02 · หน้าหลัก (CANONICAL ข้อ 14.7 · 14.4 · sitemap-screen-specs ข้อ 5) — ไม่มี hex · สีจาก token เท่านั้น */
+.dash-kpis { display: grid; gap: var(--space-3); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (min-width: 1440px) { .dash-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.dash-row { display: grid; gap: var(--space-4); margin-top: var(--space-4); align-items: start; }
+.dash-row--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dash-row--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dash-row--main-side { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1600px) { .dash-row--main-side { grid-template-columns: minmax(0, 1fr) 360px; } }
+@media (min-width: 1280px) and (max-width: 1599px) {
+  .dash-row--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-row--3 > :nth-child(3) { grid-column: 1 / -1; }
+}
+@media (max-width: 1279px) { .dash-row--3, .dash-row--2, .dash-row--main-side { grid-template-columns: minmax(0, 1fr); } }
+.dash-card { min-width: 0; }
+.dash-card .chart__graphic svg { max-width: 560px; margin-inline: auto; }
+.dash-card .card__header { margin-bottom: var(--space-3); }
+.dash-link { font-size: var(--fs-sm); white-space: nowrap; }
+.only-tablet, .only-mobile { display: none; }
+@media (min-width: 768px) and (max-width: 1279px) { .only-tablet { display: block; } }
+@media (max-width: 767px) {
+  .only-mobile { display: block; }
+  .not-mobile { display: none !important; }
+  .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* รายการกิจกรรมล่าสุด · ลูกค้าล่าสุดของฉัน */
+.dash-list { display: flex; flex-direction: column; }
+.dash-list__row { display: flex; align-items: center; gap: var(--space-3); min-height: var(--touch-min); padding: var(--space-2) var(--space-1); border-bottom: 1px solid var(--border-subtle); color: inherit; text-decoration: none; }
+.dash-list__row:last-child { border-bottom: 0; }
+a.dash-list__row:hover { background: var(--navy-50); }
+.dash-list__main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dash-list__title { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-heading); }
+.dash-list__meta { font-size: var(--fs-xs); color: var(--text-secondary); }
+.dash-list__side { font-size: var(--fs-xs); color: var(--text-secondary-sunk); white-space: nowrap; font-variant-numeric: tabular-nums; text-align: end; }
+.task-item.is-done .task-item__title { text-decoration: line-through; color: var(--text-secondary); }
+/* มือถือ STAFF (ข้อ 14.4 · D20) */
+.dash-mtask { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-5); border-radius: var(--radius-lg); background: var(--surface-nav); color: var(--text-on-nav); text-decoration: none; box-shadow: var(--shadow-2); }
+.dash-mtask svg { width: 28px; height: 28px; flex: none; color: var(--orange-400); }
+.dash-mtask__text { font-size: var(--fs-h3); font-weight: var(--fw-semibold); line-height: var(--lh-tight); }
+.dash-mtask__hint { display: block; font-size: var(--fs-xs); color: var(--text-on-nav-2); font-weight: var(--fw-regular); }
+.dash-quick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-3); }
+.dash-quick__btn { min-height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-card); color: var(--text-heading); font-size: var(--fs-sm); font-weight: var(--fw-medium); text-decoration: none; cursor: pointer; box-shadow: var(--shadow-1); }
+.dash-quick__btn svg { width: 24px; height: 24px; color: var(--support-blue); }
+.dash-quick__btn--accent { background: var(--jaun-orange); border-color: var(--jaun-orange); color: var(--text-on-accent); }
+.dash-quick__btn--accent svg { color: var(--text-on-accent); }
+.dash-mstaff { display: flex; flex-direction: column; gap: var(--space-2); }
+.dash-mstaff__card { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-3); background: var(--surface-card); }
+.dash-mstaff__stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1) var(--space-3); margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--text-secondary-sunk); }
+.dash-mstaff__stats strong { color: var(--text-heading); font-variant-numeric: tabular-nums; }
+.dash-section-gap { margin-top: var(--space-4); }
+</style>
+</head>
+<body data-page="dashboard" data-roles="STAFF SUPERVISOR BRANCH_MANAGER OPERATIONS MARKETING EXECUTIVE BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* หน้า 02 · หน้าหลัก — ชุดการ์ด/widget ตามบทบาท (CANONICAL ข้อ 14.7) · ตัวเลขทุกตัวมาจาก JCRM_DATA / JCRM.select (ข้อ 13)
+   หมายเหตุผู้เขียน
+   1. แท็บเล็ต (768–1279px) แสดงเฉพาะ การ์ด KPI + Funnel + งานวันนี้ ตามข้อ 14.4 ที่ระบุรายการที่แสดงไว้ชัด · widget อื่น (แหล่งที่มา · เหตุผลที่ไม่สำเร็จ · ตารางสาขา/พนักงาน · กิจกรรมล่าสุด · ลูกค้าล่าสุดของฉัน) ซ่อนบนแท็บเล็ต
+   2. ป้ายขอบเขตในบรรทัดรองของ OPERATIONS: ข้อ 5.5 ของ sitemap-screen-specs ให้ไว้ 4 แบบ (ทั้งองค์กร / สาขา / ทีม / ของฉัน) ซึ่งไม่ครอบคลุม "หลายสาขาแต่ไม่ใช่ทั้งองค์กร" → ใช้ "ทุกสาขาในสิทธิ์ของคุณ (…)"
+   3. widget "งานวันนี้" ของขอบเขตสาขา/องค์กรแสดงเฉพาะ C-STATE-SAMPLE เพราะข้อ 13 ไม่มีจำนวนงานรวมของสาขา (มีเฉพาะของคุณขวัญ/คุณคิม/ทีม JP1-SALES) */
+(function () {
+  "use strict";
+  var D = JCRM.data, fmt = JCRM.fmt, ui = JCRM.ui, esc = JCRM.esc, T = D.meta.texts;
+  var DASH = fmt.DASH, TODAY = "TODAY", L30 = "LAST_30_DAYS";
+  var BR4 = ["JP1", "JP2", "JP3", "JP4"];
+  var doneTasks = {};   /* งานที่ติ๊กเสร็จในหน่วยความจำของหน้านี้ (prototype ไม่บันทึกจริง) */
+
+  function presetLabel(code) { var p = JCRM.find(D.meta.presets, "code", code); return p ? p.labelTh : DASH; }
+  function periodSub(preset) {
+    if (preset === TODAY) { return presetLabel(TODAY) + " ถึง " + fmt.time(D.meta.now) + " · " + fmt.date(D.meta.now); }
+    var p = D.meta.periods.LAST_30_DAYS;
+    return presetLabel(L30) + " · " + fmt.rangeInclusive(p.start, p.endExclusive);
+  }
+  function asOfSub() { return fmt.asOf(); }
+  function hrefIf(screenId, params) { return JCRM.canOpen(screenId) ? JCRM.link(screenId, params || {}) : null; }
+  function widget(id, title, sub, body, cls, headExtra) {
+    return '<section class="card dash-card ' + (cls || "") + '" aria-labelledby="' + esc(id) + '-title">' +
+      '<div class="card__header"><div class="grow"><h2 class="card__title" id="' + esc(id) + '-title">' + esc(title) + "</h2>" +
+      (sub ? '<p class="card__subtitle">' + esc(sub) + "</p>" : "") + "</div>" + (headExtra || "") + "</div>" +
+      '<div id="' + esc(id) + '">' + (body || "") + "</div></section>";
+  }
+  function sample(text) { return ui.sampleNote({ text: text }); }
+
+  /* ---------- การ์ด KPI ---------- */
+  function cardFrom(c) {
+    return ui.kpiCard({ label: c.labelTh, display: isNilStr(c.display) ? DASH : c.display, delta: c.delta, preset: c.asOf ? null : c.preset, asOf: c.asOf,
+      href: c.target ? hrefIf(c.target.screen, c.target.params) : null, sub: c.sub || null });
+  }
+  function isNilStr(v) { return v === null || v === undefined || v === ""; }
+  /* ชุด "องค์กร"/"สาขา" ตาม preset: TODAY → K1 = K2 = ลูกค้าไม่ซ้ำวันนี้ · K3–K6 "–" (sitemap-screen-specs ข้อ 5.9) */
+  function orgCards(cards, preset) {
+    var base = D.dashboards[0].cards;
+    if (!cards.length) {
+      return base.map(function (b) { return { labelTh: b.labelTh, display: DASH, delta: null, preset: b.preset, asOf: false, target: null }; });
+    }
+    if (preset !== TODAY) { return cards; }
+    var k1 = cards[0];
+    return cards.map(function (c, i) {
+      if (i === 0) { return c; }
+      if (i === 1) { return { labelTh: c.labelTh, display: k1.display, delta: k1.delta, preset: TODAY, asOf: false, target: null }; }
+      return { labelTh: c.labelTh, display: DASH, delta: null, preset: TODAY, asOf: false, target: c.target };
+    });
+  }
+  function supervisorCards(cards, preset) {
+    return cards.map(function (c) {
+      if (preset === TODAY && !c.asOf) { return { labelTh: c.labelTh, display: DASH, delta: null, preset: TODAY, asOf: false, target: c.target }; }
+      return c;
+    });
+  }
+  function staffCards(kv) {
+    var base = D.dashboards[3].cards, v = kv.values;
+    var byKey = {
+      tasksToday: { value: v.TASKS_TODAY, href: hrefIf("tasks", { group: "today" }) },
+      tasksOverdue: { value: v.TASKS_OVERDUE, href: hrefIf("tasks", { group: "overdue" }) },
+      openLeads: { value: v.OPEN_LEADS, href: hrefIf("leads", { owner: "me" }) },
+      openOpportunities: { value: v.OPEN_OPPORTUNITIES, sub: fmt.isNil(v.OPEN_PIPELINE_AMOUNT) ? null : fmt.money(v.OPEN_PIPELINE_AMOUNT), href: hrefIf("pipeline", { owner: "me" }) },
+      sales30: { value: v.SALES },
+      salesAmount30: { value: v.SALES_AMOUNT, format: "money" }
+    };
+    return base.map(function (c) {
+      var m = byKey[c.key] || {};
+      return ui.kpiCard({ label: c.labelTh, value: fmt.isNil(m.value) ? null : m.value, format: m.format || "int", asOf: c.asOf, preset: c.asOf ? null : L30, sub: m.sub, href: m.href });
+    });
+  }
+
+  /* ---------- ตารางผลงานรายสาขา (W4) ---------- */
+  function branchTable(branch, preset) {
+    var list = branch === "ALL" ? D.kpis.branches : D.kpis.branches.filter(function (r) { return r.branch === branch; });
+    if (!list.length) { return sample(T.stateSampleNone.replace("{ขอบเขต}", JCRM.branchName(branch))); }
+    var isToday = preset === TODAY;
+    var rows = list.map(function (r) {
+      var rate = JCRM.find(D.kpis.branchRates, "branch", r.branch);
+      var today = JCRM.find(D.kpis.today.rows, "branch", r.branch);
+      return isToday ? { branch: r.branch, unique: today.uniqueCustomers, leads: null, opps: null, sales: null, conv: null, amount: null, change: null } :
+        { branch: r.branch, unique: r.uniqueCustomers, leads: r.leads, opps: r.opportunities, sales: r.sales, conv: rate.CONV_LEAD_TO_SALE.display, amount: r.salesAmount, change: r.salesAmountGrowthDisplay };
+    });
+    var tot = D.kpis.branchesTotal;
+    var total = isToday ? { unique: D.kpis.today.total.uniqueCustomers, leads: null, opps: null, sales: null, conv: null, amount: null, change: null } :
+      { unique: tot.uniqueCustomers, leads: tot.leads, opps: tot.opportunities, sales: tot.sales, conv: D.kpis.org.rates.CONV_LEAD_TO_SALE.display, amount: tot.salesAmount, change: tot.salesAmountGrowthDisplay };
+    var go = hrefIf("reports", { tab: "branches" });
+    return ui.table({
+      caption: "ผลงานรายสาขา", compact: true, stickyFirst: true, footer: false, rowKey: "branch",
+      rowHref: go ? function () { return go; } : null,
+      columns: [
+        { key: "branch", label: "สาขา", render: function (r) { return r.branch ? '<span class="nowrap">' + esc(JCRM.branchName(r.branch)) + "</span>" : ""; } },
+        { key: "unique", label: "ลูกค้าไม่ซ้ำ", format: "int" },
+        { key: "leads", label: "Leads", format: "int" },
+        { key: "opps", label: "Opportunities", format: "int" },
+        { key: "sales", label: "Sales", format: "int" },
+        { key: "conv", label: "Conversion (Lead → ขาย)", align: "end", render: function (r) { return r.conv ? esc(r.conv) : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "amount", label: "ยอดขาย (บาท)", format: "moneyTable" },
+        { key: "change", label: "เปลี่ยน", align: "end", render: function (r) { return r.change ? ui.delta(r.change, "ยอดขายเทียบช่วงก่อนหน้า") : '<span class="is-null">' + DASH + "</span>"; } }
+      ],
+      rows: rows,
+      totalRow: branch === "ALL" ? { label: "รวม", values: total, useRender: true } : null
+    });
+  }
+
+  /* ---------- ตารางผลงานรายพนักงาน (ข้อ 13.6) ---------- */
+  function staffRow(s, labelTh) {
+    var byStage = s.openByStage;
+    return {
+      name: labelTh, leads: s.leads, opps: s.opportunities, sales: s.sales, amount: s.salesAmount,
+      lost: fmt.isNil(s.lostOpportunities) ? null : fmt.int(s.lostOpportunities) + " · " + fmt.int(s.lostLeads),
+      openLeads: s.openLeads,
+      openOpps: fmt.isNil(s.openOpportunities) ? null : fmt.int(s.openOpportunities) + (byStage ? " (" + fmt.int(byStage.INTERESTED) + " · " + fmt.int(byStage.QUOTATION) + " · " + fmt.int(byStage.FOLLOW_UP) + ")" : "") + " " + fmt.money(s.openPipelineAmount),
+      tasks: fmt.isNil(s.tasksToday) ? null : fmt.int(s.tasksToday) + " · " + fmt.int(s.tasksOverdue)
+    };
+  }
+  function staffTable(kind, preset) {
+    if (preset === TODAY) { return sample(T.presetDisabled); }
+    var K = D.kpis.staffJP1, rows, total;
+    if (kind === "team") {
+      var members = JCRM.teamMembersLedBy(JCRM.currentStaffCode(), K.branch);
+      rows = K.slices.filter(function (s) { return s.staff && members.indexOf(s.staff) !== -1 && s.staff !== JCRM.currentStaffCode(); })
+        .map(function (s) { return staffRow(s, JCRM.staffName(s.staff)); });
+      var tm = D.kpis.teamJP1Sales;
+      total = { label: "รวมทีม", values: { leads: tm.leads, opps: tm.opportunities, sales: tm.sales, amount: tm.salesAmount, lost: null, openLeads: null, openOpps: null, tasks: null } };
+    } else {
+      rows = K.slices.map(function (s) { return staffRow(s, s.staff ? JCRM.staffName(s.staff) : "ไม่มีผู้รับผิดชอบ"); });
+      var t = K.total;
+      total = { label: "รวม " + JCRM.branchName(K.branch), values: { leads: t.leads, opps: t.opportunities, sales: t.sales, amount: t.salesAmount,
+        lost: fmt.int(t.lostOpportunities) + " · " + fmt.int(t.lostLeads), openLeads: t.openLeads, openOpps: fmt.int(t.openOpportunities) + " " + fmt.money(t.openPipelineAmount), tasks: null } };
+    }
+    var go = JCRM.can("report.staff_performance") ? hrefIf("reports", { tab: "staff" }) : null;
+    var txt = function (key) { return function (r) { return fmt.isNil(r[key]) ? '<span class="is-null">' + DASH + "</span>" : esc(r[key]); }; };
+    return ui.table({
+      caption: kind === "team" ? "ผลงานรายพนักงานในทีม" : "ผลงานรายพนักงาน", compact: true, stickyFirst: true, footer: false, rowKey: "name",
+      rowHref: go ? function () { return go; } : null,
+      columns: [
+        { key: "name", label: "พนักงาน", render: function (r) { return '<span class="nowrap">' + esc(r.name || "") + "</span>"; } },
+        { key: "leads", label: "Leads", format: "int" },
+        { key: "opps", label: "Opportunities", format: "int" },
+        { key: "sales", label: "Sales", format: "int" },
+        { key: "amount", label: "ยอดขาย (บาท)", format: "moneyTable" },
+        { key: "lost", label: "Lost Opp · Lost Lead", align: "end", render: txt("lost") },
+        { key: "openLeads", label: "Lead เปิดอยู่", format: "int" },
+        { key: "openOpps", label: "โอกาสขายเปิดอยู่ (สนใจ · เสนอราคา · รอตัดสินใจ)", align: "end", render: txt("openOpps") },
+        { key: "tasks", label: "งาน วันนี้ · เกินกำหนด", align: "end", render: txt("tasks") }
+      ],
+      rows: rows,
+      totalRow: { label: total.label, values: total.values, useRender: true }
+    });
+  }
+  /* มือถือ SUPERVISOR: ผลงานรายพนักงานในทีมเป็นการ์ดรายคน (sitemap-screen-specs ข้อ 5.9) */
+  function staffCardsMobile() {
+    var K = D.kpis.staffJP1, members = JCRM.teamMembersLedBy(JCRM.currentStaffCode(), K.branch);
+    return '<div class="dash-mstaff">' + K.slices.filter(function (s) { return s.staff && members.indexOf(s.staff) !== -1 && s.staff !== JCRM.currentStaffCode(); }).map(function (s) {
+      var name = JCRM.staffName(s.staff);
+      return '<div class="dash-mstaff__card"><div class="row">' + ui.avatar(name, "sm") + '<span class="t-medium t-heading">' + esc(name) + "</span></div>" +
+        '<div class="dash-mstaff__stats"><span>Leads <strong>' + esc(fmt.int(s.leads)) + "</strong></span><span>Opportunities <strong>" + esc(fmt.int(s.opportunities)) +
+        "</strong></span><span>Sales <strong>" + esc(fmt.int(s.sales)) + "</strong></span><span>ยอดขาย <strong>" + esc(fmt.money(s.salesAmount)) + "</strong></span></div></div>";
+    }).join("") + "</div>";
+  }
+
+  /* ---------- กิจกรรมล่าสุด (W5 · ข้อ 13.5) ---------- */
+  function activityList(branch) {
+    var ra = JCRM.select.recentActivityFor(undefined, { branch: branch });
+    if (!ra) { return null; }
+    if (!ra.rows.length) { return ui.state("empty", { title: "ยังไม่มีกิจกรรมในสาขานี้", compact: true }); }
+    var nowDay = fmt.dayKey(D.meta.now);
+    return '<div class="dash-list">' + ra.rows.map(function (r) {
+      var href = hrefIf("customer-360", { c: r.customerNo });
+      var tag = href ? "a" : "div";
+      var when = fmt.dayKey(r.at) === nowDay ? fmt.time(r.at) : fmt.dateTime(r.at);
+      return "<" + tag + ' class="dash-list__row"' + (href ? ' href="' + esc(href) + '"' : "") + ">" + ui.avatar(r.customer.displayName, "sm") +
+        '<span class="dash-list__main"><span class="dash-list__title">' + esc(JCRM.customerName(r.customerNo)) + "</span>" +
+        '<span class="dash-list__meta">' + esc(JCRM.label("channels", r.channel) + " · " + JCRM.branchName(r.branch)) + "</span></span>" +
+        '<span class="dash-list__side">' + esc(when) + "</span></" + tag + ">";
+    }).join("") + "</div>";
+  }
+
+  /* ---------- งาน (C-TASK) ---------- */
+  function limitedGroups(rows, counts, n) {
+    var left = n;
+    return JCRM.select.groupTasks(rows, counts).map(function (g) {
+      var take = g.rows.slice(0, Math.max(0, left)); left -= take.length;
+      return { key: g.key, label: g.label, rows: take, count: g.count };
+    });
+  }
+  function taskWidgetBody(t, opts) {
+    opts = opts || {};
+    if (!t) { return null; }
+    if (t.empty) { return ui.state("empty", { title: "ยังไม่มีงานวันนี้", compact: true }); }
+    var rows = opts.group ? t.rows.filter(function (r) { return r.group === opts.group; }) : t.rows;
+    if (!rows.length) { return t.sample ? ui.sampleNote(t.sample) : ui.state("empty", { title: "ยังไม่มีงานวันนี้", compact: true }); }
+    /* ขอบเขตสาขา/องค์กร: ข้อ 13 ไม่มีจำนวนงานรวม → แสดงเฉพาะ C-STATE-SAMPLE (sitemap-screen-specs ข้อ 5.4 แท็บเล็ต) */
+    if (!t.counts) { return ui.sampleNote(t.sample || { text: T.stateSampleShowing.replace("{k}", "0").replace("{N}", DASH) }); }
+    var groups = limitedGroups(rows, t.counts, opts.limit || 5);
+    if (opts.group) { groups = groups.filter(function (g) { return g.key === opts.group; }); }
+    var shown = groups.reduce(function (a, g) { return a + g.rows.length; }, 0);
+    var note = "";
+    if (opts.sampleTotal !== undefined) { note = ui.sampleNote({ shown: shown, total: opts.sampleTotal }); }
+    else if (t.sample) { note = ui.sampleNote(t.sample.text ? t.sample : { shown: shown, total: t.sample.total }); }
+    return note + ui.taskList({ groups: groups, showOwner: t.showOwner });
+  }
+  function allTasksLink(total) {
+    var href = hrefIf("tasks", {});
+    return href ? '<a class="dash-link" href="' + esc(href) + '">' + esc("ดูทั้งหมด" + (fmt.isNil(total) ? "" : " " + fmt.int(total) + " งาน")) + "</a>" : "";
+  }
+
+  /* ---------- ลูกค้าล่าสุดของฉัน (ข้อ 13.5) ---------- */
+  function recentBody(compactTime) {
+    var rc = JCRM.select.recentCustomersFor();
+    if (!rc) { return ""; }
+    if (rc.empty) { return ui.state("empty", { title: "ยังไม่มีลูกค้าที่คุณดูแล", compact: true }); }
+    if (!rc.rows.length) { return ui.sampleNote(rc.sample); }
+    return '<div class="dash-list">' + rc.rows.map(function (r) {
+      var href = hrefIf("customer-360", { c: r.customerNo });
+      var tag = href ? "a" : "div";
+      return "<" + tag + ' class="dash-list__row"' + (href ? ' href="' + esc(href) + '"' : "") + ">" + ui.avatar(r.customer.displayName, "sm") +
+        '<span class="dash-list__main"><span class="dash-list__title">' + esc(JCRM.customerName(r.customerNo)) + ' <span class="code">' + esc(r.customerNo) + "</span></span>" +
+        (compactTime ? "" : ui.customerBadges(r.customer)) + "</span>" +
+        '<span class="dash-list__side">' + esc(fmt.dateTime(r.lastActivityAt)) + "</span></" + tag + ">";
+    }).join("") + "</div>";
+  }
+
+  /* ---------- วาดกราฟหลังใส่ HTML ---------- */
+  function mountCharts(scope, preset) {
+    var ok = scope === "ALL" || BR4.indexOf(scope) !== -1;
+    var noSample = preset === TODAY ? { text: T.presetDisabled } : { scopeTh: JCRM.branchName(scope) };
+    var hasFunnel = JCRM.$("#w-funnel"), hasDonut = JCRM.$("#w-donut"), hasLost = JCRM.$("#w-lost");
+    if (hasFunnel) {
+      JCRM.chart.funnel("w-funnel", ok && preset !== TODAY ? { title: "Funnel ลูกค้า", stages: JCRM.chart.funnelStages(scope, "kpi") } : { title: "Funnel ลูกค้า", stages: [], sample: noSample });
+    }
+    if (hasDonut) {
+      var src = scope === "ALL" ? D.kpis.sources.total : D.kpis.sources.byBranch[scope];
+      JCRM.chart.donut("w-donut", ok && preset !== TODAY && src ? { title: "แหล่งที่มาลูกค้า", segments: JCRM.chart.sourceSegments(src), centerValue: src.total, centerLabel: D.dashboards[0].widgets[1].centerLabelTh, tableLabel: "ช่องทาง" } :
+        { title: "แหล่งที่มาลูกค้า", segments: [], sample: noSample });
+    }
+    if (hasLost) {
+      JCRM.chart.hbar("w-lost", ok && preset !== TODAY ? { title: "เหตุผลที่ไม่สำเร็จ", items: JCRM.chart.lostReasonItems(scope), valueLabel: "จำนวน · ร้อยละ" } : { title: "เหตุผลที่ไม่สำเร็จ", items: [], sample: noSample });
+    }
+  }
+
+  /* ---------- แถวคุณภาพข้อมูล (BUSINESS_ADMIN · ข้อ 14.7) ---------- */
+  function dataQualityRow(branch, preset) {
+    if (preset === TODAY) { return sample(T.presetDisabled); }
+    var codes = D.dashboards[0].widgets.filter(function (w) { return w.type === "dataQualityRow"; })[0].items.map(function (i) { return i.kpi; });
+    var src = branch === "ALL" ? D.kpis.org.rates : (JCRM.find(D.kpis.branchRates, "branch", branch) || {});
+    var href = hrefIf("data-quality", {});
+    return '<div class="dash-kpis">' + codes.map(function (k) {
+      var r = src[k] || null;
+      return ui.kpiCard({ label: D.kpiLabels[k], display: r ? r.display : DASH, target: r ? { num: r.num, den: r.den, kpi: k } : null, preset: L30, href: href,
+        note: r ? null : "ไม่มีข้อมูลตัวอย่างรายสาขา" });
+    }).join("") + "</div>";
+  }
+
+  /* ---------- วาดหน้า ---------- */
+  function render(ctx) {
+    var page = JCRM.$("#page");
+    var sc = ctx.scope, preset = ctx.preset;
+    var dash = ctx.select.dashboardFor(undefined, { branch: ctx.branch });
+    var me = ctx.staff;
+    if (dash.layout === "none") { page.innerHTML = ui.state("notfound", { title: T.rpcDenied }); return; }
+
+    var scopeTh;
+    if (dash.layout === "staff") { scopeTh = "ของฉัน"; }
+    else if (dash.layout === "supervisor") { scopeTh = "ทีม " + (dash.team || D.dashboards[2].team); }
+    else if (dash.layout === "branchManager" || dash.branch !== "ALL") { scopeTh = JCRM.branchName(dash.branch); }
+    else { scopeTh = sc.kind === "org" ? "ทั้งองค์กร" : "ทุกสาขาในสิทธิ์ของคุณ (" + sc.branches.map(JCRM.branchName).join(" · ") + ")"; }
+
+    var receive = ui.permButton({ label: "+ รับลูกค้า", variant: "accent", permission: "visit.create", href: JCRM.link("quick-capture", { mode: "visit" }) });
+    var header = ui.pageHeader({
+      title: "สวัสดี " + me.displayName,
+      lead: "ภาพรวม" + (/^[ก-๙]/.test(scopeTh) ? "" : " ") + scopeTh + " · ข้อมูล " + fmt.asOf(),
+      period: dash.layout !== "staff",   /* ชุด "พนักงาน" ไม่แสดงตัวเลือกช่วงเวลา (sitemap-screen-specs ข้อ 5.5 · S26) */
+      actions: receive ? ['<span class="hide-tablet">' + receive + "</span>"] : []
+    });
+    var html = header;
+    var tasks = JCRM.can("task.read") ? ctx.select.tasksFor(undefined, { branch: ctx.branch }) : null;
+
+    if (dash.layout === "org" || dash.layout === "branchManager") {
+      var scope = dash.branch;
+      var cards = orgCards(dash.cards, preset);
+      if (dash.sample && dash.layout === "org") { html += sample(T.stateSampleNone.replace("{ขอบเขต}", JCRM.branchName(scope))); }
+      html += '<div class="dash-kpis' + (dash.sample && dash.layout === "org" ? " dash-section-gap" : "") + '">' + cards.map(cardFrom).join("") + "</div>";
+      html += '<div class="dash-row dash-row--3">' +
+        widget("w-funnel", "Funnel ลูกค้า", periodSub(preset)) +
+        widget("w-donut", "แหล่งที่มาลูกค้า", periodSub(preset), "", "hide-tablet") +
+        widget("w-lost", "เหตุผลที่ไม่สำเร็จ", periodSub(preset) + " · 5 อันดับ + อื่น ๆ", "", "hide-tablet") + "</div>";
+      if (tasks) {
+        var tb = taskWidgetBody(tasks, { limit: 5 });
+        html += '<div class="only-tablet dash-section-gap">' + widget("w-tablet-tasks", "งานวันนี้", asOfSub() + " · แท็บเล็ตแสดงเฉพาะการ์ด KPI · Funnel · งานวันนี้ (ข้อ 14.4)", tb, "", allTasksLink(tasks.counts ? tasks.counts.total : null)) + "</div>";
+      }
+      var activity = activityList(dash.layout === "branchManager" ? dash.branch : scope);
+      var mainTable = dash.layout === "branchManager" ?
+        widget("w-staff", "ผลงานรายพนักงาน", periodSub(preset), dash.branch === "JP1" ? staffTable("branch", preset) : ui.sampleNote(dash.sample)) :
+        widget("w-branch", "ผลงานรายสาขา", periodSub(preset) + " · เปลี่ยน = ยอดขายเทียบช่วงก่อนหน้า", branchTable(scope, preset));
+      html += '<div class="dash-row ' + (activity !== null ? "dash-row--main-side" : "") + ' hide-tablet">' + mainTable +
+        (activity !== null ? widget("w-activity", "กิจกรรมล่าสุด", "เรียงตามเวลาติดต่อล่าสุด", activity) : "") + "</div>";
+      if (dash.widgets.some(function (w) { return w.type === "dataQualityRow"; })) {
+        html += '<div class="hide-tablet dash-section-gap">' + widget("w-dq", "คุณภาพข้อมูล", periodSub(preset) + " · เทียบเป้าหมาย", dataQualityRow(scope, preset)) + "</div>";
+      }
+      html += '<p class="only-mobile t-sm t-muted dash-section-gap">ดูภาพรวมเต็มบนคอมพิวเตอร์</p>';
+      page.innerHTML = html;
+      mountCharts(scope, preset);
+    } else if (dash.layout === "supervisor") {
+      html += '<div class="dash-kpis">' + supervisorCards(dash.cards, preset).map(cardFrom).join("") + "</div>";
+      var overdue = ctx.select.tasksFor(undefined, { group: "overdue" });
+      html += '<div class="dash-row dash-row--2 not-mobile hide-tablet">' +
+        widget("w-team", "ผลงานรายพนักงานในทีม", periodSub(preset), staffTable("team", preset)) +
+        widget("w-team-overdue", "งานเกินกำหนดของทีม", asOfSub(), taskWidgetBody(overdue, { group: "overdue", limit: 20, sampleTotal: overdue && overdue.counts ? overdue.counts.overdue : undefined }), "", allTasksLink(null)) + "</div>";
+      if (tasks) {
+        html += '<div class="only-tablet dash-section-gap">' + widget("w-tablet-tasks", "งานวันนี้", asOfSub(),
+          taskWidgetBody(tasks, { limit: 5, sampleTotal: tasks.counts ? tasks.counts.total : undefined }), "", allTasksLink(tasks.counts ? tasks.counts.total : null)) + "</div>";
+      }
+      html += '<div class="only-mobile dash-section-gap">' + widget("w-team-mobile", "ผลงานรายพนักงานในทีม", periodSub(preset), preset === TODAY ? sample(T.presetDisabled) : staffCardsMobile()) +
+        '<p class="t-sm t-muted dash-section-gap">ดูภาพรวมเต็มบนคอมพิวเตอร์</p></div>';
+      page.innerHTML = html;
+    } else {
+      /* ชุด "พนักงาน" — ค่า "ณ ตอนนี้" + 30 วันล่าสุด (ข้อ 14.7) */
+      var kv = ctx.select.kpisFor(undefined, { preset: L30 });
+      var v = kv.values;
+      var myBranch = me.assignments[0] ? me.assignments[0].branch : null;
+      html += '<div class="dash-kpis not-mobile">' + staffCards(kv).join("") + "</div>";
+      html += '<div class="dash-row dash-row--2 not-mobile">' +
+        widget("w-mytasks", "งานของฉัน", asOfSub(), taskWidgetBody(tasks, { limit: 5 }), "", tasks && !tasks.empty && tasks.counts ? allTasksLink(tasks.counts.total) : "") +
+        widget("w-recent", "ลูกค้าล่าสุดของฉัน" + (myBranch ? " (" + myBranch + ")" : ""), "เรียงตามเวลาติดต่อล่าสุด", recentBody(false), "hide-tablet") + "</div>";
+      /* มือถือ (ข้อ 14.4 · D20) */
+      var total = fmt.isNil(v.TASKS_TODAY) || fmt.isNil(v.TASKS_OVERDUE) ? null : Number(v.TASKS_TODAY) + Number(v.TASKS_OVERDUE);
+      var taskHref = hrefIf("tasks", {}) || "#";
+      html += '<div class="only-mobile">' +
+        '<a class="dash-mtask" href="' + esc(taskHref) + '">' + JCRM.icon("check") + '<span class="dash-mtask__text">' +
+        esc("งานทั้งหมด " + fmt.int(total) + " · เกินกำหนด " + fmt.int(v.TASKS_OVERDUE)) + '<span class="dash-mtask__hint">' + esc(fmt.asOf()) + "</span></span></a>" +
+        '<div class="dash-quick">' +
+        (JCRM.can("visit.create") ? '<a class="dash-quick__btn dash-quick__btn--accent" href="' + esc(JCRM.link("quick-capture", { mode: "visit" })) + '">' + JCRM.icon("plus") + "<span>รับลูกค้า</span></a>" : "") +
+        '<button type="button" class="dash-quick__btn" data-jcrm-action="dash-search">' + JCRM.icon("search") + "<span>ค้นหาลูกค้า</span></button>" +
+        '<a class="dash-quick__btn" href="' + esc(taskHref) + '">' + JCRM.icon("check") + "<span>งานของฉัน</span></a></div>" +
+        '<div class="dash-section-gap">' + widget("w-recent-mobile", "ลูกค้าที่ฉันรับล่าสุด", null, recentBody(true)) + "</div></div>";
+      page.innerHTML = html;
+    }
+    /* คงสถานะงานที่ติ๊กเสร็จไว้ในหน่วยความจำ */
+    JCRM.$$('#page [data-jcrm-action="task-complete"]').forEach(function (cb) {
+      if (doneTasks[cb.getAttribute("data-jcrm-id")]) { cb.checked = true; cb.closest(".task-item").classList.add("is-done"); }
+    });
+  }
+
+  JCRM.on("task-complete", function (key, el) {
+    var row = JCRM.find(D.tasksKwan.rows, "no", Number(String(key).replace("row-", "")));
+    if (!row) { return; }
+    doneTasks[key] = !!el.checked;
+    JCRM.$$('[data-jcrm-action="task-complete"][data-jcrm-id="' + key + '"]').forEach(function (cb) { cb.checked = el.checked; cb.closest(".task-item").classList.toggle("is-done", el.checked); });
+    JCRM.toast(el.checked ? "ทำเครื่องหมายเสร็จ “" + row.title + "” เฉพาะในหน้านี้ (prototype ไม่บันทึกจริง) · ระบบจริงตั้ง completed_at และถ้ารายการต้นทางยังเปิดจะบังคับตั้งการติดตามครั้งถัดไป" :
+      "ยกเลิกเครื่องหมายเสร็จในหน้านี้แล้ว (prototype)", "info");
+  });
+  JCRM.on("dash-search", function () {
+    var input = document.getElementById("jcrm-search");
+    if (input) { window.scrollTo(0, 0); input.focus(); } else { JCRM.toast("บทบาทของคุณไม่มีช่องค้นหา (ข้อ 14.3)", "info"); }
+  });
+
+  JCRM.page({ id: "dashboard", render: render });
+
+  /* ข้อความจากหน้าก่อน (เช่น หลังบันทึกในหน้า 04) */
+  var flash = JCRM.session.get("jcrm.flash");
+  if (flash) { JCRM.session.remove("jcrm.flash"); try { var f = JSON.parse(flash); JCRM.toast(f.message, f.tone || "info"); } catch (e) { /* ข้าม */ } }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>งานที่ต้องติดตาม · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 08 · งานที่ต้องติดตาม — CANONICAL v2.2 ข้อ 4.4 · 4.7 · 13.6 · 13.7 · 13.10 · 19.2 · sitemap-screen-specs ข้อ 11 · ไม่มี hex */
+.tk-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.tk-filter-toggle { display: none; }
+.tk-mobile-add { display: none; }
+.kv { display: grid; grid-template-columns: minmax(110px, 36%) minmax(0, 1fr); gap: var(--space-2) var(--space-4); font-size: var(--fs-sm); }
+.kv dt { color: var(--text-secondary); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.tk-section { display: flex; flex-direction: column; gap: var(--space-2); padding-block: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.tk-section:first-child { padding-top: 0; }
+.tk-section:last-child { border-bottom: 0; }
+.tk-section__title { font-size: var(--fs-h4); font-weight: var(--fw-semibold); color: var(--text-heading); }
+.tk-comments { display: flex; flex-direction: column; gap: var(--space-2); }
+.tk-comment { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface-raised); font-size: var(--fs-sm); }
+.tk-comment__meta { font-size: var(--fs-xs); color: var(--text-secondary); }
+.tk-lock-note { border-inline-start: 4px solid var(--info-solid); }
+.tk-sample-link { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+@media (max-width: 767px) {
+  .tk-desktop-add { display: none; }
+  .tk-mobile-add { display: inline-flex; }
+  .tk-filter-toggle { display: inline-flex; }
+  .tk-filters { display: none; }
+  .tk-filters[data-open="true"] { display: flex; flex-direction: column; align-items: stretch; }
+  .tk-filters[data-open="true"] .field--inline { flex: 1 1 auto; }
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .kv dd { margin-bottom: var(--space-2); }
+}
+</style>
+</head>
+<body data-page="tasks" data-roles="STAFF SUPERVISOR BRANCH_MANAGER OPERATIONS EXECUTIVE BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var D = JCRM.data, fmt = JCRM.fmt, ui = JCRM.ui, esc = JCRM.esc, DASH = fmt.DASH, T = D.meta.texts;
+  var NOW = D.meta.now, TODAY = fmt.dayKey(NOW);
+  var K = D.tasksKwan, KIM = K.kim.staff;
+
+  var S = {
+    ctx: null, type: "", priority: "", owner: null, view: "list", filtersOpen: false,
+    state: {},      /* key → { status, dueAt, remindAt, owner, comments, doneAt } */
+    created: [],
+    nextTk: D.runningNumbers["TK:2026"] + 1,   /* ตัวนับ TK:2026 หลัง seed = 12,660 (ข้อ 13.0 ข้อ 8) */
+    drawer: null, drawerKey: null, paramHandled: false
+  };
+
+  function isNil(v) { return v === null || v === undefined || v === ""; }
+  function me() { return S.ctx ? S.ctx.staffCode : JCRM.currentStaffCode(); }
+  function toIso(v) { return String(v).length === 16 ? v + ":00+07:00" : v; }
+  function pad6(n) { var s = String(n); while (s.length < 6) { s = "0" + s; } return s; }
+  function copy(o) { var x = {}; Object.keys(o || {}).forEach(function (k) { x[k] = o[k]; }); return x; }
+  /* บวกนาทีให้เวลา ISO +07:00 (remind_at = due_at − 15 นาที · ข้อ 4.7) */
+  function addMinutes(iso, n) {
+    var d = new Date(new Date(toIso(iso)).getTime() + (n + 420) * 60000);
+    return d.toISOString().slice(0, 16) + ":00+07:00";
+  }
+
+  /* ---------------------------------------------------------------------------
+     โมเดลงาน: 12 งานของคุณขวัญ (ข้อ 13.10) · TK-2026-012508 (ข้อ 13.7 · is_next_action) · งานที่สร้างในหน้านี้
+     ------------------------------------------------------------------------ */
+  function sampleRows() {
+    return K.rows.map(function (r) {
+      return { key: ui.taskKey(r), taskNo: r.taskNo || null, no: r.no, dueAt: r.dueAt, type: r.type, customerNo: r.customerNo, title: r.title, priority: r.priority,
+        owner: r.owner, branch: r.branch, status: "OPEN_UNKNOWN", isNextAction: false, parent: null, remindAt: null, description: null, comments: [], sample: true };
+    });
+  }
+  function extraTasks() {
+    return D.tasks.filter(function (t) { return t.taskNo; }).map(function (t) {
+      return { key: t.taskNo, taskNo: t.taskNo, no: null, dueAt: t.dueAt, type: t.type, customerNo: t.customerNo, title: t.title, priority: t.priority, owner: t.owner, branch: t.branch,
+        status: "OPEN_UNKNOWN", isNextAction: !!t.isNextAction, parent: t.opportunityNo || t.leadNo || null, createdAt: t.createdAt || null, remindAt: null, description: null, comments: [], sample: true, listed: false };
+    });
+  }
+  function withState(t) {
+    var s = S.state[t.key], x = copy(t);
+    if (s) { Object.keys(s).forEach(function (k) { x[k] = s[k]; }); }
+    return x;
+  }
+  function allTasks() { return sampleRows().concat(extraTasks()).concat(S.created.map(copy)).map(withState); }
+  function findTask(key) { return allTasks().filter(function (t) { return t.key === key; })[0] || null; }
+  function isClosed(t) { return t.status === "DONE" || t.status === "CANCELLED"; }
+  function groupOf(t) {
+    if (isClosed(t) || !t.dueAt) { return null; }
+    var k = fmt.dayKey(t.dueAt);
+    return k < TODAY ? "overdue" : (k === TODAY ? "today" : null);
+  }
+  function rowCtx(t) { return { branch: t.branch, owner: t.owner }; }
+  function parentOf(t) {
+    if (!t.parent) { return null; }
+    var op = JCRM.find(D.opportunities, "opportunityNo", t.parent);
+    if (op) { return { kind: "OPPORTUNITY", no: op.opportunityNo, branch: op.branch, owner: op.owner, open: ["INTERESTED", "QUOTATION", "FOLLOW_UP"].indexOf(op.stage) !== -1, perm: "opportunity.update", closePage: "pipeline", param: "op" }; }
+    var ld = JCRM.find(D.leads, "leadNo", t.parent);
+    if (ld) { var st = JCRM.find(D.leadStatuses, "code", ld.status); return { kind: "LEAD", no: ld.leadNo, branch: ld.branch, owner: ld.owner, open: !ld.status || (st && st.isOpen), perm: "lead.update", closePage: "leads", param: "lead" }; }
+    return null;
+  }
+  function ownerFilter() { return S.owner; }
+  /* งานอยู่ในมุมมองนี้ไหม: task.read บนแถว (ไม่มี read-through · ข้อ 9.4) + สาขา + ตัวกรองผู้รับผิดชอบ */
+  function inView(t, effB) {
+    if (!JCRM.can("task.read", rowCtx(t))) { return false; }
+    if (effB !== "ALL" && t.branch !== effB) { return false; }
+    if (ownerFilter() && t.owner !== ownerFilter()) { return false; }
+    return true;
+  }
+  function filtered(t) { return (!S.type || t.type === S.type) && (!S.priority || t.priority === S.priority); }
+
+  function viewData(ctx) {
+    var base = JCRM.select.tasksFor(undefined, { branch: ctx.branch, owner: ownerFilter(), group: "all" });
+    if (!base) { return null; }
+    var rb = JCRM.scopeBranches("task.read", "OWN");
+    var effB = ctx.branch === "ALL" && rb.length === 1 ? rb[0] : ctx.branch;
+    var baseKeys = base.rows.map(function (r) { return ui.taskKey(r); });
+    var rows = [], counts = base.counts ? { today: base.counts.today, overdue: base.counts.overdue } : null;
+    /* งานตัวอย่าง: อยู่ในมุมมองเมื่อ selector คืนมา (baseKeys) หรือถูกเปลี่ยนในหน้านี้แล้วยังผ่าน task.read + ตัวกรอง
+       จำนวนตามข้อ 13.10/13.6 ปรับด้วยการเปลี่ยน: ออกจากกลุ่มเดิม −1 · เข้ากลุ่มใหม่ +1 */
+    sampleRows().concat(extraTasks()).forEach(function (o) {
+      var e = withState(o), origIn = baseKeys.indexOf(o.key) !== -1, changed = !!S.state[o.key];
+      var effIn = (origIn || changed) && inView(e, effB);
+      if (effIn && groupOf(e)) { rows.push(e); }
+      if (counts && changed) {
+        var g0 = origIn ? groupOf(o) : null, g1 = effIn ? groupOf(e) : null;
+        if (g0) { counts[g0] -= 1; }
+        if (g1) { counts[g1] += 1; }
+      }
+    });
+    S.created.forEach(function (c) { var e = withState(c); var g = inView(e, effB) ? groupOf(e) : null; if (g) { rows.push(e); if (counts) { counts[g] += 1; } } });
+    if (counts) { counts.total = counts.today + counts.overdue; }
+    var shown = rows.filter(filtered);
+    var cnt = function (list) { var t = list.filter(function (x) { return groupOf(x) === "today"; }).length, o = list.filter(function (x) { return groupOf(x) === "overdue"; }).length; return { today: t, overdue: o, total: t + o }; };
+    var shownCounts = counts;
+    if (S.type || S.priority) {
+      var complete = base.counts && baseKeys.length === base.counts.total;
+      var kimOnly = base.counts && !baseKeys.length && (ownerFilter() === KIM || (JCRM.topScope("task.read") === "OWN" && me() === KIM));
+      if (complete) { shownCounts = cnt(shown); }
+      else if (kimOnly && !S.priority) {
+        /* งานของคุณคิม "ทั้งหมด FOLLOW_UP" (ข้อ 13.10) → ตัวกรองประเภทอื่น = 0 */
+        var add = cnt(shown), b0 = S.type === "FOLLOW_UP" ? base.counts : { today: 0, overdue: 0 };
+        shownCounts = { today: b0.today + add.today, overdue: b0.overdue + add.overdue }; shownCounts.total = shownCounts.today + shownCounts.overdue;
+      } else { shownCounts = null; }
+    }
+    return { base: base, effB: effB, rows: shown, counts: shownCounts };
+  }
+
+  /* ---------------------------------------------------------------------------
+     render
+     ------------------------------------------------------------------------ */
+  function selectHtml(id, label, options, value, action) {
+    return '<div class="field field--inline"><label class="label" for="' + esc(id) + '">' + esc(label) + '</label><select class="select" id="' + esc(id) + '" data-jcrm-change="' + esc(action) + '">' +
+      options.map(function (o) { return '<option value="' + esc(o.value) + '"' + (String(o.value) === String(value || "") ? " selected" : "") + ">" + esc(o.label) + "</option>"; }).join("") + "</select></div>";
+  }
+  function groupsFor(rows, counts, which) {
+    var sorted = rows.slice().sort(function (a, b) { return fmt.compareIso(a.dueAt, b.dueAt); });
+    return ["overdue", "today"].filter(function (g) { return which === "all" || which === g; }).map(function (g) {
+      return { key: g, label: g === "overdue" ? "เกินกำหนด" : "วันนี้", rows: sorted.filter(function (t) { return groupOf(t) === g; }), count: counts ? counts[g] : null };
+    });
+  }
+  function render(ctx) {
+    S.ctx = ctx;
+    var host = document.getElementById("page");
+    var v = viewData(ctx);
+    if (!v) { host.innerHTML = ui.noPermission({ roles: ctx.screen.roles }); return; }
+    var top = JCRM.topScope("task.read");
+    var addBtn = { label: "+ เพิ่มงาน", variant: "accent", permission: "task.create", action: "tk-create" };
+    var header = ui.pageHeader({
+      title: "งานที่ต้องติดตาม", lead: "งานของวันนี้ · " + fmt.date(NOW) + " · ทั้งหมด = วันนี้ + เกินกำหนด (ข้อ 4.7)",
+      actions: [JCRM.raw('<span class="tk-desktop-add">' + ui.permButton(addBtn) + "</span>"),
+        JCRM.raw('<span class="tk-mobile-add">' + ui.permButton({ label: "เพิ่มงาน", variant: "accent", permission: "task.create", action: "tk-create", icon: "plus", iconOnly: true }) + "</span>")]
+    });
+    var owners = [];
+    if (top !== "OWN" && (v.effB === "JP1") && JCRM.scopeBranches("task.read", "OWN").indexOf("JP1") !== -1) { owners = [K.staff, KIM]; }
+    if (S.owner && owners.indexOf(S.owner) === -1) { owners.push(S.owner); }
+    var activeFilters = [S.type, S.priority, S.owner].filter(Boolean).length;
+    var filters = '<div class="filter-bar filter-bar--panel tk-filters" data-open="' + S.filtersOpen + '" id="tk-filters" role="group" aria-label="ตัวกรองงาน">' +
+      selectHtml("tk-type", "ประเภทงาน", [{ value: "", label: "ทั้งหมด" }].concat(D.taskTypes.map(function (x) { return { value: x.code, label: x.labelTh + (x.code === "FOLLOW_UP" ? " (Follow-ups)" : "") }; })), S.type, "tk-type") +
+      selectHtml("tk-priority", "ความสำคัญ", [{ value: "", label: "ทั้งหมด" }].concat(D.priorities.map(function (x) { return { value: x.code, label: x.labelTh }; })), S.priority, "tk-priority") +
+      (top === "OWN" ? "" : selectHtml("tk-owner", "ผู้รับผิดชอบ", [{ value: "", label: "ทั้งหมด" }].concat(owners.map(function (c) { return { value: c, label: JCRM.staffName(c) }; })), S.owner, "tk-owner")) +
+      ui.branchSelect({ id: "tk-branch", permission: "task.read", value: ctx.branch, action: "tk-branch" }) +
+      (activeFilters ? '<div class="filter-bar__clear">' + ui.button({ label: "ล้างตัวกรอง", variant: "ghost", size: "sm", action: "tk-clear" }) + "</div>" : "") + "</div>";
+    var toolbar = '<div class="tk-toolbar">' +
+      '<button type="button" class="btn btn--secondary btn--sm tk-filter-toggle" data-jcrm-action="tk-filters" aria-expanded="' + S.filtersOpen + '" aria-controls="tk-filters">' + JCRM.icon("filter") + "<span>ตัวกรอง (" + activeFilters + ")</span></button>" +
+      ui.segmented({ label: "มุมมอง", action: "tk-view", value: S.view, options: [{ value: "list", label: "รายการ" }, { value: "calendar", label: "ปฏิทิน 🔒" }] }) + "</div>";
+
+    var body;
+    if (S.view === "calendar") {
+      body = '<div class="card">' + ui.state("locked", { title: "มุมมองปฏิทิน · Phase 2 [รอยืนยัน]", phase: "2", text: "มุมมองปฏิทินของหน้างานยังไม่เปิดใน prototype Phase 0 (CANONICAL ข้อ 14.2) · ใช้มุมมองรายการ" }) + "</div>";
+    } else {
+      var showOwner = top !== "OWN";
+      var mk = function (which, emptyTitle) {
+        return ui.taskList({ groups: groupsFor(v.rows, v.counts, which), showOwner: showOwner, openAction: "tk-open",
+          empty: { title: emptyTitle, compact: true, action: v.base.empty && which === "all" ? ui.permButton(addBtn) : "" } });
+      };
+      var sample = v.base.sample ? ui.sampleNote(v.base.sample) : "";
+      body = sample + '<div class="card card--flush" style="padding:var(--space-2) var(--space-4) var(--space-4)">' + ui.tabs({ id: "tk-groups", label: "กลุ่มงาน", param: "group", selected: "all", tabs: [
+        { id: "all", label: "ทั้งหมด", count: v.counts ? v.counts.total : null, html: mk("all", "ไม่มีงานที่ต้องทำวันนี้") },
+        { id: "today", label: "วันนี้", count: v.counts ? v.counts.today : null, html: mk("today", "ไม่มีงานที่ต้องทำวันนี้") },
+        { id: "overdue", label: "เกินกำหนด", count: v.counts ? v.counts.overdue : null, html: mk("overdue", "ไม่มีงานเกินกำหนด") }
+      ] }) + "</div>";
+    }
+    var tk = extraTasks()[0];
+    var sampleLink = tk && JCRM.can("task.read", rowCtx(tk)) ? '<div class="card card--raised tk-sample-link"><span class="t-sm">ตัวอย่างงานที่เป็นการติดตามถัดไป (แก้ผู้รับผิดชอบ/วันครบกำหนด/ประเภทตรงไม่ได้ · ข้อ 19.2): <span class="code">' + esc(tk.taskNo) + "</span> " +
+      esc(tk.title) + " · ครบกำหนด " + esc(fmt.dateTime(tk.dueAt)) + " จึงไม่อยู่ในกลุ่มวันนี้/เกินกำหนด</span>" + ui.button({ label: "เปิดรายละเอียดงาน", variant: "ghost", size: "sm", action: "tk-open", id: tk.taskNo }) + "</div>" : "";
+    host.innerHTML = header + toolbar + filters + '<div class="stack">' + body + sampleLink +
+      '<p class="proto-note">ทำเสร็จ เลื่อนนัด มอบหมาย ยกเลิก เพิ่มงาน และความคิดเห็น เก็บในหน่วยความจำของหน้านี้เท่านั้น · ระบบจริง UPDATE crm.tasks ผ่าน RLS (task.read ไม่มี read-through ผ่านลูกค้า) · มอบหมายผ่าน api.assign_owner · เลข TK ของ 12 งานในข้อ 13.10 ไม่มีในข้อมูลตัวอย่าง</p></div>';
+    if (!v.counts) { JCRM.$$(".group-head", host).forEach(function (h) { h.textContent = h.textContent.replace(/\s*\(\d[\d,]*\)\s*$/, ""); }); }
+  }
+  function rerender() { if (S.ctx) { render(JCRM.state()); JCRM.initTabs(document); } }
+  function refreshDrawer() { if (S.drawer && S.drawerKey) { var k = S.drawerKey; S.drawer.close(); S.drawer = null; openDrawer(k); } }
+  function closeDrawer() { if (S.drawer) { S.drawer.close(); S.drawer = null; S.drawerKey = null; } }
+
+  /* ---------------------------------------------------------------------------
+     Drawer รายละเอียดงาน (480px · sitemap ข้อ 11.5)
+     ------------------------------------------------------------------------ */
+  function kv(rows) { return '<dl class="kv">' + rows.map(function (r) { return '<div style="display:contents"><dt>' + esc(r[0]) + "</dt><dd>" + r[1] + "</dd></div>"; }).join("") + "</dl>"; }
+  function txt(v) { return isNil(v) ? '<span class="t-muted">' + DASH + "</span>" : esc(v); }
+  function statusText(t) { return t.status === "OPEN_UNKNOWN" ? "เปิด/กำลังทำ (ข้อมูลตัวอย่างไม่ระบุ)" : JCRM.label("taskStatuses", t.status); }
+  function openDrawer(key) {
+    var t = findTask(key);
+    if (!t || !JCRM.can("task.read", rowCtx(t))) {
+      S.drawer = JCRM.drawer({ title: "รายละเอียดงาน", ref: key && key.indexOf("TK-") === 0 ? key : null, body: ui.state("notfound", {}), footer: ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }), onCancel: function () { S.drawer = null; } });
+      S.drawerKey = null; return;
+    }
+    var rc = rowCtx(t), closed = isClosed(t), p = parentOf(t), g = groupOf(t);
+    var timeBadge = g === "overdue" ? ui.badge("เกินกำหนด", "danger", "badge--square") : (g === "today" && fmt.compareIso(t.dueAt, NOW) < 0 ? ui.badge("เลยเวลา", "warning", "badge--square") : "");
+    var head = '<div class="tk-section"><p class="t-h3">' + esc(t.title || DASH) + '</p><div class="badge-row">' + ui.badge(JCRM.label("taskTypes", t.type), "neutral", "badge--square") + ui.priorityBadge(t.priority) + timeBadge +
+      (closed ? ui.status("taskStatuses", t.status) : "") + "</div></div>";
+    var lock = t.isNextAction && p ? '<p class="alert tk-lock-note" role="note">' + JCRM.icon("lock", "nav-icon") + '<span>เป็นการติดตามถัดไปของ <a class="code" href="' + esc(JCRM.link(p.closePage, (function () { var o = {}; o[p.param] = p.no; return o; })())) + '">' + esc(p.no) +
+      "</a> · ผู้รับผิดชอบ สาขา วันครบกำหนด และประเภทแก้ตรงที่งานไม่ได้ (ข้อ 19.2 ข้อ 3) · ทำเสร็จแล้วต้องตั้งการติดตามครั้งถัดไป</span></p>" : "";
+    var info = '<div class="tk-section">' + lock + kv([
+      ["เลขงาน", t.taskNo ? '<span class="code">' + esc(t.taskNo) + "</span>" : txt(null)],
+      ["ประเภท", txt(JCRM.label("taskTypes", t.type))],
+      ["สถานะ", txt(statusText(t))],
+      ["ความสำคัญ", txt(t.priority ? JCRM.label("priorities", t.priority) : null)],
+      ["ครบกำหนด", txt(t.dueAt ? fmt.dateTime(t.dueAt) : null)],
+      ["เตือนเมื่อ", txt(t.remindAt ? fmt.dateTime(t.remindAt) : null)],
+      ["ลูกค้า", t.customerNo && JCRM.customer(t.customerNo) ? '<a href="' + esc(JCRM.link("customer-360", { c: t.customerNo })) + '">' + esc(JCRM.customerName(t.customerNo)) + '</a> <span class="code">' + esc(t.customerNo) + "</span>" : txt(null)],
+      ["Lead/โอกาสขายที่ผูก", p ? '<a class="code" href="' + esc(JCRM.link(p.closePage, (function () { var o = {}; o[p.param] = p.no; return o; })())) + '">' + esc(p.no) + "</a>" : txt(null)],
+      ["ผู้รับผิดชอบ", txt(t.owner ? JCRM.staffName(t.owner) : "ยังไม่มีผู้รับผิดชอบ")],
+      ["สาขา", txt(JCRM.branchName(t.branch))],
+      ["รายละเอียด", txt(t.description)]
+    ]) + "</div>";
+    var canComment = !closed && JCRM.access("task.update", rc);
+    var comments = '<div class="tk-section"><h3 class="tk-section__title">ความคิดเห็น</h3><div class="tk-comments">' + ((t.comments || []).length ? t.comments.map(function (c) {
+      return '<div class="tk-comment"><p>' + esc(c.body) + '</p><p class="tk-comment__meta">' + esc(JCRM.staffName(c.by) + " · " + fmt.dateTime(c.at)) + "</p></div>";
+    }).join("") : '<p class="t-sm t-muted">ยังไม่มีความคิดเห็น</p>') + "</div>" +
+      (canComment && canComment.visible ? (canComment.allowed ? '<div class="field">' + ui.piiWarn() + '<label class="label" for="tk-comment">เพิ่มความคิดเห็น</label><textarea class="textarea" id="tk-comment" rows="2" maxlength="2000"></textarea><p class="error-text" id="tk-comment-error" hidden></p></div>' +
+        ui.button({ label: "เพิ่มความคิดเห็น", variant: "secondary", size: "sm", action: "tk-comment", id: t.key }) : '<p class="t-xs t-muted">' + esc(canComment.reason) + "</p>") : "") + "</div>";
+    var footer;
+    if (closed) {
+      footer = '<p class="t-sm t-muted grow">งานที่' + esc(JCRM.label("taskStatuses", t.status)) + "แล้วเป็นอ่านอย่างเดียว (ข้อ 19.2 ข้อ 3)</p>" + ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" });
+    } else {
+      var lockedReasonAssign = "เปลี่ยนผู้รับผิดชอบที่ Lead/โอกาสขายต้นทางแทน", lockedReasonCancel = "เปลี่ยนการติดตามที่ Lead/โอกาสขายแทน";
+      footer = ui.permButton({ label: "ยกเลิกงาน", variant: "danger-outline", action: "tk-cancel", id: t.key, permission: "task.update", ctx: rc, extra: { ok: !(t.isNextAction && p && p.open), reason: lockedReasonCancel } }) +
+        '<span class="spacer"></span>' +
+        ui.permButton({ label: "มอบหมาย", variant: "secondary", action: "tk-assign", id: t.key, permission: "task.assign", ctx: rc, extra: { ok: !t.isNextAction, reason: lockedReasonAssign } }) +
+        ui.permButton({ label: "เลื่อนนัด", variant: "secondary", action: "tk-reschedule", id: t.key, permission: "task.update", ctx: rc }) +
+        ui.permButton({ label: "ทำเสร็จ", variant: "accent", action: "tk-done", id: t.key, permission: "task.update", ctx: rc });
+    }
+    S.drawer = JCRM.drawer({ title: "รายละเอียดงาน", ref: t.taskNo || "เลขงาน " + DASH, body: head + info + comments, footer: footer, onCancel: function () { S.drawer = null; S.drawerKey = null; } });
+    S.drawerKey = t.key;
+  }
+
+  /* ---------------------------------------------------------------------------
+     การกระทำ
+     ------------------------------------------------------------------------ */
+  function setState(key, patch) { S.state[key] = S.state[key] || {}; Object.keys(patch).forEach(function (k) { S.state[key][k] = patch[k]; }); }
+  function guard(t, perm) {
+    if (!t) { JCRM.toast(T.stateNotFound, "warning"); return false; }
+    var a = JCRM.access(perm, rowCtx(t));
+    if (!a.allowed) { JCRM.toast(a.visible ? a.reason : T.rpcDenied, "warning"); return false; }
+    if (isClosed(t)) { JCRM.toast("รายการที่ปิดแล้วแก้ไขไม่ได้", "warning"); return false; }
+    return true;
+  }
+  function markDone(t) {
+    setState(t.key, { status: "DONE", doneAt: NOW });
+    closeDrawer(); rerender();
+    JCRM.toast("ทำงานเสร็จแล้ว · " + (t.taskNo || t.title), "success", { title: "prototype" });
+  }
+  /* ปิดงานที่เป็นการติดตามถัดไปของรายการที่ยังเปิด → บังคับตั้งการติดตามครั้งถัดไป (ข้อ 4.4) */
+  function nextActionDialog(t, p) {
+    var link = JCRM.link(p.closePage, (function () { var o = {}; o[p.param] = p.no; return o; })());
+    JCRM.dialog({
+      title: "ตั้งการติดตามครั้งถัดไป", size: "md",
+      intro: '<p class="t-sm">งานนี้เป็นการติดตามถัดไปของ <span class="code">' + esc(p.no) + "</span> ซึ่งยังเปิดอยู่ · ต้องตั้งการติดตามครั้งถัดไปก่อนปิดงาน (ปิดหน้าต่างนี้ = งานยังไม่เสร็จ)</p>" +
+        '<p class="t-sm"><a href="' + esc(link) + '">' + (p.kind === "OPPORTUNITY" ? "ปิดโอกาสขายแทน" : "ปิด Lead แทน") + "</a></p>",
+      fields: [
+        { name: "next_text", label: "การติดตามถัดไป", type: "text", required: true, piiWarn: true, maxLength: 200 },
+        { name: "next_type", label: "ประเภท", type: "select", ref: "taskTypes", required: true, width: "half" },
+        { name: "next_at", label: "วันเวลา", type: "datetime", required: true, width: "half", validate: function (v) { return fmt.compareIso(toIso(v), NOW) <= 0 ? "เลือกเวลาหลังจากตอนนี้" : null; } },
+        { name: "priority", label: "ความสำคัญ", type: "select", ref: "priorities", required: true, width: "half" }
+      ],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        var no = "TK-2026-" + pad6(S.nextTk); S.nextTk += 1;
+        setState(t.key, { status: "DONE", doneAt: NOW });
+        S.created.push({ key: no, taskNo: no, no: null, dueAt: toIso(v.next_at), remindAt: addMinutes(v.next_at, -15), type: v.next_type, customerNo: t.customerNo, title: v.next_text, priority: v.priority,
+          owner: t.owner, branch: t.branch, status: "OPEN", isNextAction: true, parent: p.no, description: null, comments: [], sample: false });
+        closeDrawer(); rerender();
+        JCRM.toast("ทำงาน " + (t.taskNo || t.title) + " เสร็จ · ตั้งการติดตามถัดไปของ " + p.no + " แล้ว · งานใหม่ " + no + " (ระบบจริง UPDATE next action ของแม่ → trigger สร้างงาน)", "success", { title: "prototype" });
+        return true;
+      }
+    });
+  }
+  function complete(key, el) {
+    var t = findTask(key);
+    if (el && el.type === "checkbox") { el.checked = false; }
+    if (!guard(t, "task.update")) { return; }
+    var p = parentOf(t);
+    if (t.isNextAction && p && p.open) { nextActionDialog(t, p); return; }
+    markDone(t);
+  }
+  JCRM.on("task-complete", function (key, el) { complete(key, el); });
+  JCRM.on("tk-done", function (key) { complete(key); });
+  JCRM.on("tk-open", function (key) { openDrawer(key); });
+  JCRM.on("tk-type", function (v) { S.type = v || ""; rerender(); });
+  JCRM.on("tk-priority", function (v) { S.priority = v || ""; rerender(); });
+  JCRM.on("tk-owner", function (v) { S.owner = v || null; rerender(); });
+  JCRM.on("tk-branch", function (v) { S.owner = null; JCRM.setBranch(v); });
+  JCRM.on("tk-clear", function () { S.type = ""; S.priority = ""; S.owner = null; rerender(); });
+  JCRM.on("tk-view", function (v) { S.view = v === "calendar" ? "calendar" : "list"; rerender(); });
+  JCRM.on("tk-filters", function () { S.filtersOpen = !S.filtersOpen; var f = document.getElementById("tk-filters"); if (f) { f.setAttribute("data-open", S.filtersOpen); } var b = document.querySelector(".tk-filter-toggle"); if (b) { b.setAttribute("aria-expanded", S.filtersOpen); } });
+
+  JCRM.on("tk-comment", function (key) {
+    var t = findTask(key);
+    if (!guard(t, "task.update")) { return; }
+    var ta = document.getElementById("tk-comment"), err = document.getElementById("tk-comment-error");
+    var body = ta ? ta.value.trim() : "";
+    var msg = !body ? "กรอกความคิดเห็น" : (JCRM.form.containsThaiId(body) ? T.thaiIdRejected : null);
+    if (msg) { if (err) { err.hidden = false; err.textContent = msg; } if (ta) { ta.setAttribute("aria-invalid", "true"); ta.focus(); } return; }
+    setState(key, { comments: (t.comments || []).concat([{ body: body, by: me(), at: NOW }]) });
+    refreshDrawer();
+    JCRM.toast("เพิ่มความคิดเห็นแล้วในหน้านี้ · ระบบจริง INSERT crm.task_comments", "success", { title: "prototype" });
+  });
+
+  /* เลื่อนนัด — งานทั่วไปแก้ due_at · งานที่เป็นการติดตามถัดไปแก้ next_action_at ของแม่ (ข้อ 19.2 ข้อ 3) */
+  JCRM.on("tk-reschedule", function (key) {
+    var t = findTask(key);
+    if (!guard(t, "task.update")) { return; }
+    var p = parentOf(t);
+    if (t.isNextAction && p) {
+      var pa = JCRM.access(p.perm, { branch: p.branch, owner: p.owner });
+      if (!pa.allowed) { JCRM.toast(pa.visible ? pa.reason : T.rpcDenied, "warning"); return; }
+    }
+    JCRM.dialog({
+      title: "เลื่อนนัด", size: "sm",
+      intro: t.isNextAction && p ? '<p class="t-sm">งานนี้เป็นการติดตามถัดไปของ <span class="code">' + esc(p.no) + "</span> · การเลื่อนนัดจะแก้วันเวลาการติดตามถัดไปของรายการนั้น แล้ว trigger ปรับงานให้ตรง</p>" : "",
+      fields: [{ name: "due_at", label: "วันเวลาใหม่", type: "datetime", required: true, validate: function (v) { return fmt.compareIso(toIso(v), NOW) <= 0 ? "เลือกเวลาหลังจากตอนนี้" : null; } }],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        setState(key, { dueAt: toIso(v.due_at), remindAt: addMinutes(v.due_at, -15) });
+        rerender(); refreshDrawer();
+        var g = groupOf(findTask(key));
+        JCRM.toast("เลื่อนนัดเป็น " + fmt.dateTime(toIso(v.due_at)) + " แล้ว · เตือนเมื่อ " + fmt.time(addMinutes(v.due_at, -15)) + (g ? "" : " · ไม่อยู่ในกลุ่มวันนี้/เกินกำหนดแล้ว"), "success", { title: "prototype" });
+        return true;
+      }
+    });
+  });
+
+  JCRM.on("tk-cancel", function (key) {
+    var t = findTask(key);
+    if (!guard(t, "task.update")) { return; }
+    var p = parentOf(t);
+    if (t.isNextAction && p && p.open) { JCRM.toast("เปลี่ยนการติดตามที่ Lead/โอกาสขายแทน", "warning"); return; }
+    JCRM.confirm({ title: "ยกเลิกงานนี้?", message: (t.title || "") + " · งานที่ยกเลิกแล้วแก้ไขไม่ได้", confirmLabel: "ยกเลิกงาน", variant: "danger-outline",
+      onConfirm: function () {
+        setState(key, { status: "CANCELLED", cancelledAt: NOW });
+        closeDrawer(); rerender();
+        JCRM.toast("ยกเลิกงานแล้ว · ระบบจริง UPDATE status = CANCELLED + cancelled_at", "success", { title: "prototype" });
+        return true;
+      } });
+  });
+
+  /* มอบหมาย (task.assign · T รวมงานที่ไม่มีผู้รับผิดชอบในสาขาที่ตนเป็นหัวหน้าทีม · C-DIALOG-ASSIGN · api.assign_owner('TASK', …)) */
+  JCRM.on("tk-assign", function (key) {
+    var t = findTask(key);
+    if (!guard(t, "task.assign")) { return; }
+    if (t.isNextAction) { JCRM.toast("เปลี่ยนผู้รับผิดชอบที่ Lead/โอกาสขายต้นทางแทน", "warning"); return; }
+    var PERM = "task.assign";
+    var dest = JCRM.scopeBranches(PERM, "OWN");
+    if (dest.indexOf(t.branch) === -1) { dest.unshift(t.branch); }
+    var canMove = dest.length > 1, others = dest.filter(function (b) { return b !== t.branch; });
+    var candidates = D.staff.filter(function (s) {
+      return s.status === "ACTIVE" && s.staffCode !== t.owner && dest.some(function (b) { return s.assignments.some(function (a) { return a.branch === b; }) && JCRM.can(PERM, { branch: b, owner: s.staffCode }); });
+    });
+    var fields = [];
+    if (canMove) { fields.push({ name: "to_branch", label: "สาขาปลายทาง", type: "select", required: true, value: t.branch, options: dest.map(function (b) { return { value: b, label: JCRM.branchName(b) }; }) }); }
+    fields.push({ name: "to_staff", label: "ผู้รับผิดชอบใหม่", type: "select", required: true, requiredMessage: "เลือกผู้รับผิดชอบใหม่",
+      options: candidates.map(function (s) { return { value: s.staffCode, label: s.displayName + " · " + JCRM.assignmentText(s, { branchNames: true }) }; }),
+      validate: function (v, values) {
+        var b = values.to_branch || t.branch, s = JCRM.staff(v);
+        if (!s || !s.assignments.some(function (a) { return a.branch === b; })) { return "ผู้รับผิดชอบใหม่ต้องมีบทบาทในสาขาปลายทาง"; }
+        return JCRM.can(PERM, { branch: b, owner: v }) ? null : "ผู้รับผิดชอบนี้อยู่นอกขอบเขตที่คุณมอบหมายได้";
+      } });
+    fields.push({ name: "reason", label: "เหตุผล", type: "select", required: true, requiredMessage: "เลือกเหตุผล", visibleWhen: canMove ? { field: "to_branch", equals: t.branch } : null,
+      options: D.ownershipChangeReasons.filter(function (r) { return r.code !== "BRANCH_TRANSFER"; }).map(function (r) { return { value: r.code, label: r.labelTh }; }) });
+    if (canMove) { fields.push({ name: "reason_auto", type: "static", label: "เหตุผล", html: '<p class="t-sm">ย้ายสาขา (ตั้งอัตโนมัติเมื่อเปลี่ยนสาขา)</p>', visibleWhen: { field: "to_branch", in: others } }); }
+    fields.push({ name: "note", label: "หมายเหตุ", type: "text", piiWarn: true, maxLength: 200 });
+    JCRM.dialog({ title: "เปลี่ยนผู้รับผิดชอบ " + (t.taskNo || "งาน"), size: "md",
+      intro: '<p class="t-sm">' + esc(t.title || "") + " · ปัจจุบัน: " + esc(t.owner ? JCRM.staffName(t.owner) : "ยังไม่มีผู้รับผิดชอบ") + "</p>",
+      fields: fields, submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        var b = v.to_branch || t.branch;
+        setState(key, { owner: v.to_staff, branch: b });
+        rerender(); refreshDrawer();
+        JCRM.toast("เปลี่ยนผู้รับผิดชอบงานเป็น " + JCRM.staffName(v.to_staff) + " แล้ว · ระบบจริง api.assign_owner('TASK', …, " + (b !== t.branch ? "BRANCH_TRANSFER" : v.reason) + ") และแจ้ง TASK_ASSIGNED", "success", { title: "prototype" });
+        return true;
+      } });
+  });
+
+  /* + เพิ่มงาน (task.create ประเมินกับแถวแม่: โอกาสขาย → Lead → ลูกค้า · ข้อ 8.0) */
+  JCRM.on("tk-create", function () {
+    if (!JCRM.can("task.create")) { JCRM.toast(T.rpcDenied, "warning"); return; }
+    var branches = JCRM.scopeBranches("task.create", "OWN");
+    var customers = D.customers.filter(function (c) { return JCRM.can("customer.read", { customer: JCRM.customerCtx(c) }); });
+    var parents = [];
+    D.opportunities.forEach(function (o) { if (["INTERESTED", "QUOTATION", "FOLLOW_UP"].indexOf(o.stage) !== -1 && JCRM.can("opportunity.read", { branch: o.branch, owner: o.owner, viaCustomer: JCRM.customerCtx(o.customerNo) })) { parents.push({ value: o.opportunityNo, label: o.opportunityNo + " · " + JCRM.customerName(o.customerNo), kind: "OPPORTUNITY", obj: o }); } });
+    D.leads.forEach(function (l) { var st = JCRM.find(D.leadStatuses, "code", l.status); if ((!l.status || (st && st.isOpen)) && JCRM.can("lead.read", { branch: l.branch, owner: l.owner, viaCustomer: JCRM.customerCtx(l.customerNo) })) { parents.push({ value: l.leadNo, label: l.leadNo + " · " + JCRM.customerName(l.customerNo), kind: "LEAD", obj: l }); } });
+    var canAssign = JCRM.can("task.assign");
+    var fields = [
+      { name: "type", label: "ประเภทงาน", type: "select", ref: "taskTypes", required: true, width: "half" },
+      { name: "priority", label: "ความสำคัญ", type: "select", ref: "priorities", required: true, value: "NORMAL", width: "half" },
+      { name: "title", label: "ชื่องาน", type: "text", required: true, piiWarn: true, maxLength: 200 },
+      { name: "description", label: "รายละเอียด", type: "textarea", piiWarn: true, maxLength: 2000, rows: 3 },
+      { name: "customer_no", label: "ลูกค้า", type: "select", placeholder: "ไม่ระบุลูกค้า", width: "half", options: customers.map(function (c) { return { value: c.customerNo, label: JCRM.customerName(c.customerNo) + " · " + c.customerNo }; }) },
+      { name: "parent", label: "ผูก Lead/โอกาสขาย", type: "select", placeholder: "ไม่ผูก", width: "half", options: parents.map(function (x) { return { value: x.value, label: x.label }; }),
+        validate: function (v, values) { var x = JCRM.find(parents, "value", v); return x && values.customer_no && x.obj.customerNo !== values.customer_no ? "รายการที่ผูกต้องเป็นของลูกค้าที่เลือก" : null; } }
+    ];
+    if (branches.length > 1) { fields.push({ name: "branch", label: "สาขา", type: "select", required: true, width: "half", options: branches.map(function (b) { return { value: b, label: JCRM.branchName(b) }; }) }); }
+    else { fields.push({ name: "branch", type: "hidden", value: branches[0] }); fields.push({ name: "branch_static", type: "static", label: "สาขา", html: '<p class="t-sm">' + esc(JCRM.branchName(branches[0])) + "</p>" }); }
+    fields.push({ name: "due_at", label: "ครบกำหนด", type: "datetime", required: true, width: "half", validate: function (v) { return fmt.compareIso(toIso(v), NOW) <= 0 ? "เลือกเวลาหลังจากตอนนี้" : null; } });
+    if (canAssign) {
+      var cands = D.staff.filter(function (s) { return s.status === "ACTIVE" && branches.some(function (b) { return s.assignments.some(function (a) { return a.branch === b; }) && JCRM.can("task.assign", { branch: b, owner: s.staffCode }); }); });
+      fields.push({ name: "owner", label: "ผู้รับผิดชอบ", type: "select", required: true, value: cands.some(function (s) { return s.staffCode === me(); }) ? me() : "", options: cands.map(function (s) { return { value: s.staffCode, label: s.displayName + " · " + JCRM.assignmentText(s, { branchNames: true }) }; }) });
+    } else {
+      fields.push({ name: "owner", type: "hidden", value: me() });
+      fields.push({ name: "owner_static", type: "static", label: "ผู้รับผิดชอบ", html: '<p class="t-sm">' + esc(JCRM.staffName(me())) + " (ตนเอง · บทบาทของคุณมอบงานให้คนอื่นไม่ได้)</p>" });
+    }
+    JCRM.drawer({ title: "เพิ่มงาน", fields: fields, submitLabel: "บันทึก",
+      onSubmit: function (v) {
+        var b = v.branch, x = v.parent ? JCRM.find(parents, "value", v.parent) : null, c = v.customer_no ? JCRM.customer(v.customer_no) : null, errs = {};
+        var gate = x ? JCRM.access("task.create", { branch: x.obj.branch, owner: x.obj.owner }) : (c ? JCRM.access("task.create", { customer: JCRM.customerCtx(c) }) : { allowed: branches.indexOf(b) !== -1, reason: T.reasonOutOfBranch });
+        if (!gate.allowed) { errs[x ? "parent" : (c ? "customer_no" : "branch_static")] = gate.reason === T.reasonOwn ? "สร้างงานได้เฉพาะรายการ/ลูกค้าที่คุณเป็นผู้รับผิดชอบ" : (gate.reason || T.rpcDenied); }
+        if (x && x.obj.branch !== b) { errs.parent = "สาขาของงานต้องเท่ากับสาขาของรายการที่ผูก"; }
+        if (!x && c && c.branch !== b) { errs.customer_no = "ลูกค้ายังไม่เชื่อมกับสาขานี้"; }
+        if (v.owner !== me() && !JCRM.can("task.assign", { branch: b, owner: v.owner })) { errs.owner = "มอบงานให้คนอื่นต้องมีสิทธิ์มอบหมายในสาขานี้"; }
+        if (Object.keys(errs).length) { return { errors: errs }; }
+        var no = "TK-2026-" + pad6(S.nextTk); S.nextTk += 1;
+        S.created.push({ key: no, taskNo: no, no: null, dueAt: toIso(v.due_at), remindAt: addMinutes(v.due_at, -15), type: v.type, customerNo: x ? x.obj.customerNo : (v.customer_no || null), title: v.title, priority: v.priority,
+          owner: v.owner, branch: b, status: "OPEN", isNextAction: false, parent: x ? x.value : null, description: v.description || null, comments: [], sample: false });
+        rerender();
+        var g = groupOf(findTask(no));
+        JCRM.toast("เพิ่มงาน " + no + " แล้วในหน้านี้ (ไม่บันทึกจริง)" + (g ? "" : " · ครบกำหนด " + fmt.dateTime(toIso(v.due_at)) + " จึงไม่อยู่ในกลุ่มวันนี้/เกินกำหนด"), "success", { title: "prototype" });
+        return true;
+      } });
+  });
+
+  var ctx0 = JCRM.page({ id: "tasks", render: render });
+  if (ctx0 && ctx0.allowed && !S.paramHandled) {
+    S.paramHandled = true;
+    var tp = JCRM.qs("task");
+    if (tp) { openDrawer(tp); }
+  }
+})();
+</script>
+</body>
+</html>

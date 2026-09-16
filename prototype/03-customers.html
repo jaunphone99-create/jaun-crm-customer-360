@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ลูกค้า · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 03 · ลูกค้า (CANONICAL ข้อ 13.8 · 14.9 · sitemap-screen-specs ข้อ 6) — ไม่มี hex */
+.cust-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.cust-search { display: flex; gap: var(--space-2); align-items: stretch; flex-wrap: wrap; margin-bottom: var(--space-3); }
+.cust-search .input { flex: 1 1 320px; min-width: 0; }
+.cust-groups { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: 0 0 var(--space-3); font-size: var(--fs-sm); }
+.cust-groups a.chip { text-decoration: none; }
+.cust-filterbar { align-items: flex-end; }
+.cust-filterbar .field--inline { min-width: 160px; flex: 0 1 220px; }
+.cust-dd { position: relative; }
+.cust-dd > summary { list-style: none; display: flex; align-items: center; cursor: pointer; white-space: nowrap; }
+.cust-dd > summary::-webkit-details-marker { display: none; }
+.cust-dd__panel { position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-popover); width: 280px; max-width: calc(100vw - 32px); max-height: 60vh; overflow-y: auto;
+  background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); box-shadow: var(--shadow-3); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
+.cust-filter-toggle { display: none; }
+.cust-ch-tablet { display: none; }
+@media (min-width: 768px) and (max-width: 1279px) { .cust-ch-tablet { display: inline-flex; margin-inline-start: var(--space-1); } }
+@media (max-width: 767px) {
+  .cust-filter-toggle { display: inline-flex; }
+  .cust-filterbar:not(.is-open) { display: none; }
+  .cust-filterbar .field--inline { flex: 1 1 100%; }
+  .cust-dd__panel { position: static; width: auto; box-shadow: none; margin-top: var(--space-2); }
+}
+.cust-name { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.cust-table .table td { vertical-align: middle; }
+.cust-table .row.nowrap { flex-wrap: nowrap; }
+</style>
+</head>
+<body data-page="customers" data-roles="STAFF SUPERVISOR BRANCH_MANAGER OPERATIONS EXECUTIVE BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* หน้า 03 · ลูกค้า — แถวที่ระบุชื่อข้อ 13.8 + "แสดง 1–N จาก {ยอดรวม}" · เบอร์ปิดบังเท่านั้น (D33) · คำค้นไม่ลง URL/storage */
+(function () {
+  "use strict";
+  var D = JCRM.data, fmt = JCRM.fmt, ui = JCRM.ui, esc = JCRM.esc, T = D.meta.texts;
+  var DASH = fmt.DASH, L30 = "LAST_30_DAYS";
+  var state = { preset: L30, lifecycle: [], badges: [], channels: [], term: "", filterOpen: false };
+  var lastList = null, ctl = null, lastCtx = null;
+  /* คอลัมน์ที่ได้ตามบทบาทที่ยื่น (CANONICAL ข้อ 8.2) */
+  var EXPORT_COLUMNS = {
+    BRANCH_MANAGER: "customer_no · display_name · lifecycle_stage · first_channel_code · province_code · last_activity_at · เบอร์ปิดบัง",
+    MARKETING: "customer_no · display_name + PHONE เมื่อยินยอมช่องทาง PHONE/SMS · EMAIL เมื่อ EMAIL · LINE เมื่อ LINE",
+    BUSINESS_ADMIN: "โปรไฟล์ + ช่องทางติดต่อ + tag + ความยินยอมปัจจุบัน",
+    EXECUTIVE: "โปรไฟล์ + ช่องทางติดต่อ + tag + ความยินยอมปัจจุบัน"
+  };
+
+  function phoneMasked(c) { var p = c && c.contacts ? JCRM.find(c.contacts, "type", "PHONE") : null; return p ? p.masked : null; }
+  function hasFilters() { return state.lifecycle.length > 0 || state.badges.length > 0 || state.channels.length > 0; }
+  function isDefault() { return !hasFilters() && state.preset === L30; }
+  function exportRole() {
+    var roles = JCRM.roleCodes();
+    return ["BRANCH_MANAGER", "MARKETING", "BUSINESS_ADMIN", "EXECUTIVE"].filter(function (r) { return roles.indexOf(r) !== -1 && D.permissions["customer.export"][r]; })[0] || null;
+  }
+
+  /* ---------- ข้อมูลรายการ ---------- */
+  function listFor(ctx) {
+    var opts = { branch: ctx.branch, preset: state.preset, lifecycle: state.lifecycle, badges: state.badges, channels: state.channels };
+    if (!state.term) { return ctx.select.customersFor(undefined, opts); }
+    var found = JCRM.search(state.term);
+    var rows = found.customers.filter(function (c) {
+      return (ctx.branch === "ALL" || c.branch === ctx.branch) &&
+        (!state.lifecycle.length || state.lifecycle.indexOf(c.lifecycle) !== -1) &&
+        (!state.badges.length || state.badges.some(function (k) { return c.badges.indexOf(k) !== -1; })) &&
+        (!state.channels.length || state.channels.indexOf(c.lastChannel) !== -1);
+    }).sort(function (a, b) { return -fmt.compareIso(a.lastActivityAt || "0000-01-01", b.lastActivityAt || "0000-01-01") || (a.customerNo < b.customerNo ? 1 : -1); });
+    return { rows: rows, total: rows.length, empty: false, sample: null, search: found };
+  }
+
+  /* ---------- ส่วนประกอบ ---------- */
+  function checkboxList(kind, items, selected) {
+    return '<div class="checkbox-group">' + items.map(function (it) {
+      return '<label class="checkbox"><input type="checkbox" data-cust-filter="' + esc(kind) + '" value="' + esc(it.value) + '"' + (selected.indexOf(it.value) !== -1 ? " checked" : "") +
+        '><span class="checkbox__text">' + esc(it.label) + "</span></label>";
+    }).join("") + "</div>";
+  }
+  function ddLabel(n) { return n ? "เลือก " + fmt.int(n) : "ทั้งหมด"; }
+  function filterBar(ctx) {
+    var statusCount = state.lifecycle.length + state.badges.length;
+    var html = '<div class="filter-bar filter-bar--panel cust-filterbar' + (state.filterOpen ? " is-open" : "") + '" id="cust-filterbar" role="group" aria-label="ตัวกรองรายการลูกค้า">' +
+      ui.branchSelect({ id: "cust-branch", permission: "customer.read", value: ctx.branch, action: "cust-branch" }) +
+      '<div class="field field--inline"><span class="label" id="dd-status-label">สถานะ</span><details class="cust-dd" id="dd-status"><summary class="select" aria-labelledby="dd-status-label dd-status-count"><span id="dd-status-count">' + esc(ddLabel(statusCount)) + "</span></summary>" +
+      '<div class="cust-dd__panel"><fieldset class="fieldset"><legend>สถานะลูกค้า</legend>' +
+      checkboxList("lifecycle", D.lifecycleStages.map(function (s) { return { value: s.code, label: s.labelTh }; }), state.lifecycle) + "</fieldset>" +
+      '<fieldset class="fieldset"><legend>ป้ายเสริม</legend>' + checkboxList("badges", D.supplementaryBadges.map(function (b) { return { value: b.key, label: b.labelTh }; }), state.badges) + "</fieldset></div></details></div>" +
+      '<div class="field field--inline"><span class="label" id="dd-channel-label">ช่องทางล่าสุด</span><details class="cust-dd" id="dd-channel"><summary class="select" aria-labelledby="dd-channel-label dd-channel-count"><span id="dd-channel-count">' + esc(ddLabel(state.channels.length)) + "</span></summary>" +
+      '<div class="cust-dd__panel"><fieldset class="fieldset"><legend>ช่องทางล่าสุด</legend>' + checkboxList("channels", D.channels.map(function (c) { return { value: c.code, label: c.labelTh }; }), state.channels) + "</fieldset></div></details></div>" +
+      ui.presetSelect({ id: "cust-preset", label: "ติดต่อล่าสุด", value: state.preset, action: "cust-preset" }) +
+      (isDefault() ? "" : '<div class="filter-bar__clear">' + ui.button({ label: "ล้างตัวกรอง", variant: "ghost", action: "cust-clear-filters" }) + "</div>") + "</div>";
+    return html;
+  }
+  function searchBar() {
+    var filterCount = state.lifecycle.length + state.badges.length + state.channels.length + (state.preset !== L30 ? 1 : 0);
+    return '<form class="cust-search" id="cust-search-form" role="search" novalidate>' +
+      '<label class="sr-only" for="cust-q">ค้นหาลูกค้า</label>' +
+      '<input class="input" id="cust-q" type="search" autocomplete="off" spellcheck="false" placeholder="' + esc(D.meta.searchPlaceholder) + '" value="' + esc(state.term) + '" aria-describedby="cust-q-help">' +
+      '<button type="submit" class="btn btn--secondary">' + JCRM.icon("search") + "<span>ค้นหา</span></button>" +
+      (state.term ? ui.button({ label: "ล้างคำค้น", variant: "ghost", action: "cust-clear-term" }) : "") +
+      '<button type="button" class="btn btn--outline cust-filter-toggle" data-jcrm-action="cust-filter-toggle" aria-controls="cust-filterbar" aria-expanded="' + state.filterOpen + '">' + JCRM.icon("filter") +
+      "<span>ตัวกรอง (" + fmt.int(filterCount) + ")</span></button></form>" +
+      '<p class="help" id="cust-q-help">ชื่อพิมพ์อย่างน้อย 3 ตัวอักษร · เบอร์โทร อีเมล LINE ID IMEI และเลขธุรกรรมต้องพิมพ์ครบทั้งค่า · กด Enter หรือปุ่มค้นหา</p>';
+  }
+  function otherGroups(found) {
+    if (!found) { return ""; }
+    var chip = function (label, list, screenId, key, param) {
+      var n = list.length;
+      var text = label + " (" + fmt.int(n) + ")";
+      if (n === 1 && JCRM.canOpen(screenId)) { var p = {}; p[param] = list[0][key]; return '<a class="chip" href="' + esc(JCRM.link(screenId, p)) + '">' + esc(text) + "</a>"; }
+      return '<span class="chip">' + esc(text) + "</span>";
+    };
+    return '<div class="cust-groups" aria-label="ผลค้นหากลุ่มอื่น"><span class="t-muted">กลุ่มอื่น:</span>' +
+      chip("Lead", found.leads, "leads", "leadNo", "lead") + chip("โอกาสขาย", found.opportunities, "pipeline", "opportunityNo", "op") +
+      chip("ใบเสนอราคา", found.quotations, "quotations", "quotationNo", "qt") + '<span class="chip">ธุรกรรม (' + fmt.int(found.transactions.length) + ")</span></div>";
+  }
+
+  /* ---------- ตาราง ---------- */
+  function renderResults(ctx) {
+    var list = listFor(ctx);
+    lastList = list;
+    var host = JCRM.$("#cust-results");
+    if (!host) { return; }
+    if (!list) { host.innerHTML = ui.noPermission({ inline: true, text: T.rpcDenied }); return; }
+    var canTag = JCRM.access("customer.update").visible, canExport = JCRM.access("customer.export").visible;
+    var selectable = canTag || canExport;
+    var visibleNos = list.rows.map(function (r) { return r.customerNo; });
+    var keep = ctl ? ctl.selected().filter(function (no) { return visibleNos.indexOf(no) !== -1; }) : [];
+    var empty, emptyKind = "empty", sampleOpt = null;
+    if (state.term && !list.rows.length) { emptyKind = "noresult"; empty = { title: "ไม่พบผลลัพธ์สำหรับ “" + state.term + "”", text: "เบอร์โทร อีเมล LINE ID IMEI และเลขธุรกรรมต้องพิมพ์ครบทั้งค่า", clearAction: "cust-clear-term" }; }
+    else if (list.empty) {
+      var add = ui.permButton({ label: "+ เพิ่มลูกค้า", variant: "accent", permission: "customer.create", href: JCRM.link("quick-capture", { mode: "customer" }) });
+      empty = { title: "ยังไม่มีลูกค้าในสาขาของคุณ", action: add || null };
+    } else if (hasFilters() && !list.rows.length) { emptyKind = "noresult"; empty = { title: "ไม่พบลูกค้าตามเงื่อนไข", clearAction: "cust-clear-filters" }; }
+    else if (!list.rows.length && fmt.isNil(list.total)) { sampleOpt = { scopeTh: ctx.branch === "ALL" ? "ทุกสาขา" : JCRM.branchName(ctx.branch) }; empty = { title: T.stateEmpty }; }
+    else if (!list.rows.length && list.sample) { sampleOpt = list.sample; empty = { title: T.stateEmpty }; }
+
+    host.innerHTML = (state.term ? otherGroups(list.search) : "") + '<div class="card card--flush cust-table" id="cust-table"></div>';
+    ctl = JCRM.table.mount("cust-table", {
+      id: "cust-table-t", caption: "รายการลูกค้า", rowKey: "customerNo", rowAction: "cust-open",
+      selectable: selectable, selected: keep,
+      bulkActions: [
+        { label: "เพิ่ม Tag", variant: "secondary", action: "cust-add-tag", permission: "customer.update" },
+        { label: "ขอส่งออก", variant: "secondary", action: "cust-export-selected", permission: "customer.export" }
+      ],
+      sort: { key: "lastActivityAt", dir: "desc" },
+      columns: [
+        { key: "idx", label: "#", hide: "tablet", render: function (r, i) { return esc(fmt.int(i + 1)); } },
+        { key: "customerNo", label: "รหัสลูกค้า", render: function (r) { return '<a class="nowrap" href="' + esc(JCRM.link("customer-360", { c: r.customerNo })) + '">' + esc(r.customerNo) + "</a>"; } },
+        { key: "displayName", label: "ชื่อลูกค้า", render: function (r) {
+          var ch = r.lastChannel ? '<span class="cust-ch-tablet" role="img" aria-label="' + esc("ช่องทางล่าสุด " + JCRM.label("channels", r.lastChannel)) + '"><span class="channel-dot has-channel" data-channel="' + esc(r.lastChannel) + '"></span></span>' : "";
+          return '<span class="cust-name">' + ui.avatar(r.displayName, "sm") + esc(JCRM.customerName(r.customerNo)) + ch + "</span>";
+        } },
+        { key: "phone", label: "เบอร์โทร", render: function (r) { var m = phoneMasked(r); return m ? '<span class="num nowrap">' + esc(m) + "</span>" : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "lastChannel", label: "ช่องทางล่าสุด", format: "channel", hide: "tablet" },
+        { key: "badges", label: "สถานะ", render: function (r) { return r.lifecycle || r.badges.length ? ui.customerBadges(r) : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "lastBranch", label: "สาขา", render: function (r) { return r.lastBranch ? '<span class="nowrap">' + esc(JCRM.branchName(r.lastBranch)) + "</span>" : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "lastActivityAt", label: "ติดต่อล่าสุด", sortable: true, render: function (r) { return r.lastActivityAt ? '<span class="nowrap num">' + esc(fmt.dateTime(r.lastActivityAt)) + "</span>" : '<span class="is-null">' + DASH + "</span>"; } }
+      ],
+      rows: list.rows,
+      footer: { shown: list.rows.length, total: list.total, unit: "รายการ" },
+      empty: empty, emptyKind: emptyKind, sample: sampleOpt,
+      mobileCard: function (r) {
+        var meta = [r.customerNo, phoneMasked(r) || DASH, [r.lastChannel ? JCRM.label("channels", r.lastChannel) : DASH, r.lastBranch ? JCRM.branchName(r.lastBranch) : DASH, fmt.dateTime(r.lastActivityAt)].join(" · ")];
+        return ui.listCard({ action: "cust-open", id: r.customerNo, avatar: r.displayName, title: JCRM.customerName(r.customerNo), meta: meta, badges: r.lifecycle || r.badges.length ? ui.customerBadges(r) : "" });
+      }
+    });
+    var preset = JCRM.$("#cust-preset");
+    if (preset) { preset.disabled = !!state.term; preset.title = state.term ? "ปิดชั่วคราวเมื่อมีคำค้น" : ""; }
+  }
+
+  function render(ctx) {
+    lastCtx = ctx;
+    var hasVisit = JCRM.can("visit.create");
+    var acts = [
+      ui.permButton({ label: "ขอส่งออก", variant: "secondary", permission: "customer.export", action: "cust-export", icon: "download" }),
+      ui.permButton({ label: "+ เพิ่มลูกค้า", variant: hasVisit ? "secondary" : "accent", permission: "customer.create", href: JCRM.link("quick-capture", { mode: "customer" }) })
+    ];
+    var recv = ui.permButton({ label: "+ รับลูกค้า", variant: "accent", permission: "visit.create", href: JCRM.link("quick-capture", { mode: "visit" }) });
+    if (recv) { acts.push('<span class="hide-tablet">' + recv + "</span>"); }
+    acts = acts.filter(Boolean);
+    JCRM.$("#page").innerHTML = ui.pageHeader({
+      title: "ลูกค้า", lead: "ค้นหาและจัดการข้อมูลลูกค้าที่คุณเข้าถึงได้",
+      actions: acts.length ? ['<div class="cust-actions hide-mobile">' + acts.join("") + "</div>"] : []
+    }) + searchBar() + filterBar(ctx) + '<div id="cust-results"></div>';
+    renderResults(ctx);
+  }
+
+  /* ---------- การกระทำ ---------- */
+  JCRM.on("cust-open", function (no) { window.location.href = JCRM.link("customer-360", { c: no }); });
+  JCRM.on("cust-branch", function (value) { JCRM.setBranch(value); });
+  JCRM.on("cust-preset", function (value) { state.preset = value; render(lastCtx); });
+  JCRM.on("cust-filter-toggle", function () { state.filterOpen = !state.filterOpen; var fb = JCRM.$("#cust-filterbar"); if (fb) { fb.classList.toggle("is-open", state.filterOpen); } var b = JCRM.$(".cust-filter-toggle"); if (b) { b.setAttribute("aria-expanded", String(state.filterOpen)); } });
+  JCRM.on("cust-clear-filters", function () {
+    state.lifecycle = []; state.badges = []; state.channels = []; state.preset = L30;
+    if (lastCtx.branches.length > 1 && lastCtx.branch !== "ALL") { JCRM.setBranch("ALL"); } else { render(lastCtx); }
+  });
+  JCRM.on("cust-clear-term", function () { state.term = ""; render(lastCtx); });
+
+  document.addEventListener("submit", function (e) {
+    if (!e.target || e.target.id !== "cust-search-form") { return; }
+    e.preventDefault();
+    var term = String(JCRM.$("#cust-q").value || "").trim();
+    var help = JCRM.$("#cust-q-help");
+    if (term.length < 3) { help.textContent = "พิมพ์อย่างน้อย 3 ตัวอักษร"; help.className = "error-text"; JCRM.$("#cust-q").focus(); return; }
+    state.term = term;
+    render(lastCtx);
+    var n = lastList && lastList.rows ? lastList.rows.length : 0;
+    var live = JCRM.$("#cust-q-help"); if (live) { live.setAttribute("aria-live", "polite"); live.textContent = "พบลูกค้า " + fmt.int(n) + " รายการ · prototype ค้นเฉพาะรายการที่ระบุชื่อ (ระบบจริงเรียก api.search_customers และบันทึก CUSTOMER_SEARCH)"; }
+  });
+  document.addEventListener("change", function (e) {
+    var t = e.target;
+    if (!t || !t.getAttribute || !t.getAttribute("data-cust-filter")) { return; }
+    var kind = t.getAttribute("data-cust-filter");
+    var list = state[kind].slice();
+    if (t.checked) { if (list.indexOf(t.value) === -1) { list.push(t.value); } } else { list = list.filter(function (v) { return v !== t.value; }); }
+    state[kind] = list;
+    JCRM.$("#dd-status-count").textContent = ddLabel(state.lifecycle.length + state.badges.length);
+    JCRM.$("#dd-channel-count").textContent = ddLabel(state.channels.length);
+    renderResults(lastCtx);
+    var clear = JCRM.$("#cust-filterbar .filter-bar__clear");
+    if (!clear && !isDefault()) { JCRM.$("#cust-filterbar").insertAdjacentHTML("beforeend", '<div class="filter-bar__clear">' + ui.button({ label: "ล้างตัวกรอง", variant: "ghost", action: "cust-clear-filters" }) + "</div>"); }
+    if (clear && isDefault()) { clear.remove(); }
+  });
+  document.addEventListener("click", function (e) {
+    JCRM.$$("details.cust-dd[open]").forEach(function (d) { if (!d.contains(e.target)) { d.removeAttribute("open"); } });
+  });
+
+  /* เพิ่ม Tag (customer.update บนแต่ละราย · sitemap-screen-specs ข้อ 6.6) */
+  JCRM.on("cust-add-tag", function (ids) {
+    var nos = String(ids || "").split(",").filter(Boolean);
+    if (!nos.length) { return; }
+    JCRM.dialog({
+      title: "เพิ่ม Tag ให้ " + fmt.int(nos.length) + " รายการ", size: "md",
+      intro: "<p>เลือก Tag ที่มีอยู่ (สร้าง/แก้ Tag ได้ที่ Master Data โดยผู้มีสิทธิ์ tag.manage) · ระบบเพิ่มเฉพาะลูกค้าที่อยู่ในสิทธิ์แก้ไขของคุณ</p>",
+      fields: [{ name: "tags", label: "Tag", type: "checkboxes", ref: "tags", required: true, requiredMessage: "เลือก Tag อย่างน้อย 1 รายการ" }],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        var ok = nos.filter(function (no) { return JCRM.can("customer.update", { customer: JCRM.customerCtx(no) }); });
+        if (v.tags.indexOf("VIP") !== -1) {
+          ok.forEach(function (no) { var c = JCRM.customer(no); if (c && c.badges.indexOf("vip") === -1) { c.badges.push("vip"); } });
+        }
+        JCRM.toast("เพิ่ม Tag แล้ว " + fmt.int(ok.length) + " จาก " + fmt.int(nos.length) + " รายการ" + (ok.length < nos.length ? " · รายการที่เหลือไม่อยู่ในสิทธิ์แก้ไขของคุณ" : "") +
+          " (prototype เปลี่ยนเฉพาะในหน้านี้ · ระบบจริงบันทึก customer_tags และ audit)", ok.length < nos.length ? "warning" : "success");
+        if (ctl) { ctl.options.selected = []; }
+        renderResults(lastCtx);
+        return true;
+      }
+    });
+  });
+
+  /* ขอส่งออก (customer.export 🔐 · CANONICAL ข้อ 8.2) */
+  function openExport(selectedNos) {
+    var role = exportRole();
+    var lim = role ? JCRM.find(D.exportLimits, "role", role) : null;
+    if (!lim) { JCRM.toast(T.rpcDenied, "danger"); return; }
+    var count = selectedNos ? selectedNos.length : (lastList ? lastList.total : null);
+    var filterTh = selectedNos ? "เลือก " + fmt.int(selectedNos.length) + " รายการ" :
+      ["สาขา " + (lastCtx.branch === "ALL" ? "ทุกสาขา" : JCRM.branchName(lastCtx.branch)), "ติดต่อล่าสุด " + JCRM.find(D.meta.presets, "code", state.preset).labelTh,
+        state.lifecycle.length || state.badges.length ? "สถานะ " + ddLabel(state.lifecycle.length + state.badges.length) : null,
+        state.channels.length ? "ช่องทาง " + ddLabel(state.channels.length) : null, state.term ? "ตามคำค้น" : null].filter(Boolean).join(" · ");
+    var approver = lim.approver ? "ผู้อนุมัติ: " + JCRM.role(lim.approver).labelTh + (role === "EXECUTIVE" ? " (รอยืนยัน Q23)" : "") : "ไม่ต้องอนุมัติ · เกินเพดานระบบจะปฏิเสธ";
+    var marketing = D.exportReasons.filter(function (r) { return r.isMarketing; }).map(function (r) { return r.code; });
+    JCRM.dialog({
+      title: "ขอส่งออกข้อมูลลูกค้า", size: "md",
+      intro: '<div class="stack-2"><p><strong>ขอบเขต:</strong> ' + esc(filterTh) + " · จำนวน " + esc(fmt.int(count)) + " แถว</p>" +
+        '<div class="alert"><div><p class="alert__title">เพดานของ' + esc(JCRM.role(role).labelTh) + "</p><p>" +
+        esc("สูงสุด " + fmt.int(lim.maxRows) + " แถว/ครั้ง · " + fmt.int(lim.perDay) + " ครั้ง/วัน · " + approver) + "</p>" +
+        '<p class="t-xs">คอลัมน์ที่ได้: ' + esc(EXPORT_COLUMNS[role]) + " · " + esc(D.exportRulesTh[0]) + "</p></div></div>" +
+        '<p class="help">นับครั้งต่อวันรวมคำขอที่ถูกปฏิเสธ (ข้อ 8.2) · ไฟล์มีลายน้ำผู้ส่งออกและลบเมื่อครบ 24 ชม.</p></div>',
+      fields: [
+        { name: "reason", label: "เหตุผล", type: "select", ref: "exportReasons", required: true, requiredMessage: "เลือกเหตุผล" },
+        { name: "mk", type: "static", html: '<p class="alert alert--warning">ระบบจะส่งออกเฉพาะลูกค้าที่ยินยอมรับข่าวสาร</p>', visibleWhen: { field: "reason", in: marketing } },
+        { name: "note", label: "หมายเหตุ", type: "textarea", piiWarn: true, maxLength: 2000, rows: 2, requiredWhen: { field: "reason", equals: "OTHER" }, requiredMessage: "กรอกหมายเหตุเมื่อเลือกอื่น ๆ" }
+      ],
+      submitLabel: "ส่งคำขอ", submitVariant: "primary",
+      onSubmit: function () {
+        if (!fmt.isNil(count) && count > lim.maxRows) { return { errors: { reason: "เกินจำนวนแถวสูงสุดต่อครั้ง (" + fmt.int(lim.maxRows) + " แถว)" } }; }
+        var status = lim.approver ? JCRM.label("exportStatus", "REQUESTED") + " ถึง" + JCRM.role(lim.approver).labelTh : JCRM.label("exportStatus", "APPROVED") + " ทันที แล้วสร้างไฟล์";
+        JCRM.toast("prototype ไม่ส่งคำขอจริง · ระบบจริงเรียก api.request_export ออกเลข EX-… สถานะ " + status + " · ติดตามได้ที่หน้า คำขอส่งออกข้อมูล", "info", { duration: 9000 });
+        return true;
+      }
+    });
+  }
+  JCRM.on("cust-export", function () { openExport(null); });
+  JCRM.on("cust-export-selected", function (ids) { openExport(String(ids || "").split(",").filter(Boolean)); });
+
+  JCRM.page({ id: "customers", render: render });
+
+  var flash = JCRM.session.get("jcrm.flash");
+  if (flash) { JCRM.session.remove("jcrm.flash"); try { var f = JSON.parse(flash); JCRM.toast(f.message, f.tone || "info"); } catch (e) { /* ข้าม */ } }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตัวอย่างหน้าจอมือถือ · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 10 · ตัวอย่างหน้าจอมือถือ (CANONICAL ข้อ 14.4 · 19.5 ข้อ 3 · sitemap-screen-specs ข้อ 13) — มุมมองคุณขวัญเสมอ · ไม่มี hex */
+.m10-frames { display: grid; gap: var(--space-6); grid-template-columns: repeat(4, minmax(0, 1fr)); justify-items: center; align-items: start; margin-top: var(--space-4); }
+.m10-fig { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); margin: 0; }
+.m10-fig figcaption { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; justify-content: center; }
+.m10-cap { font-size: var(--fs-h4); font-weight: var(--fw-semibold); color: var(--text-heading); }
+.m10-scale { position: relative; overflow: hidden; width: 375px; height: 812px; }
+.m10-scale > .phone-frame { transform-origin: 0 0; box-shadow: var(--shadow-3); }
+.m10-screen { display: flex; flex-direction: column; min-height: 100%; }
+.m10-top { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--space-2); min-height: 52px; padding: 0 var(--space-2) 0 var(--space-3); background: var(--surface-card); border-bottom: 1px solid var(--border-subtle); }
+.m10-top .brand-mark { width: 28px; height: 28px; font-size: var(--fs-sm); background: var(--navy-900); color: var(--white); }
+.m10-top__title { font-size: var(--fs-h4); font-weight: var(--fw-semibold); color: var(--text-heading); }
+.m10-pad { padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); flex: 1 1 auto; }
+.m10-taskcard { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-nav); color: var(--text-on-nav); text-decoration: none; font-weight: var(--fw-semibold); font-size: var(--fs-h4); }
+.m10-taskcard svg { width: 24px; height: 24px; color: var(--orange-400); }
+.m10-quick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.m10-quick__btn { min-height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-card); color: var(--text-heading); font-size: var(--fs-xs); font-weight: var(--fw-medium); text-decoration: none; cursor: pointer; }
+.m10-quick__btn svg { width: 24px; height: 24px; color: var(--support-blue); }
+.m10-quick__btn--accent { background: var(--jaun-orange); border-color: var(--jaun-orange); color: var(--text-on-accent); }
+.m10-quick__btn--accent svg { color: var(--text-on-accent); }
+.m10-row { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--touch-min); padding: var(--space-2) 0; border: 0; border-bottom: 1px solid var(--border-subtle); background: transparent; text-align: start; cursor: pointer; color: inherit; font: inherit; }
+.m10-row__main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.m10-row__title { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-heading); }
+.m10-row__meta { font-size: var(--fs-xs); color: var(--text-secondary); }
+.m10-row__side { font-size: var(--fs-xs); color: var(--text-secondary-sunk); white-space: nowrap; }
+.m10-nav { flex: none; display: flex; align-items: flex-end; border-top: 1px solid var(--border-subtle); background: var(--surface-card); }
+.m10-nav__item { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; border: 0; background: none; color: var(--text-secondary-sunk); font-size: 11px; cursor: pointer; text-decoration: none; }
+.m10-nav__item svg { width: 20px; height: 20px; }
+.m10-nav__item[aria-current="page"] { color: var(--text-heading); font-weight: var(--fw-semibold); }
+.m10-nav__item[aria-current="page"] svg { color: var(--jaun-orange); }
+.m10-nav__center { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; background: none; color: var(--text-heading); font-size: 11px; font-weight: var(--fw-semibold); margin-top: -18px; cursor: pointer; }
+.m10-nav__center span:first-child { width: 48px; height: 48px; border-radius: var(--radius-full); background: var(--jaun-orange); color: var(--text-on-accent); display: grid; place-items: center; border: 3px solid var(--surface-card); box-shadow: var(--shadow-2); }
+.m10-nav__center svg { width: 22px; height: 22px; }
+.m10-headcard { display: flex; gap: var(--space-3); align-items: center; }
+.m10-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); }
+.m10-actions button { min-height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-card); color: var(--text-heading); font-size: var(--fs-xs); cursor: pointer; }
+.m10-actions svg { width: 22px; height: 22px; color: var(--support-blue); }
+.m10-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.m10-stat { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); background: var(--surface-card); }
+.m10-stat strong { display: block; font-size: var(--fs-h3); color: var(--text-heading); font-variant-numeric: tabular-nums; }
+.m10-stat span { font-size: var(--fs-xs); color: var(--text-secondary); }
+.m10-tabs { display: flex; gap: var(--space-1); overflow-x: auto; border-bottom: 1px solid var(--border-subtle); }
+.m10-tabs button { flex: none; border: 0; background: none; min-height: var(--touch-min); padding: 0 var(--space-3); font-size: var(--fs-xs); color: var(--text-secondary); border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
+.m10-tabs button[aria-selected="true"] { color: var(--text-heading); font-weight: var(--fw-semibold); border-bottom-color: var(--navy-900); }
+.m10-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-3); background: var(--surface-card); display: flex; flex-direction: column; gap: var(--space-2); }
+.m10-card h4 { font-size: var(--fs-sm); }
+.m10-contact { display: flex; align-items: center; gap: var(--space-2); min-height: var(--touch-min); }
+.m10-contact__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.m10-contact__type { font-size: var(--fs-xs); color: var(--text-secondary); }
+.m10-contact__value { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.m10-contact[data-revealed="true"] .m10-contact__value { background: var(--reveal-bg); outline: 1px solid var(--reveal-border); border-radius: var(--radius-sm); padding: 0 var(--space-1); font-weight: var(--fw-medium); }
+.m10-timer { font-size: var(--fs-xs); color: var(--warning-text); }
+.m10-form { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); flex: 1 1 auto; }
+.m10-form .chip-option span { min-height: 40px; padding: 0 var(--space-3); font-size: var(--fs-xs); }
+.m10-sticky { position: sticky; bottom: 0; display: flex; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--surface-card); border-top: 1px solid var(--border-subtle); }
+.m10-sticky .btn { flex: 1 1 0; min-height: var(--touch-counter); }
+.m10-toast { position: absolute; left: var(--space-3); right: var(--space-3); bottom: 76px; z-index: 5; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--navy-900); color: var(--white); font-size: var(--fs-xs); box-shadow: var(--shadow-3); }
+.m10-sheet { border-top: 1px solid var(--border-subtle); background: var(--surface-card); padding: var(--space-2) var(--space-3); }
+.m10-dup summary { cursor: pointer; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--warning-text); }
+.m10-dup { border: 1px solid var(--warning-border); background: var(--warning-bg); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); }
+.m10-dup .m10-card { margin-top: var(--space-2); }
+@media (max-width: 767px) {
+  .m10-frames { grid-template-columns: minmax(0, 1fr); gap: var(--space-8); justify-items: stretch; }
+  .m10-fig { align-items: stretch; }
+  .m10-fig figcaption { order: -1; justify-content: space-between; border-bottom: 2px solid var(--border-default); padding-bottom: var(--space-2); }
+  .m10-scale { width: auto; height: auto; overflow: visible; }
+  .m10-scale > .phone-frame { transform: none !important; box-shadow: none; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); position: relative; }
+  .phone-frame__status { display: none; }
+  .m10-toast { bottom: var(--space-3); }
+}
+</style>
+</head>
+<body data-page="mobile" data-roles="STAFF SUPERVISOR BRANCH_MANAGER">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* หน้า 10 · ตัวอย่างหน้าจอมือถือ — 4 จอจากมุมมองคุณขวัญ (ST-0045) เสมอ (ข้อ 19.5 ข้อ 3) · ทุกปุ่มในกรอบเป็นการจำลอง ไม่บันทึก
+   ค่าติดต่อเต็มอ่านจาก data.js ตอนกด "แสดง" เท่านั้น (จำลอง api.reveal_contact · ข้อ 6.4)
+   หมายเหตุผู้เขียน
+   1. กรอบย่อด้วย transform: scale ตามความกว้างที่เหลือ · ถ้าต้องย่อต่ำกว่า 0.75 จะลดจำนวนคอลัมน์แทน (ข้อ 13.6 ของ sitemap-screen-specs)
+   2. จอ 4 แสดงการ์ดตรวจซ้ำ 2 รายการเมื่อกรอกทั้งเบอร์และชื่อตามข้อ 13.14 (กรอกเฉพาะเบอร์จะพบ 1 รายการตามกฎข้อ 6.5)
+   3. ปุ่มในกรอบทำงานเฉพาะภายในกรอบ · ลิงก์ที่ออกนอกกรอบมีเฉพาะ "งาน"/"งานของฉัน" (หน้า 08) และ "เปิดหน้าจริง" ใต้กรอบ */
+(function () {
+  "use strict";
+  var D = JCRM.data, fmt = JCRM.fmt, ui = JCRM.ui, esc = JCRM.esc, T = D.meta.texts, icon = JCRM.icon;
+  var AS = "ST-0045", DEMO_NO = "CUS-2026-000297", DASH = fmt.DASH;
+  var SCREENS = { 1: "หน้าแรก", 2: "ค้นหาลูกค้า", 3: "ข้อมูลลูกค้า", 4: "รับลูกค้าใหม่" };
+  var REAL = { 1: function () { return JCRM.link("dashboard", {}); }, 2: function () { return JCRM.link("customers", {}); }, 3: function () { return JCRM.link("customer-360", { c: DEMO_NO }); }, 4: function () { return JCRM.link("quick-capture", { mode: "visit" }); } };
+  var TAB_SHORT = [["overview", "ภาพรวม"], ["history", "การติดต่อ"], ["purchases", "ซื้อ/บริการ"], ["work", "งาน/โอกาสขาย"], ["notes", "โน้ต"], ["documents", "เอกสาร"], ["audit", "ประวัติแก้ไข"]];
+  var frames = {};
+  [1, 2, 3, 4].forEach(function (i) { frames[i] = { screen: i, back: [], term: "สมชาย", tab: "overview", more: false, reveal: {}, sheet: false, form: {}, decided: false, errors: {} }; });
+
+  var me = JCRM.staff(AS);
+  function toastIn(i, text) {
+    var el = document.getElementById("m10-toast-" + i);
+    if (!el) { return; }
+    el.textContent = text; el.hidden = false;
+    clearTimeout(el._t); el._t = setTimeout(function () { el.hidden = true; }, 4000);
+  }
+  function go(i, screen) { var f = frames[i]; if (f.screen !== screen) { f.back.push(f.screen); f.screen = screen; f.sheet = false; } renderFrame(i); }
+  function nav(active) {
+    var item = function (label, ico, attrs, on) { return '<button type="button" class="m10-nav__item"' + (on ? ' aria-current="page"' : "") + " " + attrs + ">" + icon(ico) + "<span>" + esc(label) + "</span></button>"; };
+    return '<nav class="m10-nav" aria-label="เมนูมือถือ (ตัวอย่าง)">' +
+      item("หน้าแรก", "home", 'data-m-go="1"', active === 1) + item("ลูกค้า", "users", 'data-m-go="2"', active === 2 || active === 3) +
+      '<button type="button" class="m10-nav__center" data-m-go="4"><span>' + icon("plus") + "</span><span>รับลูกค้า</span></button>" +
+      '<a class="m10-nav__item" href="' + esc(JCRM.link("tasks", {})) + '">' + icon("check") + "<span>งาน</span></a>" +
+      item("เพิ่มเติม", "more", "data-m-sheet", false) + "</nav>";
+  }
+  function sheet(i) {
+    if (!frames[i].sheet) { return ""; }
+    return '<div class="m10-sheet" role="menu" aria-label="เพิ่มเติม">' + D.mobileMoreSheet.map(function (it) {
+      return '<button type="button" class="menu-item" role="menuitem" data-m-toast="' + esc(it.label + " · ตัวอย่างเท่านั้น") + '">' + icon(it.icon, "nav-icon") + "<span>" + esc(it.label) + "</span></button>";
+    }).join("") + "</div>";
+  }
+  function topBack(title, extra) {
+    return '<div class="m10-top"><button type="button" class="icon-btn" data-m-back aria-label="ย้อนกลับ">' + icon("arrowLeft") + '</button><span class="m10-top__title grow">' + esc(title) + "</span>" + (extra || "") + "</div>";
+  }
+  function phoneOf(c) { var p = c ? JCRM.find(c.contacts || [], "type", "PHONE") : null; return p ? p.masked : DASH; }
+
+  /* ---------- จอ 1 · หน้าแรก (= หน้า 02 มือถือ STAFF) ---------- */
+  function screenHome(i) {
+    var t = JCRM.select.tasksFor(AS, {}), rc = JCRM.select.recentCustomersFor(AS), n = JCRM.select.notificationsFor(AS).length;
+    var counts = t && t.counts ? t.counts : { total: null, overdue: null };
+    return '<div class="m10-top"><span class="brand-mark" aria-hidden="true">J</span><span class="m10-top__title grow">JAUN CRM</span>' +
+      '<button type="button" class="icon-btn" data-m-go="2" aria-label="ค้นหาลูกค้า">' + icon("search") + "</button>" +
+      '<button type="button" class="icon-btn" data-m-toast="การแจ้งเตือนที่ยังไม่อ่าน ' + esc(fmt.int(n)) + ' รายการ · ตัวอย่างเท่านั้น" aria-label="การแจ้งเตือน ยังไม่อ่าน ' + esc(fmt.int(n)) + ' รายการ">' + icon("bell") + (n ? '<span class="count-dot">' + esc(fmt.int(n)) + "</span>" : "") + "</button></div>" +
+      '<div class="m10-pad"><div><p class="t-h3">สวัสดี ' + esc(me.displayName) + '</p><p class="t-sm t-muted">' + esc(fmt.date(D.meta.now)) + "</p></div>" +
+      '<a class="m10-taskcard" href="' + esc(JCRM.link("tasks", {})) + '">' + icon("check") + "<span>" + esc("งานทั้งหมด " + fmt.int(counts.total) + " · เกินกำหนด " + fmt.int(counts.overdue)) + "</span></a>" +
+      '<div class="m10-quick"><button type="button" class="m10-quick__btn m10-quick__btn--accent" data-m-go="4">' + icon("plus") + "<span>รับลูกค้า</span></button>" +
+      '<button type="button" class="m10-quick__btn" data-m-go="2">' + icon("search") + "<span>ค้นหาลูกค้า</span></button>" +
+      '<a class="m10-quick__btn" href="' + esc(JCRM.link("tasks", {})) + '">' + icon("check") + "<span>งานของฉัน</span></a></div>" +
+      '<div><p class="t-sm t-medium t-heading">ลูกค้าที่ฉันรับล่าสุด</p>' + (rc && rc.rows.length ? rc.rows.map(function (r, idx) {
+        return '<button type="button" class="m10-row" ' + (r.customerNo === DEMO_NO ? 'data-m-go="3"' : 'data-m-toast="ตัวอย่างเท่านั้น"') + ">" + ui.avatar(r.customer.displayName, "sm") +
+          '<span class="m10-row__main"><span class="m10-row__title">' + esc(JCRM.customerName(r.customerNo)) + '</span><span class="m10-row__meta">' + esc(r.customerNo) + "</span></span>" +
+          '<span class="m10-row__side">' + esc(fmt.dateTime(r.lastActivityAt)) + "</span></button>";
+      }).join("") : ui.state("empty", { title: "ยังไม่มีลูกค้าที่คุณดูแล", compact: true })) + "</div></div>" + sheet(i) + nav(1);
+  }
+
+  /* ---------- จอ 2 · ค้นหาลูกค้า (= หน้า 03 มือถือ + ค้นหา) ---------- */
+  function screenSearch(i) {
+    var f = frames[i], term = String(f.term || "").trim();
+    var res = term.length >= 3 ? JCRM.search(term, AS) : null;
+    var body;
+    if (!res) { body = '<p class="t-sm t-muted">พิมพ์อย่างน้อย 3 ตัวอักษร แล้วกดค้นหา</p>'; }
+    else if (!res.customers.length) { body = '<p class="t-sm">ไม่พบผลลัพธ์สำหรับ “' + esc(term) + '”</p><p class="help">เบอร์โทร อีเมล LINE ID IMEI และเลขธุรกรรมต้องพิมพ์ครบทั้งค่า</p>'; }
+    else {
+      body = '<p class="t-sm t-medium t-heading">ลูกค้า (' + esc(fmt.int(res.customers.length)) + ")</p>" + res.customers.map(function (c) {
+        return '<button type="button" class="m10-row" ' + (c.customerNo === DEMO_NO ? 'data-m-go="3"' : 'data-m-toast="ตัวอย่างเท่านั้น"') + ">" + ui.avatar(c.displayName, "sm") +
+          '<span class="m10-row__main"><span class="m10-row__title">' + esc(JCRM.customerName(c.customerNo)) + '</span><span class="m10-row__meta">' + esc(c.customerNo + " · " + phoneOf(c)) + "</span>" +
+          (c.lifecycle || c.badges.length ? ui.customerBadges(c) : "") + "</span></button>";
+      }).join("");
+    }
+    return topBack("ค้นหาลูกค้า") +
+      '<div class="m10-pad"><form class="row" data-m-search novalidate style="flex-wrap:nowrap"><label class="sr-only" for="m10-q-' + i + '">ค้นหาลูกค้า</label>' +
+      '<input class="input" id="m10-q-' + i + '" type="search" autocomplete="off" value="' + esc(f.term) + '" placeholder="' + esc(D.meta.searchPlaceholder) + '">' +
+      '<button type="submit" class="btn btn--secondary" aria-label="ค้นหา">' + icon("search") + "</button></form>" + body +
+      '<p class="t-xs t-muted">ค่าช่องทางติดต่อแสดงแบบปิดบัง · คำค้นไม่ลง URL</p></div>' + sheet(i) + nav(2);
+  }
+
+  /* ---------- จอ 3 · ข้อมูลลูกค้า (= หน้า 05 มือถือ) ---------- */
+  var CONTACT_LABEL = { PHONE: "โทรศัพท์", LINE_ID: "LINE ID", EMAIL: "อีเมล" };
+  function contactRowLocal(i, c, type) {
+    var ct = JCRM.find(c.contacts, "type", type);
+    if (!ct) { return ""; }
+    var left = frames[i].reveal[type];
+    return '<div class="m10-contact" data-revealed="' + (left ? "true" : "false") + '"><span class="m10-contact__text"><span class="m10-contact__type">' + esc(CONTACT_LABEL[type] || type) + "</span>" +
+      '<span class="m10-contact__value" aria-live="polite">' + esc(left ? ct.full : ct.masked) + "</span>" + (left ? '<span class="m10-timer">แสดงอยู่ · ซ่อนใน ' + esc(String(left)) + " วินาที</span>" : "") + "</span>" +
+      '<button type="button" class="btn btn--ghost btn--sm" data-m-reveal="' + esc(type) + '">' + icon(left ? "eyeOff" : "eye") + "<span>" + (left ? "ซ่อน" : "แสดง") + "</span></button></div>";
+  }
+  function screen360(i) {
+    var f = frames[i], c = JCRM.customer(DEMO_NO), d = D.customer360[DEMO_NO];
+    var s = d.summary, L = d.summaryLabels;
+    var tabBody;
+    if (f.tab === "overview") {
+      var next = d.nextFollowUp;
+      tabBody = '<div class="m10-card"><h4>ข้อมูลพื้นฐาน</h4>' + ["PHONE", "LINE_ID", "EMAIL"].map(function (t) { return contactRowLocal(i, c, t); }).join("") +
+        '<p class="t-sm">' + esc([JCRM.label("provinces", d.province), d.sourceTextTh, d.tenureTextTh].join(" · ")) + "</p>" +
+        (f.more ? '<p class="t-sm">' + esc("Tag: " + d.tags.map(function (tg) { return JCRM.label("tags", tg); }).join(" · ")) + "</p>" +
+          '<p class="t-sm">' + esc("สาขาที่เคยใช้บริการ: " + d.branchesUsed.map(JCRM.branchName).join(" · ")) + "</p>" +
+          '<p class="t-sm">' + esc("ผู้ดูแล: " + JCRM.staffName(d.owner) + " (" + d.owner + ")") + "</p>" +
+          '<p class="t-sm">' + esc("โน้ตที่ปักหมุด: " + d.pinnedNote.body + " · " + JCRM.staffName(d.pinnedNote.by) + " · " + fmt.date(d.pinnedNote.at)) + "</p>" : "") +
+        '<button type="button" class="link-btn t-sm" data-m-more aria-expanded="' + f.more + '">' + (f.more ? "ซ่อน" : "ดูทั้งหมด") + "</button></div>" +
+        '<div class="m10-card"><h4>นัดติดตามถัดไป</h4><p class="t-sm">' + esc(fmt.dateTime(next.at) + " · " + next.titleTh + " · " + JCRM.staffName(next.owner)) + "</p></div>" +
+        '<p class="t-xs t-muted">ค่าเต็มไม่อยู่ในจอจนกด “แสดง” (D33) · ไม่มีรูปถ่ายลูกค้า (D42)</p>';
+    } else if (f.tab === "history") {
+      tabBody = ui.timeline({ items: JCRM.select.timelineFor(DEMO_NO).slice(0, 3), label: "การติดต่อล่าสุด" }) + '<p class="t-xs t-muted">แสดง 3 รายการล่าสุด · ดูทั้งหมดที่หน้าจริง</p>';
+    } else {
+      tabBody = '<p class="t-sm t-muted">ตัวอย่างเท่านั้น · เปิดหน้าจริงเพื่อดูแท็บนี้</p>';
+    }
+    return topBack("ข้อมูลลูกค้า", '<button type="button" class="icon-btn" data-m-toast="เมนูเพิ่มเติม · ตัวอย่างเท่านั้น" aria-label="เมนูเพิ่มเติม">' + icon("moreV") + "</button>") +
+      '<div class="m10-pad"><div class="m10-card"><div class="m10-headcard">' + ui.avatar(c.displayName, "lg") + '<div class="stack-2" style="gap:2px"><span class="code">' + esc(c.customerNo) + '</span><span class="t-h3">' + esc(JCRM.customerName(DEMO_NO)) + "</span>" + ui.customerBadges(c) + "</div></div></div>" +
+      '<div class="m10-actions"><button type="button" data-m-call>' + icon("call") + "<span>โทร</span></button><button type=\"button\" data-m-line>" + icon("chat") + "<span>LINE</span></button>" +
+      '<button type="button" data-m-toast="แก้ไข · ตัวอย่างเท่านั้น">' + icon("file") + '<span>แก้ไข</span></button><button type="button" data-m-toast="เพิ่มเติม · ตัวอย่างเท่านั้น">' + icon("moreV") + "<span>เพิ่มเติม</span></button></div>" +
+      '<div class="m10-stats">' + [[fmt.int(s.contacts) + " ครั้ง", L.contacts], [fmt.int(s.storeVisits) + " ครั้ง", L.storeVisits], [fmt.int(s.purchases) + " ครั้ง", L.purchases], [fmt.moneyTable(s.lifetimeAmount), L.lifetimeAmount]].map(function (x) {
+        return '<div class="m10-stat"><strong>' + esc(x[0]) + "</strong><span>" + esc(x[1]) + "</span></div>";
+      }).join("") + "</div>" +
+      '<div class="m10-tabs" role="tablist" aria-label="แท็บข้อมูลลูกค้า">' + TAB_SHORT.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (f.tab === t[0]) + '" data-m-tab="' + t[0] + '">' + esc(t[1]) + "</button>"; }).join("") + "</div>" +
+      tabBody + "</div>" + sheet(i) + nav(3);
+  }
+
+  /* ---------- จอ 4 · รับลูกค้าใหม่ (= หน้า 04 mode=visit มือถือ · mockup B + D11) ---------- */
+  function val(i, name) { var v = frames[i].form[name]; return v === undefined ? "" : v; }
+  function err(i, name) { var m = frames[i].errors[name]; return '<p class="error-text" id="m10-' + i + "-" + name + '-err"' + (m ? "" : " hidden") + ">" + esc(m || "") + "</p>"; }
+  function digits(s) { return String(s || "").replace(/\D/g, ""); }
+  function dupCandidates(i) {
+    var ph = digits(val(i, "phone"));
+    if (!(ph.length === 10 || ph.length === 9)) { return []; }
+    var first = String(val(i, "first") || "").trim(), last = String(val(i, "last") || "").trim();
+    return D.customers.map(function (c) {
+      var p = JCRM.find(c.contacts || [], "type", "PHONE");
+      if (p && digits(p.full) === ph) { return { c: c, score: 100, reason: "เบอร์โทรตรงกัน" }; }
+      if (first && last && c.firstName === first && c.lastName === last && c.firstBranch === "JP1") { return { c: c, score: 40, reason: "ชื่อคล้าย + สาขาแรกเดียวกัน" }; }
+      return null;
+    }).filter(Boolean).sort(function (a, b) { return b.score - a.score; });
+  }
+  function dupHtml(i) {
+    var list = dupCandidates(i);
+    if (!list.length) { return ""; }
+    return '<details class="m10-dup" open><summary>' + esc(T.duplicatePanelTitle.replace("N", fmt.int(list.length))) + "</summary>" + list.map(function (x) {
+      var readable = JCRM.can("customer.read", { customer: JCRM.customerCtx(x.c) }, AS);
+      return '<div class="m10-card"><div class="row-between"><span class="code">' + esc(x.c.customerNo) + '</span><span class="t-xs t-semibold">คะแนน ' + esc(fmt.int(x.score)) + "</span></div>" +
+        '<span class="t-sm t-medium">' + esc(readable ? JCRM.customerName(x.c.customerNo) + " · " + phoneOf(x.c) : "คุณ" + x.c.firstName + " " + x.c.lastName.charAt(0) + ".") + "</span>" +
+        (readable && (x.c.lifecycle || x.c.badges.length) ? ui.customerBadges(x.c) : "") + '<span class="t-xs">' + esc(x.reason) + "</span>" +
+        '<div class="row"><button type="button" class="btn btn--secondary btn--sm" ' + (x.c.customerNo === DEMO_NO ? 'data-m-go="3"' : 'data-m-toast="ตัวอย่างเท่านั้น"') + '>ดูข้อมูล</button>' +
+        '<button type="button" class="btn btn--primary btn--sm" data-m-toast="ใช้ลูกค้าเดิม · ตัวอย่างเท่านั้น">ใช้ลูกค้าเดิม</button></div></div>';
+    }).join("") + '<button type="button" class="btn btn--secondary btn--sm btn--block" style="margin-top:var(--space-2)" data-m-decide>' + (frames[i].decided ? "เลือกสร้างลูกค้าใหม่แล้ว (เหตุผลเลือกในหน้าจริง)" : esc(T.duplicateCreateAnyway)) + "</button></details>";
+  }
+  function actionsHtml(i) {
+    var ch = val(i, "channel");
+    return !ch || ch === "WALK_IN" ? '<button type="button" class="btn btn--secondary" data-m-submit="queue">รับเข้าคิว</button><button type="button" class="btn btn--accent" data-m-submit="serve">เริ่มให้บริการ</button>' :
+      '<button type="button" class="btn btn--accent" data-m-submit="save">บันทึกลูกค้า</button>';
+  }
+  function screenReceive(i) {
+    var id = function (n) { return "m10-" + i + "-" + n; };
+    var text = function (name, label, req, attrs) {
+      return '<div class="field"><label class="label" for="' + id(name) + '">' + esc(label) + (req ? '<span class="req" aria-hidden="true">*</span>' : "") + "</label>" +
+        '<input class="input" id="' + id(name) + '" data-m-field="' + name + '" value="' + esc(val(i, name)) + '" ' + (attrs || "") + ">" + err(i, name) + "</div>";
+    };
+    var select = function (name, label, req, options, placeholder) {
+      return '<div class="field"><label class="label" for="' + id(name) + '">' + esc(label) + (req ? '<span class="req" aria-hidden="true">*</span>' : "") + "</label>" +
+        '<select class="select" id="' + id(name) + '" data-m-field="' + name + '"><option value="">' + esc(placeholder) + "</option>" + options.map(function (o) {
+          return '<option value="' + esc(o.code) + '"' + (val(i, name) === o.code ? " selected" : "") + ">" + esc(o.labelTh) + "</option>";
+        }).join("") + "</select>" + err(i, name) + "</div>";
+    };
+    var check = function (name, label, req) {
+      return '<label class="checkbox"><input type="checkbox" data-m-field="' + name + '"' + (val(i, name) ? " checked" : "") + '><span class="checkbox__text">' + esc(label) + (req ? '<span class="req" aria-hidden="true">*</span>' : "") + "</span></label>" + err(i, name);
+    };
+    var mk = !!val(i, "marketing");
+    return '<div class="m10-top"><button type="button" class="icon-btn" data-m-back aria-label="ปิด">' + icon("x") + '</button><span class="m10-top__title grow">รับลูกค้าใหม่</span></div>' +
+      '<form class="m10-form" novalidate data-m-form>' +
+      text("phone", "เบอร์โทรศัพท์", val(i, "channel") === "WALK_IN" || val(i, "channel") === "PHONE", 'type="tel" inputmode="tel" placeholder="เช่น 08X-XXX-XXXX" autocomplete="off"') +
+      '<p class="help">ตัวอย่าง: กรอกเบอร์ 081-234-5678 และชื่อ สมชาย ใจดี เพื่อดูการ์ดตรวจซ้ำ 2 รายการ (ข้อ 13.14)</p>' +
+      '<div id="m10-' + i + '-dup">' + dupHtml(i) + "</div>" +
+      text("first", "ชื่อ", true, 'autocomplete="off"') + text("last", "นามสกุล", false, 'autocomplete="off"') +
+      '<div class="field">' + ui.chipGroup({ name: "m10-" + i + "-interest", label: "ความสนใจ", ref: "interestTypes", value: val(i, "interest"), required: true }) + err(i, "interest") + "</div>" +
+      select("channel", "ช่องทางที่ติดต่อมา", true, D.channels, "เลือกช่องทาง") +
+      '<div class="field"><span class="label">สาขา</span><p class="t-sm">' + esc(JCRM.branchName("JP1")) + ' <span class="t-muted">· ล็อกตามสิทธิ์</span></p></div>' +
+      '<div class="field"><label class="label" for="' + id("note") + '">รายละเอียดเพิ่มเติม (ถ้ามี)</label>' + ui.piiWarn() + '<textarea class="textarea" rows="2" maxlength="2000" id="' + id("note") + '" data-m-field="note">' + esc(val(i, "note")) + "</textarea>" + err(i, "note") + "</div>" +
+      '<details class="m10-card"' + (frames[i].detailsOpen ? " open" : "") + ' data-m-details><summary class="t-sm t-medium">ข้อมูลเพิ่มเติม</summary>' +
+      text("nickname", "ชื่อเล่น", false) + text("line", "LINE ID", false) + text("email", "อีเมล", false, 'type="email"') +
+      select("province", "จังหวัด", false, D.provinces, "เลือกจังหวัด") + select("source", "รู้จักร้านจาก", false, D.sources, "เลือกแหล่งที่มา") + "</details>" +
+      check("privacy", D.consentPurposes[0].formLabelTh, true) + check("marketing", D.consentPurposes[1].formLabelTh, false) +
+      (mk ? '<fieldset class="fieldset"><legend>ช่องทางรับข่าวสาร</legend><div class="checkbox-group checkbox-group--inline">' + D.enums.consentChannels.map(function (x) {
+        var sel = (val(i, "mkch") || []).indexOf(x) !== -1;
+        return '<label class="checkbox"><input type="checkbox" data-m-mkch value="' + esc(x) + '"' + (sel ? " checked" : "") + '><span class="checkbox__text">' + esc(x === "PHONE" ? JCRM.label("channels", "PHONE") : (x === "EMAIL" ? "อีเมล" : x)) + "</span></label>";
+      }).join("") + "</div>" + err(i, "mkch") + "</fieldset>" + check("age", D.consentPurposes[1].extraCheckTh, true) : "") +
+      "</form>" + '<div class="m10-sticky" id="m10-' + i + '-actions">' + actionsHtml(i) + "</div>";
+  }
+  function validateReceive(i) {
+    var e = {}, v = function (n) { return String(val(i, n) || "").trim(); };
+    var ch = v("channel");
+    if ((ch === "WALK_IN" || ch === "PHONE") && !digits(v("phone"))) { e.phone = "ต้องกรอกเบอร์โทรเมื่อลูกค้าติดต่อผ่าน Walk-in หรือโทรศัพท์"; }
+    else if (!digits(v("phone")) && !v("line") && !v("email")) { e.phone = "ต้องมีช่องทางติดต่ออย่างน้อย 1 รายการ (เบอร์โทร LINE ID หรืออีเมล)"; }
+    if (!v("first") && !v("nickname")) { e.first = "กรอกชื่อหรือชื่อเล่นอย่างน้อยหนึ่งช่อง"; }
+    if (!v("interest")) { e.interest = "เลือกความสนใจ"; }
+    if (!ch) { e.channel = "เลือกช่องทางที่ติดต่อมา"; }
+    if (JCRM.form.containsThaiId(v("note"))) { e.note = T.thaiIdRejected; }
+    if (!val(i, "privacy")) { e.privacy = "ต้องแจ้งประกาศความเป็นส่วนตัวให้ลูกค้าก่อนบันทึก"; }
+    if (val(i, "marketing")) {
+      if (!(val(i, "mkch") || []).length) { e.mkch = "เลือกช่องทางรับข่าวสารอย่างน้อย 1 ช่องทาง"; }
+      if (!val(i, "age")) { e.age = "ต้องยืนยันอายุหรือความยินยอมของผู้ใช้อำนาจปกครอง"; }
+    }
+    return e;
+  }
+
+  /* ---------- วาดกรอบ ---------- */
+  function screenHtml(i) {
+    var s = frames[i].screen;
+    return '<div class="m10-screen" data-screen="' + s + '">' + (s === 1 ? screenHome(i) : s === 2 ? screenSearch(i) : s === 3 ? screen360(i) : screenReceive(i)) + "</div>";
+  }
+  function renderFrame(i) {
+    var body = document.getElementById("m10-body-" + i);
+    if (!body) { return; }
+    var keepScroll = body.scrollTop;
+    body.innerHTML = screenHtml(i);
+    body.scrollTop = frames[i].screen === frames[i]._lastScreen ? keepScroll : 0;
+    frames[i]._lastScreen = frames[i].screen;
+    var cap = document.getElementById("m10-cap-" + i);
+    if (cap) { cap.textContent = SCREENS[frames[i].screen]; }
+    var real = document.getElementById("m10-real-" + i);
+    if (real) { real.href = REAL[frames[i].screen](); }
+  }
+  function layoutFrames() {
+    var host = document.getElementById("m10-frames");
+    if (!host) { return; }
+    var boxes = JCRM.$$(".m10-scale", host);
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      host.style.gridTemplateColumns = "";
+      boxes.forEach(function (b) { b.style.width = ""; b.style.height = ""; b.firstElementChild.style.transform = ""; });
+      return;
+    }
+    var avail = host.clientWidth, gap = 24, n, s = 1;
+    for (n = 4; n >= 1; n--) { s = Math.min(1, (avail - gap * (n - 1)) / n / 375); if (s >= 0.75 || n === 1) { break; } }
+    host.style.gridTemplateColumns = "repeat(" + n + ", minmax(0, 1fr))";
+    boxes.forEach(function (b) { b.style.width = (375 * s) + "px"; b.style.height = (812 * s) + "px"; b.firstElementChild.style.transform = "scale(" + s + ")"; });
+  }
+
+  function render(ctx) {
+    var staffLabel = me.displayName + " (" + AS + " · " + JCRM.assignmentText(me, { branchNames: true }).replace(" @ ", " · ") + ")";
+    JCRM.$("#page").innerHTML = ctx.ui.pageHeader({ title: "ตัวอย่างหน้าจอมือถือ", lead: "หน้าจอจริงทุกหน้าเป็น responsive — ย่อหน้าต่างให้กว้างน้อยกว่า 768px เพื่อดูแบบมือถือ" }) +
+      '<div class="alert" role="note"><span aria-hidden="true">i</span><div>ตัวอย่างนี้แสดงจากมุมมองของ' + esc(staffLabel) +
+      " · หน้าแรกมือถือของบทบาทอื่น = การ์ด KPI + widget แรกของบทบาทนั้น (ดูหน้า 02) · ทุกปุ่มในกรอบเป็นการจำลอง ไม่บันทึก</div></div>" +
+      '<div class="m10-frames" id="m10-frames">' + [1, 2, 3, 4].map(function (i) {
+        return '<figure class="m10-fig" data-frame-root="' + i + '"><div class="m10-scale"><div class="phone-frame" role="region" aria-label="' + esc("กรอบโทรศัพท์ " + i) + '">' +
+          '<div class="phone-frame__status" aria-hidden="true">' + esc(fmt.time(D.meta.now, { suffix: false })) + "</div>" +
+          '<div class="phone-frame__body" id="m10-body-' + i + '"></div><div class="m10-toast" id="m10-toast-' + i + '" role="status" hidden></div></div></div>' +
+          '<figcaption><h3 class="m10-cap" id="m10-cap-' + i + '">' + esc(SCREENS[i]) + '</h3><a id="m10-real-' + i + '" href="#">เปิดหน้าจริง</a></figcaption></figure>';
+      }).join("") + "</div>";
+    [1, 2, 3, 4].forEach(renderFrame);
+    layoutFrames();
+  }
+
+  /* ---------- เหตุการณ์ในกรอบ ---------- */
+  var timers = {};
+  function startReveal(i, type) {
+    var f = frames[i];
+    f.reveal[type] = 30;
+    clearInterval(timers[i + type]);
+    timers[i + type] = setInterval(function () {
+      f.reveal[type] -= 1;
+      if (f.reveal[type] <= 0 || document.hidden) { delete f.reveal[type]; clearInterval(timers[i + type]); }
+      if (f.screen === 3 && f.tab === "overview") { renderFrame(i); }
+    }, 1000);
+  }
+  document.addEventListener("click", function (e) {
+    var root = e.target.closest && e.target.closest("[data-frame-root]");
+    if (!root) { return; }
+    var i = Number(root.getAttribute("data-frame-root")), f = frames[i], t;
+    if ((t = e.target.closest("[data-m-go]"))) { e.preventDefault(); go(i, Number(t.getAttribute("data-m-go"))); return; }
+    if (e.target.closest("[data-m-back]")) { f.screen = f.back.pop() || 1; renderFrame(i); return; }
+    if ((t = e.target.closest("[data-m-toast]"))) { toastIn(i, t.getAttribute("data-m-toast")); return; }
+    if (e.target.closest("[data-m-sheet]")) { f.sheet = !f.sheet; renderFrame(i); return; }
+    if ((t = e.target.closest("[data-m-tab]"))) { f.tab = t.getAttribute("data-m-tab"); renderFrame(i); return; }
+    if (e.target.closest("[data-m-more]")) { f.more = !f.more; renderFrame(i); return; }
+    if ((t = e.target.closest("[data-m-reveal]"))) {
+      var type = t.getAttribute("data-m-reveal");
+      if (f.reveal[type]) { delete f.reveal[type]; clearInterval(timers[i + type]); renderFrame(i); return; }
+      startReveal(i, type); renderFrame(i); toastIn(i, T.contactRevealedToast + " · VIEW · ตัวอย่างเท่านั้น"); return;
+    }
+    if (e.target.closest("[data-m-call]")) { toastIn(i, T.contactRevealedToast + " · CALL · ระบบจริงโทรออกแล้วเปิดบันทึกการโทร (ตัวอย่างเท่านั้น)"); return; }
+    if (e.target.closest("[data-m-line]")) { toastIn(i, T.contactRevealedToast + " · LINE_OPEN · เปิด LINE (ตัวอย่างเท่านั้น)"); return; }
+    if (e.target.closest("[data-m-decide]")) { f.decided = true; var dh = document.getElementById("m10-" + i + "-dup"); if (dh) { dh.innerHTML = dupHtml(i); } toastIn(i, "หน้าจริงให้เลือกเหตุผลที่ยังสร้างลูกค้าใหม่ · ตัวอย่างเท่านั้น"); return; }
+    if ((t = e.target.closest("[data-m-submit]"))) {
+      f.errors = validateReceive(i);
+      var n = Object.keys(f.errors).length;
+      if (!n && dupCandidates(i).length && !f.decided) { toastIn(i, "พบข้อมูลที่อาจซ้ำ กรุณาเลือก ‘ใช้ลูกค้าเดิม’ หรือ ‘ยังต้องการสร้างลูกค้าใหม่’"); renderFrame(i); return; }
+      renderFrame(i);
+      toastIn(i, n ? "กรุณาแก้ไข " + fmt.int(n) + " ช่อง" : ({ queue: "รับเข้าคิว", serve: "เริ่มให้บริการ", save: "บันทึกลูกค้า" }[t.getAttribute("data-m-submit")]) + " · ตัวอย่างเท่านั้น ไม่บันทึก");
+      return;
+    }
+  });
+  function onField(e) {
+    var root = e.target.closest && e.target.closest("[data-frame-root]");
+    if (!root) { return; }
+    var i = Number(root.getAttribute("data-frame-root")), f = frames[i], el = e.target;
+    if (el.hasAttribute("data-m-field")) {
+      var name = el.getAttribute("data-m-field");
+      f.form[name] = el.type === "checkbox" ? el.checked : el.value;
+      if (name === "phone" || name === "first" || name === "last") { f.decided = false; var dh = document.getElementById("m10-" + i + "-dup"); if (dh) { dh.innerHTML = dupHtml(i); } }
+      if (name === "channel") { var ah = document.getElementById("m10-" + i + "-actions"); if (ah) { ah.innerHTML = actionsHtml(i); } }
+      if (name === "marketing" && e.type === "change") { renderFrame(i); }
+    } else if (el.name === "m10-" + i + "-interest") { f.form.interest = el.value; }
+    else if (el.hasAttribute("data-m-mkch")) { f.form.mkch = JCRM.$$("[data-m-mkch]", root).filter(function (x) { return x.checked; }).map(function (x) { return x.value; }); }
+  }
+  document.addEventListener("input", onField);
+  document.addEventListener("change", onField);
+  document.addEventListener("toggle", function (e) { var root = e.target.closest && e.target.closest("[data-frame-root]"); if (root && e.target.hasAttribute && e.target.hasAttribute("data-m-details")) { frames[Number(root.getAttribute("data-frame-root"))].detailsOpen = e.target.open; } }, true);
+  document.addEventListener("submit", function (e) {
+    var root = e.target.closest && e.target.closest("[data-frame-root]");
+    if (!root) { return; }
+    e.preventDefault();
+    var i = Number(root.getAttribute("data-frame-root"));
+    if (e.target.hasAttribute("data-m-search")) { frames[i].term = JCRM.$("#m10-q-" + i).value; renderFrame(i); }
+  });
+  window.addEventListener("resize", layoutFrames);
+
+  JCRM.page({ id: "mobile", render: render, branchPicker: false });
+})();
+</script>
+</body>
+</html>

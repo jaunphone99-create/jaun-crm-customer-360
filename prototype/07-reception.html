@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รับลูกค้าเข้าร้าน · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 07 · รับลูกค้าเข้าร้าน — CANONICAL v2.2 ข้อ 3.3 · 4.1 · 4.2 · 13.11 · 14.9 · 19.3 · sitemap-screen-specs ข้อ 10 · ไม่มี hex */
+.rc-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-4); }
+.rc-chip { display: inline-flex; align-items: baseline; gap: var(--space-2); padding: var(--space-2) var(--space-4); border: 1px solid var(--neutral-border); border-radius: var(--radius-full); background: var(--neutral-bg); color: var(--neutral-text); font-size: var(--fs-sm); }
+.rc-chip strong { font-size: var(--fs-h3); font-weight: var(--fw-semibold); color: var(--text-heading); font-variant-numeric: tabular-nums; }
+.rc-grid { display: grid; grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); gap: var(--space-4); align-items: start; }
+.rc-grid--queue-only { grid-template-columns: minmax(0, 1fr); }
+.rc-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.rc-identify { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); }
+.rc-search-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.rc-search-row .input { flex: 1 1 220px; }
+.rc-results { display: flex; flex-direction: column; gap: var(--space-1); }
+.rc-result { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: var(--touch-counter); padding: var(--space-2) var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-card); text-align: start; cursor: pointer; }
+.rc-result:hover, .rc-result[aria-pressed="true"] { background: var(--navy-50); border-color: var(--navy-200); }
+.rc-result__main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.rc-selected { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.rc-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.rc-actions .btn { width: 100%; min-height: var(--touch-counter); }
+.queue-item__actions .btn { min-height: var(--touch-counter); }
+.rc-mobile-switch { display: none; margin-bottom: var(--space-3); }
+.rc-closed-toggle { min-height: auto; padding-block: 0; }
+.rc-menu-host { position: relative; }
+.rc-proto { margin-top: var(--space-4); }
+.rc-proto summary { cursor: pointer; min-height: var(--touch-min); display: flex; align-items: center; font-size: var(--fs-sm); color: var(--text-link); }
+.rc-lock-close { position: fixed; top: var(--space-4); right: var(--space-4); z-index: calc(var(--z-lock) + 1); }
+@media (max-width: 1279px) {
+  .rc-grid { grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); }
+}
+@media (max-width: 767px) {
+  .rc-mobile-switch { display: block; }
+  .rc-grid { grid-template-columns: minmax(0, 1fr); }
+  .rc-grid[data-mview="form"] .rc-queue-col { display: none; }
+  .rc-grid[data-mview="queue"] .rc-form-col { display: none; }
+  .rc-actions { position: sticky; bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px)); background: var(--surface-card); z-index: 2; margin-inline: calc(var(--space-5) * -1); padding-inline: var(--space-5); padding-bottom: var(--space-3); }
+  .rc-chip { padding: var(--space-1) var(--space-3); }
+}
+</style>
+</head>
+<body data-page="reception" data-roles="STAFF SUPERVISOR BRANCH_MANAGER OPERATIONS">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var D = JCRM.data, fmt = JCRM.fmt, ui = JCRM.ui, esc = JCRM.esc, DASH = fmt.DASH, T = D.meta.texts;
+  var NOW = D.meta.now, TODAY = fmt.dayKey(NOW);
+  var DAY8 = TODAY.replace(/-/g, ""), DAY6 = DAY8.slice(2);                 /* 20260911 · 260911 (ตัวนับ QUEUE/VISIT ข้อ 6.1) */
+  var WAIT_LONG = D.settingValues["sla.visitor_waiting_min"];               /* 15 นาที (ข้อ 11.2) */
+  var DRAFT_KEY = "jcrm.reception.draft";
+  var RECORD_OUTCOMES = ["PURCHASED", "FOLLOW_UP", "NOT_YET", "NOT_INTERESTED", "SERVICE_DONE"];
+  var OUTCOME_HELP = {
+    PURCHASED: "ต้องระบุลูกค้า · ระบบเสนอให้ปิดโอกาสขายเป็นปิดการขาย (ไม่บังคับใน V1)",
+    FOLLOW_UP: "ต้องระบุลูกค้า และ Lead/โอกาสขายที่เปิดอยู่ต้องมีการติดตามถัดไป",
+    NOT_YET: "ถ้ามี Lead/โอกาสขายเปิดอยู่ ต้องมีการติดตามถัดไป",
+    NOT_INTERESTED: "Lead ที่เปิดจาก visit นี้ต้องปิดเป็นไม่สำเร็จพร้อมเหตุผล",
+    SERVICE_DONE: "ซ่อม · สอบถาม · ชำระ"
+  };
+  var FORM_FIELDS = [
+    { name: "party_size", label: "จำนวนลูกค้า", type: "stepper", required: true, min: 1, value: 1, minMessage: "จำนวนลูกค้าต้องไม่น้อยกว่า 1" },
+    { name: "source", label: "รู้จักร้านจาก", type: "select", ref: "sources", placeholder: "ไม่ระบุ", width: "half" },
+    { name: "interest", label: "วัตถุประสงค์หลัก", type: "chips", ref: "interestTypes", required: true, requiredMessage: "เลือกวัตถุประสงค์หลัก" }
+  ];
+
+  var S = {
+    ctx: null, branch: null,
+    queues: {}, counters: {}, delta: {},
+    formValues: { party_size: 1, source: "", interest: "" },
+    customerNo: null, searchTerm: "", searched: false,
+    showClosed: false, mview: "form"
+  };
+
+  function pad3(n) { var s = String(n); while (s.length < 3) { s = "0" + s; } return s; }
+  function toIso(v) { return String(v).length === 16 ? v + ":00+07:00" : v; }
+  function me() { return S.ctx ? S.ctx.staffCode : JCRM.currentStaffCode(); }
+  function branchData(b) {
+    if (!S.queues[b]) {
+      var q = JCRM.select.queueFor(undefined, { branch: b });
+      S.queues[b] = (q ? q.rows : []).map(function (r) {
+        return { queueNo: r.queueNo, visitNo: null, queuedAt: r.queuedAt, status: r.status, interest: r.interest, receiver: r.receiver, identified: !!r.identified,
+          customerNo: null, createdBy: null, partySize: null, source: null, outcome: null, endedAt: null, sample: true };
+      });
+      S.counters[b] = { queue: D.runningNumbers["QUEUE:" + b + ":" + DAY8] || 0, visit: D.runningNumbers["VISIT:" + b + ":" + DAY8] || 0 };
+      S.delta[b] = { walkIn: 0, visits: 0, openVisits: 0, identified: 0 };
+    }
+    return S.queues[b];
+  }
+  function findRow(no) { return (S.queues[S.branch] || []).filter(function (r) { return r.queueNo === no; })[0] || null; }
+  function isOpen(r) { return r.status === "WAITING" || r.status === "IN_SERVICE"; }
+  function rowCtx(r) { return { branch: S.branch, owner: r.receiver, createdBy: r.createdBy }; }
+  function teamPlus() { return JCRM.scopeBranches("visit.update", "TEAM").indexOf(S.branch) !== -1; }
+  function readCustomer(no) { var c = no ? JCRM.customer(no) : null; return c && JCRM.can("customer.read", { customer: JCRM.customerCtx(c) }) ? c : null; }
+
+  /* ---------------------------------------------------------------------------
+     render
+     ------------------------------------------------------------------------ */
+  function chipsHtml(q) {
+    var d = S.delta[S.branch];
+    var c = q.chips;
+    return '<div class="rc-chips" role="group" aria-label="สรุปวันนี้ ' + esc(JCRM.branchName(S.branch)) + '">' + [
+      ["ลูกค้าเข้าร้าน (Walk-in)", c.walkIn + d.walkIn], ["ออนไลน์/โทร", c.onlinePhone], ["ผู้มาติดต่อ (Visitor)", c.visits + d.visits], ["visit เปิดอยู่", c.openVisits + d.openVisits]
+    ].map(function (x) { return '<span class="rc-chip">' + esc(x[0]) + " <strong>" + esc(fmt.int(x[1])) + "</strong></span>"; }).join("") + "</div>";
+  }
+  function formHtml() {
+    var cust = readCustomer(S.customerNo);
+    var results = "";
+    if (S.searched) {
+      var term = S.searchTerm.trim();
+      if (term.length < 3) { results = '<p class="help">พิมพ์อย่างน้อย 3 ตัวอักษร แล้วกดค้นหา · เบอร์โทรต้องพิมพ์ครบทั้งค่า</p>'; }
+      else {
+        var found = JCRM.search(term).customers;
+        results = found.length ? '<div class="rc-results" role="list">' + found.slice(0, 5).map(function (c) {
+          var ph = JCRM.find(c.contacts, "type", "PHONE");
+          return '<button type="button" class="rc-result" role="listitem" data-jcrm-action="rc-pick" data-jcrm-id="' + esc(c.customerNo) + '" aria-pressed="' + (c.customerNo === S.customerNo) + '">' + ui.avatar(c.displayName, "sm") +
+            '<span class="rc-result__main"><span class="t-medium">' + esc(JCRM.customerName(c.customerNo)) + ' <span class="code">' + esc(c.customerNo) + "</span></span>" +
+            '<span class="t-xs t-muted">' + esc(ph ? ph.masked : DASH) + "</span></span>" + ui.customerBadges(c) + "</button>";
+        }).join("") + "</div>" : '<p class="help">ไม่พบผลลัพธ์ · เบอร์โทร อีเมล LINE ID IMEI และเลขธุรกรรมต้องพิมพ์ครบทั้งค่า</p>';
+      }
+    }
+    var newBtn = ui.permButton({ label: "+ สร้างลูกค้าใหม่", variant: "secondary", permission: "customer.create", action: "rc-new" });
+    var ident = '<div class="rc-identify" role="group" aria-labelledby="rc-identify-label"><p class="label" id="rc-identify-label">ระบุลูกค้า (ถ้ามี)</p>' +
+      (cust ? '<div class="rc-selected"><span class="chip">' + esc(JCRM.customerName(cust.customerNo) + " · " + cust.customerNo) + "</span>" +
+        ui.button({ label: "ล้างลูกค้าที่เลือก", variant: "ghost", size: "sm", icon: "x", iconOnly: true, action: "rc-unpick" }) + "</div>" : "") +
+      '<div class="rc-search-row"><label class="sr-only" for="rc-search">ค้นหาลูกค้า</label><input class="input" id="rc-search" type="search" autocomplete="off" placeholder="ค้นหาชื่อ / เบอร์โทร" value="' + esc(S.searchTerm) + '">' +
+      ui.button({ label: "ค้นหา", variant: "secondary", action: "rc-search", icon: "search" }) + (newBtn ? '<span class="t-sm t-muted">หรือ</span>' + newBtn : "") + "</div>" +
+      '<div id="rc-results" aria-live="polite">' + results + "</div>" +
+      '<p class="help">ไม่พบลูกค้า? กด ‘สร้างลูกค้าใหม่’ แล้วกรอกเบอร์ ระบบจะตรวจลูกค้าจากสาขาอื่นให้ · การค้นหาบันทึก CUSTOMER_SEARCH</p></div>';
+    return '<section class="card rc-form-col" aria-labelledby="rc-form-title"><div class="rc-card-head"><h2 class="card__title" id="rc-form-title">รับลูกค้าเข้าร้าน</h2><span class="t-xs t-muted">visit เกิดเมื่อกด "รับเข้าคิว" หรือ "เริ่มให้บริการ" แม้ยังไม่รู้ตัวตน</span></div>' +
+      '<form id="rc-form" novalidate>' + JCRM.form.render(FORM_FIELDS, S.formValues, "rc") + ident +
+      '<div class="rc-actions">' + ui.permButton({ label: "รับเข้าคิว", variant: "secondary", size: "lg", permission: "visit.create", action: "rc-open", id: "queue" }) +
+      ui.permButton({ label: "เริ่มให้บริการ", variant: "accent", size: "lg", permission: "visit.create", action: "rc-open", id: "service" }) + "</div></form></section>";
+  }
+  function rowHtml(r) {
+    var waited = r.status === "WAITING" ? fmt.minutesBetween(r.queuedAt, NOW) : null;
+    var isLong = waited !== null && waited > WAIT_LONG;
+    var cust = readCustomer(r.customerNo);
+    var meta = ["เข้าคิว " + fmt.time(r.queuedAt, { suffix: false })];
+    if (waited !== null) { meta.push("รอ " + fmt.int(waited) + " นาที"); }
+    if (r.receiver) { meta.push("ผู้รับ " + JCRM.staffName(r.receiver)); }
+    meta.push(r.identified ? "ลูกค้า: " + (cust ? JCRM.customerName(cust.customerNo) : "ระบุแล้ว (ชื่อ " + DASH + ")") : "ยังไม่ระบุลูกค้า");
+    if (r.outcome) { meta.push("ผล: " + JCRM.label("visitOutcomes", r.outcome)); }
+    if (r.status === "CANCELLED") { meta.push("ยกเลิก (สร้างผิด) · ไม่นับใน KPI"); }
+    var act = "";
+    var upd = JCRM.access("visit.update", rowCtx(r));
+    if (r.status === "WAITING" && upd.visible) {
+      act = JCRM.canClaimQueue(S.branch) ? ui.button({ label: "รับคิว", variant: "secondary", action: "rc-claim", id: r.queueNo }) : ui.button({ label: "รับคิว", variant: "secondary", disabledReason: T.reasonOutOfBranch });
+    } else if (r.status === "IN_SERVICE") {
+      act = ui.permButton({ label: "บันทึกผล", variant: "secondary", action: "rc-record", id: r.queueNo, permission: "visit.update", ctx: rowCtx(r), reason: "บันทึกผลได้เฉพาะคิวที่คุณรับ" });
+    }
+    var items = menuItems(r);
+    var menu = items.length ? '<span class="popover-host rc-menu-host"><button type="button" class="icon-btn icon-btn--sm" data-rc-menu="' + esc(r.queueNo) + '" aria-haspopup="menu" aria-expanded="false" aria-label="เมนูคิว ' + esc(r.queueNo) + '">' + JCRM.icon("moreV") + "</button></span>" : "";
+    return '<li class="queue-item" data-status="' + esc(r.status) + '"' + (isLong ? ' data-waiting-long="true"' : "") + '><span class="queue-item__no"><span class="sr-only">คิว</span>' + esc(r.queueNo) + "</span>" +
+      '<div><div class="row" style="gap:var(--space-2)">' + ui.status("visitStatuses", r.status) + '<span class="queue-item__title">' + esc(JCRM.label("interestTypes", r.interest)) + "</span>" +
+      (r.partySize > 1 ? ui.badge(fmt.int(r.partySize) + " คน", "neutral", "badge--square") : "") + (isLong ? ui.badge("รอนาน", "warning", "badge--square") : "") + "</div>" +
+      '<p class="queue-item__meta">' + esc(meta.join(" · ")) + "</p></div>" + '<div class="queue-item__actions">' + act + menu + "</div></li>";
+  }
+  function queueHtml(q) {
+    var rows = branchData(S.branch);
+    var openRows = rows.filter(isOpen);
+    var shown = rows.filter(function (r) { return S.showClosed || isOpen(r); }).sort(function (a, b) { return a.queueNo < b.queueNo ? -1 : 1; });
+    var closedKnown = rows.filter(function (r) { return !isOpen(r); }).length;
+    var walkInTotal = q.chips.walkIn + S.delta[S.branch].walkIn;
+    var closedMissing = S.showClosed ? walkInTotal - rows.filter(function (r) { return r.status !== "CANCELLED"; }).length : 0;
+    var list = shown.length ? '<ol class="queue-list" aria-label="คิววันนี้">' + shown.map(rowHtml).join("") + "</ol>" : ui.state("empty", { title: "ยังไม่มีคิวที่เปิดอยู่", compact: true });
+    return '<section class="card rc-queue-col" aria-labelledby="rc-queue-title"><div class="rc-card-head"><h2 class="card__title" id="rc-queue-title">คิววันนี้ (' + esc(fmt.int(openRows.length)) + ")</h2>" +
+      '<div class="row"><label class="checkbox rc-closed-toggle"><input type="checkbox" id="rc-show-closed"' + (S.showClosed ? " checked" : "") + '><span class="checkbox__text">แสดงที่ปิดแล้ว</span></label>' +
+      ui.button({ label: "รีเฟรช", variant: "ghost", size: "sm", icon: "refresh", action: "rc-refresh" }) + "</div></div>" +
+      (S.showClosed && closedMissing > 0 ? ui.sampleNote({ text: "คิวที่ปิดแล้ววันนี้ " + fmt.int(closedMissing) + " รายการไม่มีรายละเอียดในข้อมูลตัวอย่าง (ข้อ 13.11)" }) : "") +
+      '<div aria-live="polite">' + list + "</div>" +
+      (S.showClosed && !closedKnown && closedMissing <= 0 ? '<p class="t-xs t-muted" style="margin-top:var(--space-2)">ยังไม่มีคิวที่ปิดแล้ววันนี้</p>' : "") + "</section>";
+  }
+  function todayTableHtml() {
+    var branches = JCRM.scopeBranches("visit.read", "OWN");
+    if (!branches.length) { return ""; }
+    var sc = JCRM.select.scope();
+    var rows = branches.map(function (b) {
+      var t = JCRM.find(D.kpis.today.rows, "branch", b), d = S.delta[b] || { walkIn: 0, visits: 0, openVisits: 0, identified: 0 };
+      var k = JCRM.select.kpisFor(undefined, { branch: b, preset: "TODAY" });
+      var big = k.kind === "org" || k.kind === "branch";
+      return { branch: b, walkIn: (t ? t.walkInVisits : 0) + d.walkIn, online: t ? t.onlinePhoneVisits : 0, visits: (t ? t.visits : 0) + d.visits,
+        identified: (t ? t.identifiedVisits : 0) + d.identified, unique: big && t ? t.uniqueCustomers : null, prev: big && t ? t.uniqueSameDayLastWeek : null,
+        change: big && t ? t.growthDisplay : null, open: (t ? t.openVisits : 0) + d.openVisits };
+    });
+    var fourAll = ["JP1", "JP2", "JP3", "JP4"].every(function (b) { return branches.indexOf(b) !== -1; });
+    var totalRow = null;
+    if (fourAll && branches.length > 1) {
+      var tt = D.kpis.today.total, sum = function (k) { return rows.filter(function (r) { return r.branch !== "JPON"; }).reduce(function (a, r) { return a + r[k]; }, 0); };
+      totalRow = { label: "รวม", values: { walkIn: sum("walkIn"), online: sum("online"), visits: sum("visits"), identified: sum("identified"), unique: sc.kind === "org" || sc.kind === "branch" ? tt.uniqueCustomers : null,
+        prev: sc.kind === "org" || sc.kind === "branch" ? tt.uniqueSameDayLastWeek : null, change: sc.kind === "org" || sc.kind === "branch" ? tt.growthDisplay : null, open: sum("open") }, useRender: true };
+    }
+    var note = sc.kind === "team" ? T.teamScopeNull : (sc.kind === "own" ? "ลูกค้าไม่ซ้ำไม่ผูกกับพนักงาน จึงไม่แสดงสำหรับขอบเขตของคุณ" : "");
+    return '<section class="card card--flush" style="margin-top:var(--space-4)" aria-labelledby="rc-today-title"><div class="card__header"><div><h2 class="card__title" id="rc-today-title">สรุปวันนี้รายสาขา</h2>' +
+      '<p class="card__subtitle">' + esc(fmt.asOf()) + " · ไม่นับ visit ที่ยกเลิก (ข้อ 13.11)" + (note ? " · " + esc(note) : "") + "</p></div></div>" +
+      ui.table({ id: "rc-today", caption: "สรุปวันนี้รายสาขา", compact: true, stickyFirst: true, footer: false, rows: rows, totalRow: totalRow,
+        columns: [
+          { key: "branch", label: "สาขา", format: "branch" }, { key: "walkIn", label: "ลูกค้าเข้าร้าน (Walk-in)", format: "int" }, { key: "online", label: "ออนไลน์/โทร", format: "int" },
+          { key: "visits", label: "ผู้มาติดต่อ (Visitor)", format: "int" }, { key: "identified", label: "ระบุตัวตนได้", format: "int" }, { key: "unique", label: "ลูกค้าไม่ซ้ำวันนี้", format: "int" },
+          { key: "prev", label: "วันเดียวกันสัปดาห์ก่อน (ถึง " + fmt.time(NOW, { suffix: false }) + ")", format: "int" },
+          { key: "change", label: "เปลี่ยน", render: function (r) { return r.change ? ui.delta(r.change, ui.deltaTooltip("TODAY")) : '<span class="is-null">' + DASH + "</span>"; } },
+          { key: "open", label: "visit เปิดอยู่", format: "int" }
+        ] }) + "</section>";
+  }
+  function otherStaffFor(branch) {
+    return D.staff.filter(function (s) {
+      return s.status === "ACTIVE" && s.staffCode !== me() && s.assignments.some(function (a) { return a.role === "STAFF" && a.branch === branch; });
+    })[0] || null;
+  }
+  function render(ctx) {
+    S.ctx = ctx;
+    var q = JCRM.select.queueFor(undefined, { branch: ctx.branch });
+    if (!q) { document.getElementById("page").innerHTML = ui.noPermission({ roles: ctx.screen.roles }); return; }
+    S.branch = q.branch;
+    branchData(S.branch);
+    var canForm = JCRM.scopeBranches("visit.create", "OWN").indexOf(S.branch) !== -1;
+    var multi = JCRM.scopeBranches("visit.read", "OWN").length > 1;
+    var header = ui.pageHeader({
+      title: "รับลูกค้าเข้าร้าน",
+      lead: JCRM.branchName(S.branch) + " · วันที่ " + fmt.date(NOW) + " เวลา " + fmt.time(NOW),
+      meta: multi ? ui.branchSelect({ id: "rc-branch", permission: "visit.read", value: S.branch, includeAll: false, action: "rc-branch" }) : ""
+    });
+    var openCount = branchData(S.branch).filter(isOpen).length;
+    var sw = canForm ? '<div class="rc-mobile-switch">' + ui.segmented({ label: "ส่วนของหน้า", action: "rc-mview", value: S.mview, options: [{ value: "form", label: "รับลูกค้า" }, { value: "queue", label: "คิววันนี้ (" + fmt.int(openCount) + ")" }] }) + "</div>" : "";
+    var readOnly = !canForm ? '<p class="alert" role="note" style="margin-bottom:var(--space-4)">' + JCRM.icon("info", "nav-icon") + "<span>บทบาทของคุณดูคิวได้อย่างเดียว</span></p>" : "";
+    var other = otherStaffFor(S.branch);
+    var waiting = branchData(S.branch).filter(function (r) { return r.status === "WAITING" && !r.receiver; })[0];
+    var proto = '<details class="card card--raised rc-proto"><summary>เครื่องมือ prototype (จำลองเหตุการณ์)</summary><div class="stack-2" style="margin-top:var(--space-2)">' +
+      (other && waiting && JCRM.canClaimQueue(S.branch) ? '<p class="t-sm">จำลองว่า ' + esc(other.displayName) + " กดรับคิว " + esc(waiting.queueNo) + " จากอีกเครื่องก่อน (หน้าจอนี้ยังไม่อัปเดต) แล้วลองกด \"รับคิว\" เพื่อดูข้อความ \"คิวนี้มีผู้รับแล้ว\"</p>" +
+        ui.button({ label: "จำลอง: " + other.displayName + " รับคิว " + waiting.queueNo + " ก่อน", variant: "outline", size: "sm", action: "rc-sim-claim", id: waiting.queueNo }) : '<p class="t-sm t-muted">การจำลองรับคิวซ้อนต้องมีคิวที่รอรับบริการ และพนักงานอื่นในสาขา</p>') +
+      ui.button({ label: "จำลองอุปกรณ์ counter ไม่มีการใช้งาน 10 นาที (หน้าล็อก)", variant: "outline", size: "sm", action: "rc-sim-lock" }) +
+      '<p class="t-xs t-muted">ระบบจริงอัปเดตคิวทุก 30 วินาทีขณะหน้าเปิดอยู่ (ข้อเสนอของผู้ออกแบบ) · prototype เก็บคิวที่เพิ่ม/ปิดในหน่วยความจำของหน้านี้เท่านั้น · ระบบจริงเรียก api.open_visit · api.close_visit · api.assign_owner</p></div></details>';
+    document.getElementById("page").innerHTML = header + chipsHtml(q) + readOnly + sw +
+      '<div class="rc-grid' + (canForm ? "" : " rc-grid--queue-only") + '" data-mview="' + esc(S.mview) + '">' + (canForm ? formHtml() : "") + queueHtml(q) + "</div>" + todayTableHtml() + proto;
+  }
+  function rerender() { if (S.ctx) { render(JCRM.state()); } }
+  function readForm() {
+    var f = document.getElementById("rc-form");
+    if (f) { S.formValues = JCRM.form.read(f, FORM_FIELDS); var s = document.getElementById("rc-search"); if (s) { S.searchTerm = s.value; } }
+  }
+
+  /* ---------------------------------------------------------------------------
+     เมนู ⋮ ต่อแถว (popover)
+     ------------------------------------------------------------------------ */
+  function menuItems(r) {
+    var items = [], rc = rowCtx(r), upd = JCRM.access("visit.update", rc), open = isOpen(r);
+    var unownedReason = "แก้คิวที่ยังไม่มีผู้รับได้เฉพาะผู้ที่รับเข้าคิวหรือผู้จัดการสาขา";
+    var why = function () { return upd.allowed ? null : (!r.receiver && upd.reason === T.reasonOwn || !r.receiver && upd.reason === T.reasonTeam ? unownedReason : upd.reason); };
+    if (open && upd.visible) {
+      if (!r.identified) { items.push({ label: "ระบุลูกค้า", action: "rc-identify", reason: why() }); }
+      else if (teamPlus()) { items.push({ label: "เปลี่ยนลูกค้า", action: "rc-identify", reason: why() }); }
+    }
+    if (r.status === "IN_SERVICE" && teamPlus()) { items.push({ label: "เปลี่ยนผู้รับคิว", action: "rc-assign", reason: JCRM.can("visit.update", rc) ? null : upd.reason }); }
+    if (r.status === "WAITING" && upd.visible) { items.push({ label: "ออกก่อนรับบริการ", action: "rc-left", reason: why() }); }
+    if (r.status === "COMPLETED" && upd.visible) { items.push({ label: "แก้ผลการให้บริการ", action: "rc-record", reason: upd.allowed ? null : upd.reason }); }
+    if (r.identified && JCRM.can("customer.read")) {
+      items.push(readCustomer(r.customerNo) ? { label: "ดูข้อมูลลูกค้า", href: JCRM.link("customer-360", { c: r.customerNo }) } : { label: "ดูข้อมูลลูกค้า", reason: "ข้อมูลตัวอย่างไม่มีเลขลูกค้าของคิวนี้ (prototype)" });
+    }
+    if (open && upd.visible) {
+      var mineFresh = r.createdBy && r.createdBy === me() && fmt.minutesBetween(r.queuedAt, NOW) <= 15;
+      var ok = mineFresh || (teamPlus() && JCRM.can("visit.update", rc));
+      items.push({ label: "ยกเลิก (สร้างผิด)", action: "rc-cancel", reason: ok ? null : "ยกเลิกได้เฉพาะผู้สร้างภายใน 15 นาที หรือหัวหน้าทีม/ผู้จัดการสาขา" });
+    }
+    return items;
+  }
+  function menuHtml(r) {
+    return '<div class="popover menu-popover" data-jcrm-popover role="menu" aria-label="เมนูคิว ' + esc(r.queueNo) + '">' + menuItems(r).map(function (m) {
+      if (m.reason) { return '<button type="button" class="menu-item" role="menuitem" aria-disabled="true" data-tooltip="' + esc(m.reason) + '"><span>' + esc(m.label) + '<span class="menu-item__label-disabled">' + esc(m.reason) + "</span></span></button>"; }
+      if (m.href) { return '<a class="menu-item" role="menuitem" href="' + esc(m.href) + '">' + esc(m.label) + "</a>"; }
+      return '<button type="button" class="menu-item" role="menuitem" data-jcrm-action="' + esc(m.action) + '" data-jcrm-id="' + esc(r.queueNo) + '">' + esc(m.label) + "</button>";
+    }).join("") + "</div>";
+  }
+
+  /* ---------------------------------------------------------------------------
+     การกระทำ: รับเข้าคิว · เริ่มให้บริการ (api.open_visit · ข้อ 4.1)
+     ------------------------------------------------------------------------ */
+  function openVisit(mode) {
+    readForm();
+    var formEl = document.getElementById("rc-form");
+    var errs = JCRM.form.validate(FORM_FIELDS, S.formValues);
+    if (!JCRM.form.showErrors(formEl, FORM_FIELDS, errs)) { var bad = formEl.querySelector("[aria-invalid=true]"); if (bad) { bad.focus(); } return; }
+    if (JCRM.scopeBranches("visit.create", "OWN").indexOf(S.branch) === -1) { JCRM.toast(T.reasonOutOfBranch, "warning"); return; }
+    var cust = readCustomer(S.customerNo);
+    if (cust && !JCRM.can("visit.create", { customer: JCRM.customerCtx(cust) })) { JCRM.toast("ลูกค้านี้ยังไม่เชื่อมกับสาขานี้ · ใช้ “สร้างลูกค้าใหม่” เพื่อตรวจและผูกลูกค้าจากสาขาอื่น", "warning"); return; }
+    var cnt = S.counters[S.branch];
+    cnt.queue += 1; cnt.visit += 1;
+    var row = { queueNo: pad3(cnt.queue), visitNo: "V-" + S.branch + "-" + DAY6 + "-" + pad3(cnt.visit), queuedAt: NOW, status: mode === "service" ? "IN_SERVICE" : "WAITING",
+      interest: S.formValues.interest, receiver: mode === "service" ? me() : null, identified: !!cust, customerNo: cust ? cust.customerNo : null, createdBy: me(),
+      partySize: S.formValues.party_size, source: S.formValues.source || null, outcome: null, endedAt: null, sample: false };
+    S.queues[S.branch].push(row);
+    var d = S.delta[S.branch]; d.walkIn += 1; d.visits += 1; d.openVisits += 1; if (cust) { d.identified += 1; }
+    S.formValues = { party_size: 1, source: "", interest: "" }; S.customerNo = null; S.searchTerm = ""; S.searched = false;
+    if (mode === "service" && cust) {
+      JCRM.toast("เริ่มให้บริการคิว " + row.queueNo + " แล้ว · กำลังเปิดข้อมูลลูกค้า", "success", { title: "prototype" });
+      window.setTimeout(function () { window.location.href = JCRM.link("customer-360", { c: cust.customerNo }); }, 600);
+      return;
+    }
+    rerender();
+    JCRM.toast((mode === "service" ? "เริ่มให้บริการคิว " + row.queueNo + " แล้ว" : "รับเข้าคิวแล้ว · คิว " + row.queueNo) + " · " + row.visitNo + " (เลขตามตัวนับ QUEUE/VISIT ของวันนี้ · เก็บในหน่วยความจำของหน้านี้)", "success", { title: "prototype" });
+    offerLead(row);
+  }
+  /* api.open_visit ไม่สร้าง Lead อัตโนมัติ (ข้อ 19.3 ข้อ 1) → เสนอปุ่ม "สร้าง Lead" เมื่อวัตถุประสงค์ creates_lead */
+  function offerLead(row) {
+    var it = JCRM.find(D.interestTypes, "code", row.interest);
+    if (!row.customerNo || !it || !it.createsLead || !JCRM.can("lead.create", { customer: JCRM.customerCtx(row.customerNo) })) { return; }
+    var el = JCRM.toast("ต้องการสร้าง Lead สำหรับ" + it.labelTh + "หรือไม่", "info", { title: "คิว " + row.queueNo, persist: true });
+    if (el) {
+      var p = document.createElement("p"); p.style.marginTop = "var(--space-2)";
+      p.innerHTML = ui.button({ label: "สร้าง Lead", variant: "secondary", size: "sm", href: JCRM.link("customer-360", { c: row.customerNo }) }) +
+        ' <span class="t-xs t-muted">เปิดข้อมูลลูกค้าเพื่อสร้าง Lead ช่องทาง Walk-in (หน้าร้าน) สถานะเริ่มต้นติดต่อแล้ว</span>';
+      var holder = el.querySelector("div"); if (holder) { holder.appendChild(p); }
+    }
+  }
+
+  JCRM.on("rc-open", function (mode) { openVisit(mode === "service" ? "service" : "queue"); });
+  JCRM.on("rc-branch", function (v) { JCRM.setBranch(v); });
+  JCRM.on("rc-mview", function (v) { readForm(); S.mview = v === "queue" ? "queue" : "form"; var g = document.querySelector(".rc-grid"); if (g) { g.setAttribute("data-mview", S.mview); } });
+  JCRM.on("rc-search", function () { readForm(); S.searched = true; rerender(); var s = document.getElementById("rc-search"); if (s) { s.focus(); } });
+  JCRM.on("rc-pick", function (no) { readForm(); S.customerNo = no; S.searched = false; rerender(); });
+  JCRM.on("rc-unpick", function () { readForm(); S.customerNo = null; rerender(); });
+  JCRM.on("rc-refresh", function () { readForm(); rerender(); });
+  JCRM.on("rc-new", function () {
+    readForm();
+    JCRM.session.set(DRAFT_KEY, JSON.stringify({ branch: S.branch, party_size: S.formValues.party_size, source: S.formValues.source || null, interest: S.formValues.interest || null }));
+    window.location.href = JCRM.link("quick-capture", { mode: "visit" });
+  });
+
+  /* รับคิว (visit.update scope ใดก็ได้ในสาขา · WAITING และยังไม่มีผู้รับ · ข้อ 4.1) */
+  JCRM.on("rc-claim", function (no) {
+    readForm();
+    var r = findRow(no); if (!r) { return; }
+    if (!JCRM.canClaimQueue(S.branch)) { JCRM.toast(T.reasonOutOfBranch, "warning"); return; }
+    if (r.status !== "WAITING" || r.receiver) { JCRM.toast("คิวนี้มีผู้รับแล้ว", "warning"); rerender(); return; }
+    r.status = "IN_SERVICE"; r.receiver = me(); r.serviceStartedAt = NOW;
+    rerender();
+    JCRM.toast("รับคิว " + no + " แล้ว (WAITING → IN_SERVICE · ผู้รับ = คุณ)", "success", { title: "prototype" });
+  });
+  JCRM.on("rc-sim-claim", function (no) {
+    var r = findRow(no), other = otherStaffFor(S.branch);
+    if (!r || !other) { return; }
+    r.status = "IN_SERVICE"; r.receiver = other.staffCode; r.serviceStartedAt = NOW;
+    JCRM.toast(other.displayName + " รับคิว " + no + " จากอีกเครื่องแล้ว · หน้าจอนี้ยังแสดงข้อมูลเดิมจนกว่าจะรีเฟรช", "info", { title: "prototype · จำลอง" });
+  });
+  JCRM.on("rc-sim-lock", function () {
+    var wrap = document.createElement("div");
+    wrap.innerHTML = ui.lockScreen() + ui.button({ label: "ปิดตัวอย่างหน้าล็อก (prototype)", variant: "secondary", attrs: "data-rc-unlock" }).replace('class="btn', 'class="rc-lock-close btn');
+    document.body.appendChild(wrap);
+    var b = wrap.querySelector("[data-rc-unlock]");
+    b.addEventListener("click", function () { wrap.remove(); });
+    b.focus();
+  });
+
+  /* บันทึกผล / แก้ผล (api.close_visit · ข้อ 4.2 · 19.3 ข้อ 3) */
+  JCRM.on("rc-record", function (no) {
+    readForm();
+    var r = findRow(no); if (!r) { return; }
+    var acc = JCRM.access("visit.update", rowCtx(r));
+    if (!acc.allowed) { JCRM.toast(r.status === "IN_SERVICE" ? "บันทึกผลได้เฉพาะคิวที่คุณรับ" : (acc.reason || T.rpcDenied), "warning"); return; }
+    if (r.status !== "IN_SERVICE" && r.status !== "COMPLETED") { JCRM.toast(T.reasonStatus, "warning"); return; }
+    var hasCustomer = r.identified;
+    var fields = [
+      { name: "outcome", label: "ผลการให้บริการ", type: "radio", required: true, requiredMessage: "เลือกผลการให้บริการ", value: r.outcome || "",
+        options: RECORD_OUTCOMES.map(function (c) { return { value: c, label: JCRM.label("visitOutcomes", c), help: OUTCOME_HELP[c] }; }),
+        validate: function (v) {
+          if (!hasCustomer && v === "PURCHASED") { return "ต้องระบุลูกค้าก่อนบันทึกว่าซื้อแล้ว"; }
+          if (!hasCustomer && v === "FOLLOW_UP") { return "ต้องระบุลูกค้าก่อนบันทึกนัดติดตาม"; }
+          return null;
+        } },
+      { name: "purchase_note", type: "static", label: "", html: '<p class="alert" role="note">ถ้าลูกค้ามีโอกาสขายที่เปิดอยู่ ระบบเสนอให้ปิดเป็นปิดการขาย (ไม่บังคับใน V1)</p>', visibleWhen: { field: "outcome", equals: "PURCHASED" } },
+      { name: "open_pipeline", type: "checkbox", label: "เปิดหน้าโอกาสการขายหลังบันทึก เพื่อปิดการขาย", visibleWhen: { field: "outcome", equals: "PURCHASED" } },
+      { name: "next_note", type: "static", label: "", html: '<p class="help">ตั้งการติดตามถัดไปของ Lead/โอกาสขายที่เปิดอยู่ของลูกค้า · นัดติดตาม = บังคับ · ยังไม่ซื้อ = บังคับเมื่อลูกค้ามีรายการเปิดอยู่</p>', visibleWhen: { field: "outcome", in: ["FOLLOW_UP", "NOT_YET"] } },
+      { name: "next_text", label: "การติดตามถัดไป", type: "text", piiWarn: true, maxLength: 200, requiredWhen: { field: "outcome", equals: "FOLLOW_UP" }, requiredMessage: "กรอกการติดตามถัดไป", visibleWhen: { field: "outcome", in: ["FOLLOW_UP", "NOT_YET"] } },
+      { name: "next_type", label: "ประเภท", type: "select", ref: "taskTypes", width: "half", requiredWhen: { field: "outcome", equals: "FOLLOW_UP" }, requiredMessage: "เลือกประเภท", visibleWhen: { field: "outcome", in: ["FOLLOW_UP", "NOT_YET"] } },
+      { name: "next_at", label: "วันเวลา", type: "datetime", width: "half", requiredWhen: { field: "outcome", equals: "FOLLOW_UP" }, requiredMessage: "เลือกวันเวลา", visibleWhen: { field: "outcome", in: ["FOLLOW_UP", "NOT_YET"] },
+        validate: function (v) { return fmt.compareIso(toIso(v), NOW) <= 0 ? "เลือกเวลาหลังจากตอนนี้" : null; } }
+    ];
+    if (hasCustomer) {
+      fields.push({ name: "lost_reason", label: "เหตุผลที่ไม่สำเร็จ", type: "select", ref: "lostReasons", requiredWhen: { field: "outcome", equals: "NOT_INTERESTED" }, requiredMessage: "เลือกเหตุผลที่ไม่สำเร็จ",
+        visibleWhen: { field: "outcome", equals: "NOT_INTERESTED" }, help: "ปิด Lead ที่เปิดจาก visit นี้เป็นไม่สำเร็จในทรานแซกชันเดียวกัน · ไม่มีเหตุผล = ระบบปฏิเสธ" });
+      fields.push({ name: "lost_note", label: "หมายเหตุ", type: "textarea", piiWarn: true, maxLength: 2000, rows: 2, requiredWhen: { field: "lost_reason", equals: "OTHER" }, requiredMessage: "กรอกหมายเหตุเมื่อเลือกอื่น ๆ", visibleWhen: { field: "outcome", equals: "NOT_INTERESTED" } });
+    } else {
+      fields.push({ name: "lost_none", type: "static", label: "", html: '<p class="help">คิวนี้ยังไม่ระบุลูกค้า จึงไม่มี Lead ที่ต้องปิด</p>', visibleWhen: { field: "outcome", equals: "NOT_INTERESTED" } });
+    }
+    JCRM.dialog({
+      title: (r.status === "COMPLETED" ? "แก้ผลการให้บริการ" : "บันทึกผลการให้บริการ") + " · คิว " + r.queueNo, size: "md",
+      intro: "<p class=\"t-sm\">" + esc(JCRM.label("interestTypes", r.interest) + " · เข้าคิว " + fmt.time(r.queuedAt) + (r.receiver ? " · ผู้รับ " + JCRM.staffName(r.receiver) : "")) + "</p>" +
+        (r.status === "COMPLETED" ? '<p class="help">แก้ผลได้ภายในวันธุรกิจเดียวกันเท่านั้น (เรียก api.close_visit ซ้ำ)</p>' : ""),
+      fields: fields, submitLabel: "บันทึกผล", submitVariant: "accent",
+      onSubmit: function (v) {
+        var wasOpen = isOpen(r);
+        r.status = "COMPLETED"; r.outcome = v.outcome; r.endedAt = NOW;
+        if (wasOpen) { S.delta[S.branch].openVisits -= 1; }
+        rerender();
+        var extra = "";
+        if (v.outcome === "NOT_INTERESTED" && hasCustomer) { extra = " · ระบบจริงปิด Lead ที่เปิดจาก visit นี้เป็นไม่สำเร็จ (" + JCRM.label("lostReasons", v.lost_reason) + ")"; }
+        if (v.next_text) { extra += " · ระบบจริงตั้งการติดตามถัดไป " + fmt.dateTime(toIso(v.next_at)); }
+        JCRM.toast("บันทึกผลคิว " + r.queueNo + " แล้ว (" + JCRM.label("visitOutcomes", v.outcome) + ")" + extra, "success", { title: "prototype" });
+        if (v.open_pipeline) {
+          var el = JCRM.toast("เปิดหน้าโอกาสการขายเพื่อปิดการขาย", "info", { persist: true });
+          var p = document.createElement("p"); p.style.marginTop = "var(--space-2)";
+          p.innerHTML = ui.button({ label: "ไปหน้าโอกาสการขาย", variant: "secondary", size: "sm", href: JCRM.link("pipeline", {}) });
+          if (el && el.querySelector("div")) { el.querySelector("div").appendChild(p); }
+        }
+        return true;
+      }
+    });
+  });
+
+  /* ออกก่อนรับบริการ (WAITING → LEFT · outcome LEFT_BEFORE_SERVICE) */
+  JCRM.on("rc-left", function (no) {
+    readForm();
+    var r = findRow(no); if (!r) { return; }
+    var acc = JCRM.access("visit.update", rowCtx(r));
+    if (!acc.allowed) { JCRM.toast(acc.reason || T.rpcDenied, "warning"); return; }
+    JCRM.confirm({ title: "ออกก่อนรับบริการ", message: "ยืนยันว่าลูกค้าคิว " + r.queueNo + " ออกไปก่อนรับบริการ?", confirmLabel: "บันทึกว่าออกก่อนรับบริการ", variant: "danger-outline",
+      onConfirm: function () {
+        if (r.status !== "WAITING") { JCRM.toast(T.reasonStatus, "warning"); return true; }
+        r.status = "LEFT"; r.outcome = "LEFT_BEFORE_SERVICE"; r.endedAt = NOW; S.delta[S.branch].openVisits -= 1;
+        rerender();
+        JCRM.toast("บันทึกคิว " + r.queueNo + " ว่าออกก่อนรับบริการแล้ว · ระบบจริง api.close_visit(…, 'LEFT_BEFORE_SERVICE', …)", "success", { title: "prototype" });
+        return true;
+      } });
+  });
+
+  /* ยกเลิก (สร้างผิด) — ผู้สร้างภายใน 15 นาที [รอยืนยัน] หรือ scope T/B (ข้อ 4.1) · ไม่นับในทุก KPI */
+  JCRM.on("rc-cancel", function (no) {
+    readForm();
+    var r = findRow(no); if (!r) { return; }
+    JCRM.dialog({ title: "ยกเลิกคิว " + r.queueNo, size: "sm",
+      fields: [
+        { name: "cancel_reason", label: "เหตุผลที่ยกเลิก", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 2 },
+        { name: "confirm_wrong", label: "รายการนี้สร้างผิด ไม่ใช่ลูกค้าจริง", type: "checkbox", required: true, requiredMessage: "ติ๊กยืนยันว่ารายการนี้สร้างผิด" }
+      ],
+      submitLabel: "ยกเลิกคิว", submitVariant: "danger",
+      onSubmit: function () {
+        var wasOpen = isOpen(r), d = S.delta[S.branch];
+        r.status = "CANCELLED"; r.endedAt = NOW;
+        d.walkIn -= 1; d.visits -= 1; if (wasOpen) { d.openVisits -= 1; } if (r.identified) { d.identified -= 1; }
+        rerender();
+        JCRM.toast("ยกเลิกคิว " + r.queueNo + " แล้ว · visit ที่ยกเลิกไม่นับในทุก KPI", "success", { title: "prototype" });
+        return true;
+      } });
+  });
+
+  /* ระบุลูกค้า / เปลี่ยนลูกค้า (UPDATE visits.customer_id · ลูกค้านอกขอบเขตผ่านหน้า 04 + api.link_customer_to_branch) */
+  JCRM.on("rc-identify", function (no) {
+    readForm();
+    var r = findRow(no); if (!r) { return; }
+    var acc = JCRM.access("visit.update", rowCtx(r));
+    if (!acc.allowed) { JCRM.toast(acc.reason || T.rpcDenied, "warning"); return; }
+    var qc = JCRM.link("quick-capture", { mode: "visit", visit: r.visitNo });
+    var body = '<div class="stack-2"><div class="rc-search-row"><label class="sr-only" for="rc-d-search">ค้นหาลูกค้า</label><input class="input" id="rc-d-search" type="search" autocomplete="off" placeholder="ค้นหาชื่อ / เบอร์โทร">' +
+      ui.button({ label: "ค้นหา", variant: "secondary", icon: "search", attrs: "data-rc-dsearch" }) + '</div><div id="rc-d-results" aria-live="polite"><p class="help">พิมพ์อย่างน้อย 3 ตัวอักษร · ค้นเฉพาะลูกค้าที่คุณอ่านได้</p></div>' +
+      '<div id="rc-d-selected"></div><p class="t-sm"><a href="' + esc(qc) + '">สร้างลูกค้าใหม่ / ตรวจลูกค้าจากสาขาอื่น</a>' + (r.visitNo ? "" : ' <span class="t-xs t-muted">(เลข visit ของคิวตัวอย่างไม่มีในข้อมูลตัวอย่าง จึงไม่ส่ง visit=)</span>') + "</p></div>";
+    var ctl = JCRM.dialog({ title: (r.identified ? "เปลี่ยนลูกค้าให้คิว " : "ระบุลูกค้าให้คิว ") + r.queueNo, size: "md", body: body,
+      fields: [{ name: "customer_no", type: "hidden", label: "ลูกค้า", required: true, requiredMessage: "เลือกลูกค้าจากผลการค้นหา" }],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        var c = readCustomer(v.customer_no);
+        if (!c) { return { errors: { customer_no: "เลือกลูกค้าจากผลการค้นหา" } }; }
+        if (!r.identified) { S.delta[S.branch].identified += 1; }
+        r.identified = true; r.customerNo = c.customerNo;
+        rerender();
+        JCRM.toast("ระบุลูกค้าให้คิว " + r.queueNo + " แล้ว · " + JCRM.customerName(c.customerNo), "success", { title: "prototype" });
+        offerLead(r);
+        return true;
+      } });
+    var panel = ctl.el;
+    var doSearch = function () {
+      var term = panel.querySelector("#rc-d-search").value.trim(), box = panel.querySelector("#rc-d-results");
+      if (term.length < 3) { box.innerHTML = '<p class="help">พิมพ์อย่างน้อย 3 ตัวอักษร · เบอร์โทรต้องพิมพ์ครบทั้งค่า</p>'; return; }
+      var found = JCRM.search(term).customers;
+      box.innerHTML = found.length ? '<div class="rc-results">' + found.slice(0, 5).map(function (c) {
+        var ph = JCRM.find(c.contacts, "type", "PHONE");
+        return '<button type="button" class="rc-result" data-rc-dpick="' + esc(c.customerNo) + '" aria-pressed="false">' + ui.avatar(c.displayName, "sm") + '<span class="rc-result__main"><span class="t-medium">' + esc(JCRM.customerName(c.customerNo)) +
+          ' <span class="code">' + esc(c.customerNo) + '</span></span><span class="t-xs t-muted">' + esc(ph ? ph.masked : DASH) + "</span></span>" + ui.customerBadges(c) + "</button>";
+      }).join("") + "</div>" : '<p class="help">ไม่พบผลลัพธ์ · ลองสร้างลูกค้าใหม่/ตรวจลูกค้าจากสาขาอื่น</p>';
+    };
+    panel.addEventListener("click", function (e) {
+      if (e.target.closest("[data-rc-dsearch]")) { e.preventDefault(); doSearch(); return; }
+      var pick = e.target.closest("[data-rc-dpick]");
+      if (pick) {
+        e.preventDefault();
+        panel.querySelector('[name="customer_no"]').value = pick.getAttribute("data-rc-dpick");
+        JCRM.$$("[data-rc-dpick]", panel).forEach(function (b) { b.setAttribute("aria-pressed", b === pick ? "true" : "false"); });
+        panel.querySelector("#rc-d-selected").innerHTML = '<p class="t-sm">เลือก: <span class="chip">' + esc(JCRM.customerName(pick.getAttribute("data-rc-dpick")) + " · " + pick.getAttribute("data-rc-dpick")) + "</span></p>";
+      }
+    });
+    panel.querySelector("#rc-d-search").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); doSearch(); } });
+  });
+
+  /* เปลี่ยนผู้รับคิว (visit.update scope T/B · C-DIALOG-ASSIGN · api.assign_owner('VISIT', …) · branch_id ของ visit เปลี่ยนไม่ได้) */
+  JCRM.on("rc-assign", function (no) {
+    readForm();
+    var r = findRow(no); if (!r) { return; }
+    if (!teamPlus() || !JCRM.can("visit.update", rowCtx(r))) { JCRM.toast(T.rpcDenied, "warning"); return; }
+    var candidates = D.staff.filter(function (s) {
+      return s.status === "ACTIVE" && s.staffCode !== r.receiver && s.assignments.some(function (a) { return a.branch === S.branch; }) && JCRM.can("visit.update", { branch: S.branch, owner: s.staffCode });
+    });
+    JCRM.dialog({ title: "เปลี่ยนผู้รับคิว " + r.queueNo, size: "md", intro: "<p class=\"t-sm\">ปัจจุบัน: " + esc(r.receiver ? JCRM.staffName(r.receiver) : "ยังไม่มีผู้รับ") + "</p>",
+      fields: [
+        { name: "to_staff", label: "ผู้รับคิวใหม่", type: "select", required: true, requiredMessage: "เลือกผู้รับคิวใหม่", options: candidates.map(function (s) { return { value: s.staffCode, label: s.displayName + " · " + JCRM.assignmentText(s, { branchNames: true }) }; }) },
+        { name: "reason", label: "เหตุผล", type: "select", required: true, requiredMessage: "เลือกเหตุผล", options: D.ownershipChangeReasons.filter(function (x) { return x.code !== "BRANCH_TRANSFER"; }).map(function (x) { return { value: x.code, label: x.labelTh }; }) },
+        { name: "note", label: "หมายเหตุ", type: "text", piiWarn: true, maxLength: 200 }
+      ],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        r.receiver = v.to_staff;
+        rerender();
+        JCRM.toast("เปลี่ยนผู้รับคิว " + r.queueNo + " เป็น " + JCRM.staffName(v.to_staff) + " แล้ว · ระบบจริง api.assign_owner('VISIT', …, " + v.reason + ")", "success", { title: "prototype" });
+        return true;
+      } });
+  });
+
+  /* ---------------------------------------------------------------------------
+     ตัวจัดการเหตุการณ์ของหน้า (ผูกครั้งเดียว)
+     ------------------------------------------------------------------------ */
+  var pageEl = document.getElementById("page");
+  pageEl.addEventListener("click", function (e) {
+    var btn = e.target.closest ? e.target.closest("[data-rc-menu]") : null;
+    if (!btn) { return; }
+    e.stopPropagation();
+    var host = btn.parentNode, open = host.querySelector("[data-jcrm-popover]");
+    JCRM.$$("[data-jcrm-popover]").forEach(function (p) { p.remove(); });
+    JCRM.$$("[data-rc-menu][aria-expanded=true]").forEach(function (b) { b.setAttribute("aria-expanded", "false"); });
+    if (open) { return; }
+    var r = findRow(btn.getAttribute("data-rc-menu")); if (!r) { return; }
+    host.insertAdjacentHTML("beforeend", menuHtml(r));
+    btn.setAttribute("aria-expanded", "true");
+    var first = host.querySelector(".menu-item"); if (first) { first.focus(); }
+  });
+  pageEl.addEventListener("change", function (e) {
+    var t = e.target;
+    if (t && t.id === "rc-show-closed") { readForm(); S.showClosed = t.checked; rerender(); return; }
+    if (t && t.closest && t.closest("#rc-form")) { readForm(); }
+  });
+  pageEl.addEventListener("input", function (e) { if (e.target && e.target.id === "rc-search") { S.searchTerm = e.target.value; } });
+  pageEl.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && e.target && e.target.id === "rc-search") { e.preventDefault(); readForm(); S.searched = true; rerender(); var s = document.getElementById("rc-search"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }
+  });
+  pageEl.addEventListener("submit", function (e) { if (e.target && e.target.id === "rc-form") { e.preventDefault(); } });
+
+  JCRM.page({ id: "reception", render: render });
+})();
+</script>
+</body>
+</html>

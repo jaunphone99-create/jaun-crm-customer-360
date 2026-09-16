@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDPA: ความยินยอม · คำขอเจ้าของข้อมูล · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 17 · PDPA — CANONICAL v2.2 ข้อ 4.8 · 5.8 · 8.1 · 10 · 11.1 · 11.2 · 13.7 · 13.14 · sitemap-screen-specs ข้อ 20 · ไม่มี hex */
+.pv-tabpanel { padding-top: var(--space-4); }
+.pv-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; font-size: var(--fs-sm); }
+.pv-dl dt { color: var(--text-secondary); }
+.pv-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.pv-search { display: flex; gap: var(--space-2); align-items: flex-end; flex-wrap: wrap; }
+.pv-search .field { flex: 0 1 280px; }
+.pv-steps { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pv-hold { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.pv-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+</style>
+</head>
+<body data-page="privacy" data-roles="BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+/* ============================================================================
+   หน้า 17 · PDPA: ความยินยอม · คำขอเจ้าของข้อมูล (privacy) · แท็บ คำขอเจ้าของข้อมูล · ความยินยอม · ระยะเวลาเก็บข้อมูล
+   ส่วนนี้เป็นการออกแบบระบบ ไม่ใช่คำแนะนำทางกฎหมาย · ข้อความและระยะเวลาทั้งหมดรอยืนยัน DPO (CANONICAL ข้อ 10)
+   แหล่ง: CANONICAL v2.2 ข้อ 4.8 (dsr_type · dsr_status · dsr_verification_method · consent_*) · 6.4 (ค่าปิดบัง) · 8.1 (dsr.create · dsr.manage 🔐 · customer.consent.manage · customer.anonymize 🔐)
+         10.2 · 10.3 · 10.4 · 11.1 (DSR_DUE_SOON · RETENTION_ANONYMIZE_UPCOMING) · 11.2 (pdpa.current_notice_version · dsr.anonymize_per_day) · 13.7 (ความยินยอมคุณสมชาย) · 13.14 (ไม่มี DSR)
+   ระบบจริง: api.list_dsr · api.create_dsr · api.update_dsr · api.build_dsr_package · api.anonymize_customer · api.record_consent · api.set_legal_hold
+   prototype: คำขอ ความยินยอม และ legal hold ที่สร้างในหน้านี้อยู่ในหน่วยความจำเท่านั้น · ไม่มีการเปลี่ยนข้อมูลลูกค้าจริง
+   ========================================================================= */
+(function () {
+  "use strict";
+  var D = JCRM.data, ui = JCRM.ui, fmt = JCRM.fmt, esc = JCRM.esc;
+  var DASH = fmt.DASH, NOW = D.meta.now;
+  var OPEN = ["RECEIVED", "VERIFIED", "IN_PROGRESS"];
+  var SIM_OTHER_BA = "__OTHER_BA__";
+  function settingValue(key) {
+    var row = D.settings.filter(function (s) { return s.key.split(" · ").indexOf(key) !== -1; })[0];
+    if (!row) { return null; }
+    var i = row.key.split(" · ").indexOf(key), raw = String(row.defaultValue).split(" · ")[i];
+    try { return JSON.parse(raw); } catch (e) { return raw; }
+  }
+  var NOTICE_VERSION = settingValue("pdpa.current_notice_version");
+  var ANON_PER_DAY = settingValue("dsr.anonymize_per_day");
+  /* ระยะเวลาเก็บ (ข้อ 10.3 · รอยืนยัน DPO) — data.js ไม่มีตารางนี้ จึงคัดจาก CANONICAL ข้อ 10.3 */
+  var RETENTION = [
+    ["ลูกค้าที่ไม่เคยซื้อและไม่มีกิจกรรม", "24 เดือนนับจาก last_activity_at", "anonymize (แจ้งผู้ดูแลข้อมูลธุรกิจล่วงหน้า 30 วัน) · ข้ามถ้า legal_hold"],
+    ["ลูกค้าที่เคยซื้อ", "10 ปีนับจากธุรกรรมล่าสุด", "anonymize · ข้ามถ้า legal_hold"],
+    ["Visit ที่ไม่ผูกลูกค้า", "เก็บไว้ (ไม่มี PII)", DASH],
+    ["audit.audit_logs", "5 ปี", "ลบโดย role audit_retention"],
+    ["audit.access_logs · audit.login_events", "1 ปี (ไม่ต่ำกว่า 90 วันตาม พ.ร.บ.คอมพิวเตอร์)", "ลบ"],
+    ["ไฟล์ export", "24 ชม.", "ลบไฟล์ · เก็บ metadata ตาม audit"],
+    ["backup", "PITR 7 วัน · dump 90 วัน", "หมดไปตามรอบ · ระบุในประกาศความเป็นส่วนตัว"]
+  ];
+
+  var dsrs = D.dataSubjectRequests.slice();          /* ข้อ 13.14: ไม่มี */
+  var consents = {};                                   /* { customerNo: [ประวัติ] } */
+  var holds = {};                                      /* { customerNo: { on, reason, by, at } } */
+  var anonymized = {};
+  var anonToday = 0;
+  var state = { consentQuery: "", consentResult: null, selectedDsr: null };
+  var drawerCtl = null;
+  Object.keys(D.customer360).forEach(function (no) {
+    consents[no] = (D.customer360[no].consents || []).map(function (c) {
+      return { purpose: c.purpose, status: c.status, channels: c.channels, noticeVersion: c.noticeVersion, capturedAt: c.capturedAt, capturedVia: c.capturedVia, capturedBy: null, evidence: null };
+    });
+  });
+
+  function me() { return JCRM.currentStaffCode(); }
+  function plusDays(iso, n) { return fmt.addDays(fmt.dayKey(iso), n) + iso.slice(10); }
+  function maskContact(v) {
+    var s = String(v || "").trim(), d = s.replace(/[\s-]/g, "");
+    if (/^0\d{9}$/.test(d)) { return d.slice(0, 3) + "-XXX-" + d.slice(6); }
+    if (/^0\d{8}$/.test(d)) { return d.slice(0, 2) + "-XXX-" + d.slice(5); }
+    if (/^[^\s@]+@[^\s@]+$/.test(s)) { return s.charAt(0).toLowerCase() + "***@" + s.split("@")[1].toLowerCase(); }
+    return s.replace(/^@/, "").slice(0, 2).toLowerCase() + "***";
+  }
+  function customerLabel(no) {
+    if (!no) { return DASH; }
+    if (anonymized[no]) { return "ลูกค้านิรนาม " + no; }
+    return JCRM.customerName(no) + " · " + no;
+  }
+  function dueOf(x) { return x.extendedUntil || x.dueAt; }
+  function dueBadge(x) {
+    if (OPEN.indexOf(x.status) === -1) { return ""; }
+    var due = dueOf(x);
+    if (fmt.compareIso(NOW, due) > 0) { return ui.badge("เกินกำหนด", "danger", "badge--square"); }
+    if (fmt.compareIso(plusDays(NOW, 7), due) >= 0) { return ui.badge("ใกล้ครบกำหนด", "warning", "badge--square"); }   /* 7 วันก่อน due_at = เงื่อนไข DSR_DUE_SOON (ข้อ 11.1) */
+    return "";
+  }
+  function verifiedByText(x) { return x.verifiedBy === SIM_OTHER_BA ? "ผู้ดูแลข้อมูลธุรกิจอีกคน (จำลอง · Q26)" : (x.verifiedBy ? JCRM.staffName(x.verifiedBy) : DASH); }
+  function manageReason() { var a = JCRM.access("dsr.manage"); return a.visible ? (a.allowed ? null : a.reason) : undefined; }
+
+  /* ----------------------------------------------------------- แท็บคำขอ */
+  function dsrPanel() {
+    var table = ui.table({
+      id: "pv-dsr", caption: "คำขอเจ้าของข้อมูล", rowKey: "requestNo", rowAction: "dsr-open",
+      columns: [
+        { key: "requestNo", label: "เลขคำขอ", format: "code" },
+        { key: "type", label: "ประเภท", render: function (x) { return ui.badge(JCRM.label("dsrType", x.type), "neutral", "badge--square"); } },
+        { key: "customerNo", label: "ลูกค้า", render: function (x) { return esc(customerLabel(x.customerNo)); } },
+        { key: "requesterName", label: "ผู้ยื่นคำขอ" },
+        { key: "contactMasked", label: "ช่องทางติดต่อผู้ยื่น", hide: "tablet" },
+        { key: "receivedAt", label: "รับเมื่อ", format: "dateTime" },
+        { key: "dueAt", label: "ครบกำหนด", render: function (x) { return esc(fmt.date(x.dueAt)) + (x.extendedUntil ? '<span class="cell-sub">ขยายถึง ' + esc(fmt.date(x.extendedUntil)) + "</span>" : "") + " " + dueBadge(x); } },
+        { key: "status", label: "สถานะ", format: "status:dsrStatus" },
+        { key: "receivedBy", label: "ผู้รับคำขอ", format: "staff", hide: "tablet" }
+      ],
+      rows: dsrs.slice().sort(function (a, b) { return -fmt.compareIso(a.receivedAt, b.receivedAt); }),
+      empty: { title: "ยังไม่มีคำขอของเจ้าของข้อมูล", text: "กดปุ่ม “+ รับคำขอ” ด้านบนเพื่อบันทึกคำขอ · พนักงานหน้าร้านรับคำขอจากเมนู ⋮ ของหน้าข้อมูลลูกค้า" },
+      footer: dsrs.length ? { shown: dsrs.length, total: dsrs.length, unit: "คำขอ" } : false
+    });
+    return '<div class="pv-tabpanel stack"><p class="t-sm t-muted">ดำเนินการภายใน 30 วันนับจากรับคำขอ (ขยายเวลาได้พร้อมเหตุผล) · ห้ามเก็บสำเนาบัตรประชาชน · ช่องทางผู้ยื่นเก็บแบบปิดบัง (ข้อ 10.4)</p>' +
+      '<div class="card card--flush">' + table + "</div></div>";
+  }
+
+  /* ----------------------------------------------------------- แท็บความยินยอม */
+  function currentConsents(no) {
+    var hist = consents[no] || [], cur = {};
+    hist.forEach(function (c) { var prev = cur[c.purpose]; if (!prev || fmt.compareIso(c.capturedAt, prev.capturedAt) >= 0) { cur[c.purpose] = c; } });
+    return D.consentPurposes.map(function (p) { return cur[p.code]; }).filter(Boolean);
+  }
+  function consentTable(list, withHistory) {
+    return ui.table({
+      id: withHistory ? "pv-consent-history" : "pv-consent-current", caption: withHistory ? "ประวัติความยินยอม" : "สถานะความยินยอมปัจจุบัน", compact: true,
+      columns: [
+        { key: "purpose", label: "วัตถุประสงค์", render: function (c) { return esc(JCRM.label("consentPurposes", c.purpose)); } },
+        { key: "status", label: "สถานะ", format: "status:consentStatus" },
+        { key: "channels", label: "ช่องทาง", render: function (c) { return esc(c.channels && c.channels.length ? c.channels.join(" · ") : DASH); } },
+        { key: "noticeVersion", label: "ฉบับประกาศ", render: function (c) { return esc(c.noticeVersion || DASH); } },
+        { key: "capturedAt", label: "บันทึกเมื่อ", render: function (c) { return esc(/T/.test(c.capturedAt) ? fmt.dateTime(c.capturedAt) : fmt.date(c.capturedAt)); } },
+        { key: "capturedVia", label: "วิธีได้รับ", render: function (c) { return esc(JCRM.label("consentCaptureVia", c.capturedVia)); } }
+      ].concat(withHistory ? [
+        { key: "capturedBy", label: "ผู้บันทึก", render: function (c) { return esc(c.capturedBy ? JCRM.staffName(c.capturedBy) : DASH); } },
+        { key: "evidence", label: "หลักฐาน", render: function (c) { return esc(c.evidence || DASH); } }
+      ] : []),
+      rows: withHistory ? (consents[state.consentResult] || []).slice().sort(function (a, b) { return -fmt.compareIso(a.capturedAt, b.capturedAt); }) : list,
+      empty: { title: "ยังไม่มีความยินยอม" }, footer: false
+    });
+  }
+  function consentResult() {
+    var no = state.consentResult;
+    if (!state.consentQuery) { return ""; }
+    if (!no) { return ui.state("notfound", { text: state.consentQuery }); }
+    var c = JCRM.customer(no);
+    var hold = holds[no];
+    var holdReason = manageReason();
+    var head = '<div class="row-between"><div class="row">' + ui.avatar(anonymized[no] ? "?" : c.displayName, "lg") + '<div><h3 class="card__title">' + esc(anonymized[no] ? "ลูกค้านิรนาม " + no : JCRM.customerName(no) + " · " + no) + "</h3>" +
+      (JCRM.can("customer.read", { customer: JCRM.customerCtx(c) }) ? '<a class="t-sm" href="' + esc(JCRM.link("customer-360", { c: no })) + '">เปิดข้อมูลลูกค้า</a>' : "") + "</div></div>" +
+      ui.permButton({ label: "บันทึกความยินยอม", variant: "secondary", action: "consent-record", id: no, permission: "customer.consent.manage", ctx: { customer: JCRM.customerCtx(c) } }) + "</div>";
+    var holdHtml = '<div class="pv-hold card card--raised"><div><p class="t-medium">Legal hold</p><p class="t-sm">' + (hold && hold.on ? ui.badge("อยู่ระหว่างระงับการลบตามกฎหมาย", "warning", "badge--square") + ' <span class="t-xs t-muted">' + esc(JCRM.staffName(hold.by) + " · " + fmt.dateTime(hold.at) + " · " + hold.reason) + "</span>" : DASH) + "</p></div>" +
+      (holdReason === undefined ? "" : ui.button({ label: hold && hold.on ? "ยกเลิก legal hold" : "ตั้ง legal hold", variant: "secondary", action: holdReason ? null : "hold-toggle", id: no, disabledReason: holdReason })) + "</div>";
+    var hasData = (consents[no] || []).length > 0;
+    return '<section class="card stack" aria-label="ความยินยอมของลูกค้า">' + head +
+      (hasData ? '<div><h4 class="section__title">สถานะปัจจุบัน</h4>' + consentTable(currentConsents(no), false) + "</div>" +
+        '<div><h4 class="section__title">ประวัติ (แก้ไขหรือลบไม่ได้)</h4>' + consentTable(null, true) + "</div>" :
+        ui.sampleNote({ text: "ไม่มีข้อมูลตัวอย่างความยินยอมของลูกค้ารายนี้" })) + holdHtml + "</section>";
+  }
+  function consentPanel() {
+    return '<div class="pv-tabpanel stack"><form class="pv-search" data-pv-consent-form role="search" aria-label="ค้นหาความยินยอมด้วยรหัสลูกค้า" novalidate>' +
+      '<div class="field"><label class="label" for="pv-cus">รหัสลูกค้า</label><input class="input" id="pv-cus" name="cus" type="text" autocomplete="off" placeholder="CUS-YYYY-NNNNNN (ตรงทั้งค่า)" value="' + esc(state.consentQuery) + '"><p class="error-text" id="pv-cus-error" hidden></p></div>' +
+      '<button type="submit" class="btn btn--primary">' + JCRM.icon("search") + "<span>ค้นหา</span></button></form>" +
+      '<p class="t-xs t-muted">ความยินยอมเป็นแบบ append-only (ถอน = แถวใหม่สถานะถอนแล้ว) · สถานะปัจจุบัน = แถวล่าสุดต่อวัตถุประสงค์ · หลักฐานไม่แสดงค่าเต็มของช่องทางติดต่อ · ฉบับประกาศความเป็นส่วนตัวปัจจุบัน ' + esc(NOTICE_VERSION || DASH) + " (เนื้อความประกาศ รอยืนยัน Q9)</p>" +
+      consentResult() + "</div>";
+  }
+
+  /* ----------------------------------------------------------- แท็บระยะเวลาเก็บ */
+  function retentionPanel() {
+    return '<div class="pv-tabpanel stack"><div class="row">' + ui.badge("รอยืนยัน DPO", "warning", "badge--square") + '<p class="t-sm t-muted">อ่านอย่างเดียว · ค่าคงที่จากเอกสาร (ยังไม่มี setting) · ข้อมูลตัวอย่างไม่มีรายการใกล้ครบระยะเก็บ · สรุปรายวันแจ้งผู้ดูแลข้อมูลธุรกิจด้วย RETENTION_ANONYMIZE_UPCOMING</p></div>' +
+      '<div class="card card--flush">' + ui.table({
+        id: "pv-retention", caption: "ระยะเวลาเก็บข้อมูล", rowKey: 0,
+        columns: [{ key: 0, label: "ข้อมูล" }, { key: 1, label: "เก็บ" }, { key: 2, label: "เมื่อครบ" }],
+        rows: RETENTION, footer: false
+      }) + "</div></div>";
+  }
+
+  /* ----------------------------------------------------------- render */
+  function render() {
+    var header = ui.pageHeader({
+      title: "PDPA: ความยินยอม · คำขอเจ้าของข้อมูล",
+      lead: "ดำเนินการคำขอของเจ้าของข้อมูล ดูและบันทึกความยินยอมแบบ append-only ตั้ง legal hold และดูระยะเวลาเก็บข้อมูล (ข้อ 10)",
+      meta: '<span class="chip">ฉบับประกาศความเป็นส่วนตัวปัจจุบัน ' + esc(NOTICE_VERSION || DASH) + "</span>",
+      actions: [{ label: "+ รับคำขอ", variant: "accent", action: "dsr-new", permission: "dsr.create" }]
+    });
+    var disclaimer = '<p class="state-bar section" role="note">ส่วนนี้เป็นการออกแบบระบบ ไม่ใช่คำแนะนำทางกฎหมาย · ข้อความและระยะเวลาทั้งหมด รอยืนยัน DPO</p>';
+    var mfa = JCRM.access("dsr.manage").visible && !JCRM.access("dsr.manage").allowed ? '<div class="section">' + ui.state("mfa") + "</div>" : "";
+    var tabs = ui.tabs({
+      id: "pv-tabs", label: "ส่วนของหน้า PDPA", param: "tab", selected: "dsr",
+      tabs: [
+        { id: "dsr", label: "คำขอเจ้าของข้อมูล", count: dsrs.filter(function (x) { return OPEN.indexOf(x.status) !== -1; }).length, html: dsrPanel() },
+        { id: "consent", label: "ความยินยอม", html: consentPanel() },
+        { id: "retention", label: "ระยะเวลาเก็บข้อมูล", html: retentionPanel() }
+      ]
+    });
+    document.getElementById("page").innerHTML = header + disclaimer + mfa + tabs;
+    refreshDrawer();
+  }
+  function rerender() { render(); JCRM.initTabs(document); }
+
+  /* ค้นหาความยินยอม */
+  document.addEventListener("submit", function (e) {
+    var form = e.target && e.target.closest ? e.target.closest("[data-pv-consent-form]") : null;
+    if (!form) { return; }
+    e.preventDefault();
+    var input = document.getElementById("pv-cus"), err = document.getElementById("pv-cus-error");
+    var v = String(input.value || "").trim().toUpperCase();
+    if (!/^CUS-\d{4}-\d{6}$/.test(v)) {
+      err.hidden = false; err.textContent = "รูปแบบรหัสลูกค้า CUS-YYYY-NNNNNN"; input.setAttribute("aria-invalid", "true"); input.focus(); return;
+    }
+    state.consentQuery = v;
+    var c = JCRM.customer(v);
+    state.consentResult = c && JCRM.can("customer.read", { customer: JCRM.customerCtx(c) }) ? v : null;
+    rerender();
+  });
+
+  /* ----------------------------------------------------------- รับคำขอ (ข้อ 10.4) */
+  JCRM.on("dsr-new", function () {
+    JCRM.dialog({
+      title: "รับคำขอของเจ้าของข้อมูล", size: "md",
+      intro: '<p class="t-sm">ครบกำหนด = รับเมื่อ + 30 วัน (' + esc(fmt.date(plusDays(NOW, 30))) + ") · ห้ามเก็บสำเนาบัตรประชาชน · ช่องทางติดต่อของผู้ยื่นเก็บแบบปิดบัง</p>",
+      fields: [
+        { name: "type", label: "ประเภทคำขอ", type: "select", required: true, ref: "dsrType", width: "half" },
+        { name: "customer", label: "รหัสลูกค้า", type: "text", width: "half", placeholder: "CUS-YYYY-NNNNNN (ไม่บังคับ)",
+          validate: function (v) {
+            var c = String(v).trim().toUpperCase();
+            if (!/^CUS-\d{4}-\d{6}$/.test(c)) { return "รูปแบบรหัสลูกค้า CUS-YYYY-NNNNNN"; }
+            var cu = JCRM.customer(c);
+            return cu && JCRM.can("customer.read", { customer: JCRM.customerCtx(cu) }) ? null : D.meta.texts.stateNotFound;
+          } },
+        { name: "requester", label: "ชื่อผู้ยื่นคำขอ", type: "text", required: true, maxLength: 120, width: "half" },
+        { name: "contact", label: "ช่องทางติดต่อผู้ยื่น", type: "text", required: true, maxLength: 120, width: "half", help: "เบอร์ อีเมล หรือ LINE ID · ระบบเก็บเฉพาะค่าปิดบัง" },
+        { name: "note", label: "หมายเหตุ", type: "textarea", piiWarn: true, maxLength: 1000, rows: 2 }
+      ],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        var no = "DSR-2026-" + String(1000000 + dsrs.length + 1).slice(1);   /* ข้อ 13.14: seed ไม่มี DSR จึงเริ่มเลข 1 */
+        var cno = String(v.customer || "").trim().toUpperCase() || null;
+        dsrs.push({ requestNo: no, type: v.type, customerNo: cno, requesterName: String(v.requester).trim(), contactMasked: maskContact(v.contact), status: "RECEIVED",
+          receivedAt: NOW, receivedBy: me(), dueAt: plusDays(NOW, 30), verificationMethod: null, verifiedBy: null, extendedUntil: null, extensionReason: null, completedAt: null, note: v.note || null, packageBuilt: false, withdrawn: [] });
+        state.selectedDsr = no;
+        JCRM.toast("รับคำขอ " + no + " แล้ว (prototype · ไม่มีการบันทึกจริง) · ระบบจริงเรียก api.create_dsr และบันทึก DSR_CREATED", "success");
+        rerender();
+        openDsr(no);
+        return true;
+      }
+    });
+  });
+
+  /* ----------------------------------------------------------- drawer คำขอ */
+  function dsrOf(no) { return JCRM.find(dsrs, "requestNo", no); }
+  function anonymizeReason(x) {
+    var r = manageReason();
+    var acc = JCRM.access("customer.anonymize");
+    if (!acc.visible) { return undefined; }
+    if (!acc.allowed) { return acc.reason; }
+    if (!x.customerNo) { return "ต้องระบุลูกค้าในคำขอก่อน"; }
+    if (anonymized[x.customerNo]) { return "ลูกค้ารายนี้ทำข้อมูลนิรนามแล้ว"; }
+    if (!x.verifiedBy || ["VERIFIED", "IN_PROGRESS"].indexOf(x.status) === -1) { return "ต้องยืนยันตัวตนผู้ยื่นคำขอก่อน"; }
+    if (x.verifiedBy === me()) { return "ผู้ยืนยันตัวตนต้องไม่ใช่ผู้ดำเนินการ"; }
+    if (holds[x.customerNo] && holds[x.customerNo].on) { return "ลูกค้าอยู่ระหว่างระงับการลบตามกฎหมาย"; }
+    if (anonToday >= ANON_PER_DAY) { return "ทำข้อมูลนิรนามครบจำนวนต่อวันแล้ว"; }
+    return r;
+  }
+  function dsrBody(x) {
+    var r = manageReason();
+    var open = OPEN.indexOf(x.status) !== -1;
+    function btn(label, variant, action, extraReason) {
+      if (r === undefined) { return ""; }
+      var why = r || extraReason || null;
+      return ui.button({ label: label, variant: variant, size: "sm", action: why ? null : action, id: x.requestNo, disabledReason: why });
+    }
+    var steps = [];
+    if (x.status === "RECEIVED") { steps.push(btn("ยืนยันตัวตน", "primary", "dsr-verify")); }
+    if (x.status === "VERIFIED") { steps.push(btn("เริ่มดำเนินการ", "primary", "dsr-start")); }
+    if (open) { steps.push(btn("ขยายเวลา", "secondary", "dsr-extend")); }
+    if (open && (x.type === "ACCESS" || x.type === "PORTABILITY")) {
+      steps.push(btn("สร้างชุดข้อมูล", "primary", "dsr-package", !x.customerNo ? "ต้องระบุลูกค้าในคำขอก่อน" : (["VERIFIED", "IN_PROGRESS"].indexOf(x.status) === -1 ? "ต้องยืนยันตัวตนผู้ยื่นคำขอก่อน" : null)));
+    }
+    if (open && (x.type === "WITHDRAW_CONSENT" || x.type === "OBJECTION")) {
+      var cr = JCRM.access("customer.consent.manage");
+      steps.push(btn("บันทึกถอนความยินยอม", "primary", "dsr-withdraw", !x.customerNo ? "ต้องระบุลูกค้าในคำขอก่อน" : (!cr.allowed ? cr.reason : null)));
+    }
+    if (open && x.type === "DELETION") {
+      var ar = anonymizeReason(x);
+      if (ar !== undefined) { steps.push(ui.button({ label: "ทำข้อมูลนิรนาม", variant: "danger", size: "sm", action: ar ? null : "dsr-anonymize", id: x.requestNo, disabledReason: ar })); }
+    }
+    if (open) {
+      steps.push(btn("ปิดคำขอว่าเสร็จสิ้น", "primary", "dsr-complete", x.status === "RECEIVED" ? "ต้องยืนยันตัวตนผู้ยื่นคำขอก่อน" : null));
+      steps.push(btn("ปฏิเสธคำขอ", "danger-outline", "dsr-reject"));
+    }
+    return '<div class="stack"><div class="row">' + ui.status("dsrStatus", x.status) + " " + dueBadge(x) + "</div>" +
+      '<dl class="pv-dl"><dt>ประเภท</dt><dd>' + esc(JCRM.label("dsrType", x.type)) + "</dd>" +
+      "<dt>ลูกค้า</dt><dd>" + esc(customerLabel(x.customerNo)) + "</dd>" +
+      "<dt>ผู้ยื่นคำขอ</dt><dd>" + esc(x.requesterName) + "</dd>" +
+      "<dt>ช่องทางติดต่อผู้ยื่น</dt><dd>" + esc(x.contactMasked) + "</dd>" +
+      "<dt>รับเมื่อ · ผู้รับคำขอ</dt><dd>" + esc(fmt.dateTime(x.receivedAt) + " · " + JCRM.staffName(x.receivedBy)) + "</dd>" +
+      "<dt>ครบกำหนด</dt><dd>" + esc(fmt.date(x.dueAt)) + (x.extendedUntil ? " · ขยายถึง " + esc(fmt.date(x.extendedUntil)) + '<span class="cell-sub">' + esc(x.extensionReason) + "</span>" : "") + "</dd>" +
+      "<dt>วิธียืนยันตัวตน</dt><dd>" + esc(x.verificationMethod ? JCRM.label("dsrVerificationMethod", x.verificationMethod) : DASH) + "</dd>" +
+      "<dt>ผู้ยืนยันตัวตน</dt><dd>" + esc(verifiedByText(x)) + "</dd>" +
+      "<dt>เสร็จสิ้นเมื่อ</dt><dd>" + esc(x.completedAt ? fmt.dateTime(x.completedAt) : DASH) + "</dd>" +
+      "<dt>หมายเหตุ</dt><dd>" + esc(x.note || DASH) + "</dd></dl>" +
+      (x.packageBuilt ? '<p class="alert alert--success" role="status">สร้างชุดข้อมูลแล้ว (prototype) · ไฟล์เก็บ 24 ชั่วโมงและไม่แนบอีเมล · วิธีดาวน์โหลดตาม api-spec (รอยืนยัน)</p>' : "") +
+      (x.withdrawn.length ? '<p class="t-sm">บันทึกถอนความยินยอมแล้ว: ' + esc(x.withdrawn.map(function (p) { return JCRM.label("consentPurposes", p); }).join(" · ")) + "</p>" : "") +
+      (steps.length ? '<section aria-label="ขั้นตอนดำเนินการ"><h3 class="section__title">ดำเนินการ</h3><div class="pv-steps">' + steps.join("") + "</div>" +
+        '<p class="help" style="margin-top:var(--space-2)">ลำดับ: รับคำขอ → ยืนยันตัวตน → เริ่มดำเนินการ → ดำเนินการตามประเภท → ปิดคำขอ · ทำข้อมูลนิรนามต้องให้ผู้ดูแลข้อมูลธุรกิจอีกคนยืนยันตัวตน (รอยืนยัน Q26)</p></section>' : "") + "</div>";
+  }
+  function openDsr(no) {
+    var x = dsrOf(no); if (!x) { return; }
+    state.selectedDsr = no;
+    if (drawerCtl && drawerCtl.el && drawerCtl.el.isConnected) { drawerCtl.close(); }
+    drawerCtl = JCRM.drawer({
+      title: "คำขอของเจ้าของข้อมูล", ref: x.requestNo, wide: true,
+      body: '<div data-pv-dsr-body>' + dsrBody(x) + "</div>",
+      footer: ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }),
+      onCancel: function () { drawerCtl = null; }
+    });
+  }
+  function refreshDrawer() {
+    if (!drawerCtl || !drawerCtl.el || !drawerCtl.el.isConnected) { drawerCtl = null; return; }
+    var x = dsrOf(state.selectedDsr), host = drawerCtl.el.querySelector("[data-pv-dsr-body]");
+    if (x && host) { host.innerHTML = dsrBody(x); }
+  }
+  JCRM.on("dsr-open", openDsr);
+
+  JCRM.on("dsr-verify", function (no) {
+    var x = dsrOf(no); if (!x) { return; }
+    JCRM.dialog({
+      title: "ยืนยันตัวตนผู้ยื่นคำขอ " + no, size: "md",
+      intro: '<p class="alert alert--warning" role="note">ห้ามเก็บสำเนาบัตรประชาชน</p>',
+      fields: [
+        { name: "method", label: "วิธียืนยันตัวตน", type: "radio", required: true, ref: "dsrVerificationMethod" },
+        { name: "simulate", label: "จำลองว่าผู้ยืนยันตัวตนเป็นผู้ดูแลข้อมูลธุรกิจอีกคน", type: "checkbox",
+          help: "prototype เท่านั้น · ข้อมูลตัวอย่างมีผู้ดูแลข้อมูลธุรกิจคนเดียว จึงใช้ช่องนี้สาธิตกติกา “ผู้ยืนยันตัวตนต้องไม่ใช่ผู้ทำข้อมูลนิรนาม” (Q26)" }
+      ],
+      submitLabel: "ยืนยัน", submitVariant: "primary",
+      onSubmit: function (v) {
+        x.status = "VERIFIED"; x.verificationMethod = v.method; x.verifiedBy = v.simulate ? SIM_OTHER_BA : me();
+        JCRM.toast("ยืนยันตัวตนแล้ว (prototype) · ระบบจริงเรียก api.update_dsr สถานะ VERIFIED", "success");
+        rerender();
+        return true;
+      }
+    });
+  });
+  JCRM.on("dsr-start", function (no) {
+    var x = dsrOf(no); if (!x) { return; }
+    JCRM.confirm({ title: "เริ่มดำเนินการคำขอ " + no + "?", message: "สถานะจะเป็น “กำลังดำเนินการ”", confirmLabel: "เริ่มดำเนินการ", variant: "primary",
+      onConfirm: function () { x.status = "IN_PROGRESS"; JCRM.toast("เริ่มดำเนินการแล้ว (prototype) · api.update_dsr IN_PROGRESS", "success"); rerender(); return true; } });
+  });
+  JCRM.on("dsr-extend", function (no) {
+    var x = dsrOf(no); if (!x) { return; }
+    JCRM.dialog({
+      title: "ขยายเวลาคำขอ " + no, size: "md",
+      intro: '<p class="t-sm">ครบกำหนดปัจจุบัน ' + esc(fmt.date(dueOf(x))) + "</p>",
+      fields: [
+        { name: "until", label: "ขยายถึง", type: "date", required: true, validate: function (v) { return v > fmt.dayKey(dueOf(x)) ? null : "วันที่ต้องหลังวันครบกำหนด"; } },
+        { name: "reason", label: "เหตุผล", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 2 }
+      ],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        x.extendedUntil = v.until + "T" + NOW.slice(11); x.extensionReason = v.reason;
+        JCRM.toast("ขยายเวลาแล้ว (prototype) · api.update_dsr ตั้ง extended_until", "success"); rerender(); return true;
+      }
+    });
+  });
+  JCRM.on("dsr-package", function (no) {
+    var x = dsrOf(no); if (!x) { return; }
+    JCRM.confirm({ title: "สร้างชุดข้อมูลของ " + customerLabel(x.customerNo) + "?", message: "ไฟล์ JSON/CSV ของลูกค้ารายเดียว (ไม่ผ่านเพดานการส่งออก) · ไฟล์เก็บ 24 ชั่วโมงและไม่แนบอีเมล", confirmLabel: "สร้างชุดข้อมูล", variant: "primary",
+      onConfirm: function () { x.packageBuilt = true; JCRM.toast("สร้างชุดข้อมูลแล้ว (prototype · ไม่มีไฟล์จริง) · ระบบจริงเรียก api.build_dsr_package", "success"); rerender(); return true; } });
+  });
+  JCRM.on("dsr-withdraw", function (no) {
+    var x = dsrOf(no); if (!x) { return; }
+    JCRM.dialog({
+      title: "บันทึกถอนความยินยอม · " + customerLabel(x.customerNo), size: "md",
+      intro: '<p class="t-sm">บันทึกเป็นแถวใหม่สถานะ “ถอนแล้ว” (append-only) และตัดออกจากคำขอส่งออกที่ยังไม่สร้างไฟล์ (ข้อ 10.4)</p>',
+      fields: [{ name: "purpose", label: "วัตถุประสงค์", type: "radio", required: true, ref: "consentPurposes" }],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        consents[x.customerNo] = consents[x.customerNo] || [];
+        consents[x.customerNo].push({ purpose: v.purpose, status: "WITHDRAWN", channels: null, noticeVersion: null, capturedAt: NOW, capturedVia: "STAFF_FORM", capturedBy: me(), evidence: "คำขอ " + x.requestNo });
+        x.withdrawn.push(v.purpose);
+        JCRM.toast("บันทึกถอนความยินยอมแล้ว (prototype) · ระบบจริงเรียก api.record_consent", "success"); rerender(); return true;
+      }
+    });
+  });
+  JCRM.on("dsr-anonymize", function (no) {
+    var x = dsrOf(no); if (!x || anonymizeReason(x)) { return; }
+    JCRM.dialog({
+      title: "ทำข้อมูลนิรนาม " + x.customerNo, size: "md",
+      intro: '<div class="alert alert--danger" role="note"><span aria-hidden="true">!</span><div><p class="alert__title">ผลกระทบ (ย้อนกลับไม่ได้)</p><ul>' +
+        "<li>ชื่อเป็น “ลูกค้านิรนาม " + esc(x.customerNo) + "”</li><li>ลบช่องทางติดต่อและที่อยู่</li><li>ล้างโน้ต สรุปการติดต่อ IMEI และข้อความที่อ้างลูกค้า</li><li>ตัวเลข KPI ย้อนหลังไม่เปลี่ยน</li></ul></div></div>",
+      typeToConfirm: x.customerNo, ack: true, submitLabel: "ทำข้อมูลนิรนาม", submitVariant: "danger",
+      onSubmit: function () {
+        anonymized[x.customerNo] = true; anonToday += 1;
+        JCRM.toast("ทำข้อมูลนิรนาม " + x.customerNo + " แล้ว (prototype · ไม่เปลี่ยนข้อมูลจริง) · ระบบจริงเรียก api.anonymize_customer และบันทึก CUSTOMER_ANONYMIZED", "success");
+        rerender(); return true;
+      }
+    });
+  });
+  JCRM.on("dsr-complete", function (no) {
+    var x = dsrOf(no); if (!x) { return; }
+    JCRM.confirm({ title: "ปิดคำขอ " + no + " ว่าเสร็จสิ้น?", message: "สถานะจะเป็น “เสร็จสิ้น” และบันทึกเวลาเสร็จสิ้น", confirmLabel: "ปิดคำขอว่าเสร็จสิ้น", variant: "primary",
+      onConfirm: function () { x.status = "COMPLETED"; x.completedAt = NOW; JCRM.toast("ปิดคำขอแล้ว (prototype) · api.update_dsr COMPLETED · DSR_COMPLETED", "success"); rerender(); return true; } });
+  });
+  JCRM.on("dsr-reject", function (no) {
+    var x = dsrOf(no); if (!x) { return; }
+    JCRM.dialog({
+      title: "ปฏิเสธคำขอ " + no, size: "md",
+      fields: [{ name: "reason", label: "เหตุผล", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 3 }],
+      submitLabel: "ปฏิเสธคำขอ", submitVariant: "danger-outline",
+      onSubmit: function (v) { x.status = "REJECTED"; x.note = (x.note ? x.note + " · " : "") + "เหตุผลที่ปฏิเสธ: " + v.reason; JCRM.toast("ปฏิเสธคำขอแล้ว (prototype) · api.update_dsr REJECTED", "success"); rerender(); return true; }
+    });
+  });
+
+  /* ----------------------------------------------------------- ความยินยอม · legal hold */
+  JCRM.on("consent-record", function (no) {
+    JCRM.dialog({
+      title: "บันทึกความยินยอม · " + customerLabel(no), size: "md",
+      intro: '<p class="t-sm">บันทึกเป็นแถวใหม่เสมอ (แก้ไขหรือลบไม่ได้) · ฉบับประกาศปัจจุบัน ' + esc(NOTICE_VERSION || DASH) + "</p>",
+      fields: [
+        { name: "purpose", label: "วัตถุประสงค์", type: "radio", required: true, ref: "consentPurposes" },
+        { name: "status", label: "สถานะ", type: "radio", required: true, inline: true, ref: "consentStatus" },
+        { name: "channels", label: "ช่องทาง", type: "checkboxes", inline: true, options: D.enums.consentChannels.map(function (c) { return { value: c, label: c }; }),
+          visibleWhen: { field: "purpose", equals: "MARKETING" }, validate: function (v, vals) { return vals.status === "GRANTED" && (!v || !v.length) ? "เลือกช่องทางอย่างน้อย 1 ช่องทาง" : null; } },
+        { name: "age", label: (JCRM.find(D.consentPurposes, "code", "MARKETING") || {}).extraCheckTh, type: "checkbox",
+          visibleWhen: { field: "purpose", equals: "MARKETING" }, validate: null },
+        { name: "via", label: "วิธีได้รับ", type: "select", required: true, ref: "consentCaptureVia", width: "half" },
+        { name: "evidence", label: "หลักฐาน", type: "textarea", required: true, piiWarn: true, maxLength: 1000, rows: 2, help: "ฉบับประกาศ + ช่องทาง + ข้อความหรือลิงก์ที่ส่ง · ไม่ใส่ค่าเต็มของช่องทางติดต่อ" }
+      ],
+      submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        if (v.purpose === "MARKETING" && v.status === "GRANTED" && !v.age) { return { errors: { age: "ต้องยืนยันอายุหรือความยินยอมของผู้ใช้อำนาจปกครอง" } }; }
+        if (v.purpose === "MARKETING" && v.status === "GRANTED" && (!v.channels || !v.channels.length)) { return { errors: { channels: "เลือกช่องทางอย่างน้อย 1 ช่องทาง" } }; }
+        consents[no] = consents[no] || [];
+        consents[no].push({ purpose: v.purpose, status: v.status, channels: v.purpose === "MARKETING" && v.status === "GRANTED" ? v.channels : null,
+          noticeVersion: v.purpose === "PRIVACY_NOTICE" ? NOTICE_VERSION : null, capturedAt: NOW, capturedVia: v.via, capturedBy: me(), evidence: v.evidence });
+        JCRM.toast("บันทึกความยินยอมแล้ว (prototype · ไม่มีการบันทึกจริง) · ระบบจริงเรียก api.record_consent และบันทึก CONSENT_RECORDED", "success");
+        rerender(); return true;
+      }
+    });
+  });
+  JCRM.on("hold-toggle", function (no) {
+    var on = !(holds[no] && holds[no].on);
+    JCRM.dialog({
+      title: (on ? "ตั้ง" : "ยกเลิก") + " legal hold · " + customerLabel(no), size: "md",
+      intro: '<p class="t-sm">' + (on ? "ลูกค้าที่ติด legal hold จะถูกข้ามจากการทำข้อมูลนิรนามทั้งตามคำขอและตามระยะเวลาเก็บ (ข้อ 10.3 · 10.4)" : "หลังยกเลิก ลูกค้ากลับเข้าเงื่อนไขการทำข้อมูลนิรนามตามปกติ") + "</p>",
+      fields: [{ name: "reason", label: "เหตุผล", type: "textarea", required: true, piiWarn: true, maxLength: 500, rows: 2 }],
+      submitLabel: on ? "ตั้ง legal hold" : "ยกเลิก legal hold", submitVariant: "primary",
+      onSubmit: function (v) {
+        holds[no] = { on: on, reason: v.reason, by: me(), at: NOW };
+        JCRM.toast((on ? "ตั้ง" : "ยกเลิก") + " legal hold แล้ว (prototype) · ระบบจริงเรียก api.set_legal_hold", "success");
+        rerender(); return true;
+      }
+    });
+  });
+
+  JCRM.page({ id: "privacy", render: render, branchPicker: false });
+})();
+</script>
+</body>
+</html>

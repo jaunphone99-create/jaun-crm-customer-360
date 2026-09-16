@@ -1,0 +1,490 @@
+--- /private/tmp/claude-501/-Users-jaunsuperpower-Desktop--------------------------JAUN-CRM---------/e5d40ccd-f971-4d88-8c86-89a02b7f6a4b/scratchpad/CANONICAL.v2.1.bak	2026-09-16 04:13:04
++++ docs/00-brief/CANONICAL.md	2026-09-16 04:14:46
+@@ -1,6 +1,6 @@
+ # CANONICAL — ข้อเท็จจริงกลางของโครงการ JAUN CRM · Customer 360
+ 
+-> **ฉบับ v2.1 · 16 ก.ย. 2569** — ปรับจาก v1 ตามผลตรวจแบบ adversarial 5 มุม (148 ข้อ) และตรวจความสอดคล้องภายใน v2 อีกรอบ (22 ข้อ)
++> **ฉบับ v2.2 · 16 ก.ย. 2569** — ปรับจาก v1 ตามผลตรวจแบบ adversarial 5 มุม (148 ข้อ) · ตรวจความสอดคล้องภายใน v2 (22 ข้อ) · และข้อตัดสินจากผู้สร้างรอบแรก (ข้อ 19)
+ >
+ > **กฎ:** ทุกเอกสาร ทุกไฟล์ SQL และทุกหน้าของ prototype ต้องใช้ค่าจากไฟล์นี้เท่านั้น
+ > ห้ามคิดตัวเลข ชื่อ รหัส หรือสูตรขึ้นเอง ถ้าต้องการค่าที่ไม่มีในนี้ ให้เขียนว่า **"รอยืนยัน"** อย่าเดา
+@@ -54,7 +54,7 @@
+ |---|---|
+ | การเก็บ | `timestamptz` ทั้งหมด |
+ | ขอบวันธุรกิจ | เที่ยงคืน **Asia/Bangkok** · คำนวณด้วย `(ts AT TIME ZONE 'Asia/Bangkok')::date` เสมอ **ห้ามพึ่ง session TimeZone** |
+-| นาฬิกาอ้างอิงของรายงาน | `app.clock()` = `app.settings['clock'].as_of` ถ้า `app.settings['env'] <> 'prod'` มิฉะนั้น `now()` — ใช้กับ KPI · คุณภาพข้อมูล · การแจ้งเตือน · การจัดกลุ่ม "วันนี้" · ป้าย "ลูกค้าใหม่" · งานตามเวลา |
++| นาฬิกาอ้างอิงของรายงาน | `app.clock()` = `coalesce(app.settings['clock'].as_of, now())` ถ้า `app.settings['env'] <> 'prod'` มิฉะนั้น `now()` — ใช้กับ KPI · คุณภาพข้อมูล · การแจ้งเตือน · การจัดกลุ่ม "วันนี้" · ป้าย "ลูกค้าใหม่" · งานตามเวลา |
+ | นาฬิกาของการตัดสินสิทธิ์ | `now()` เสมอ (เช่น แก้ interaction ภายใน 24 ชม. · `valid_from/valid_to` · อายุคำเชิญ) ห้ามใช้ `app.clock()` |
+ | ช่วง "N วันล่าสุด" | `[วันนี้ − (N−1) วัน 00:00, พรุ่งนี้ 00:00)` · ขอบบนใช้ `<` เสมอ |
+ | "วันนี้" | `[00:00, พรุ่งนี้ 00:00)` Asia/Bangkok |
+@@ -66,8 +66,8 @@
+ | หัวข้อ | กติกา |
+ |---|---|
+ | จำนวน | คั่นหลักพัน `3,125` |
+-| เงิน | การ์ด/ข้อความ `฿3,332,700` · ช่องตาราง `1,245,000` ใต้หัวคอลัมน์ "(บาท)" · เก็บ `numeric(12,2)` |
+-| อัตรา/สัดส่วน | 1 ตำแหน่งทศนิยมเสมอ `24.1%` `36.0%` |
++| เงิน | การ์ด/ข้อความ `฿3,332,700` · ช่องตาราง `1,245,000` ใต้หัวคอลัมน์ "(บาท)" · เก็บ `numeric(12,2)` · แสดงสตางค์ 2 ตำแหน่งเฉพาะเมื่อไม่ใช่จำนวนเต็ม (`฿28,900.50`) |
++| อัตรา/สัดส่วน | 1 ตำแหน่งทศนิยมเสมอ `24.1%` `36.0%` (รวมขั้นแรกของ funnel `100.0%`) |
+ | ส่วนต่างของอัตรา | **pp** 1 ตำแหน่ง `+2.1 pp` · คำนวณจากอัตราที่ยังไม่ปัดแล้วค่อยปัด |
+ | ส่วนต่างของจำนวน | % จำนวนเต็ม `+12%` · ค่าลบใช้เครื่องหมายลบ `−5%` `−0.4 pp` |
+ | วิธีปัด | half away from zero = `round(x::numeric, n)` ของ PostgreSQL · JS ห้ามใช้ `Math.round` บน float (ใช้ helper ปัดด้วยจำนวนเต็ม) |
+@@ -92,7 +92,7 @@
+ | `JPON` | branch (`online_team`) | ทีมออนไลน์ส่วนกลาง | ใต้ JAUNPHONE **[รอยืนยัน Q3]** · มีเพื่อให้รายการออนไลน์ที่ยังไม่มอบสาขามี `branch_id` เสมอ |
+ 
+ - `branch_type`: `store` · `online_team`
+-- ทีม `core.teams(code, name_th, branch_id NOT NULL)`: `JP1-SALES` ทีมขาย JAUNPHONE 1 · `JP2-SALES` · `JP3-SALES` · `JP4-SALES` · `JPON-ADMIN` ทีมแอดมินออนไลน์
++- ทีม `core.teams(code, name_th, branch_id NOT NULL)`: `JP1-SALES` ทีมขาย JAUNPHONE 1 · `JP2-SALES` ทีมขาย JAUNPHONE 2 · `JP3-SALES` ทีมขาย JAUNPHONE 3 · `JP4-SALES` ทีมขาย JAUNPHONE 4 · `JPON-ADMIN` ทีมแอดมินออนไลน์
+ - สมาชิกทีม: แหล่งเดียวคือ `core.team_members(team_id, staff_id, is_leader, valid_from, valid_to)` (ข้อ 7.1)
+ 
+ ---
+@@ -108,7 +108,7 @@
+ | **Visitor / Traffic** | จำนวน Visit ที่ `started_at` อยู่ในช่วง และ `status <> 'CANCELLED'` (นับครั้ง ไม่ใช่นับคน · `party_size` ใช้แสดงเท่านั้น) | |
+ | **Identified Visit** | Visit ที่ `customer_id IS NOT NULL` | |
+ | **ลูกค้า (Customer record)** | บุคคลที่ระบบรู้ตัวตน · สร้างได้ทางเดียวคือ `api.quick_capture` (ข้อ 6.2) | `crm.customers` |
+-| **กิจกรรมของลูกค้า (activity event)** | `visits.started_at` (ไม่นับ CANCELLED) · `interactions.occurred_at` · `leads.created_at` · `opportunities.created_at` · `opportunities.closed_at` · `transaction_refs.transacted_at` — รวมไว้ใน view ภายใน `analytics.customer_activity(customer_id, branch_id, occurred_at, kind)` | |
++| **กิจกรรมของลูกค้า (activity event)** | `visits.started_at` (ไม่นับ CANCELLED) · `interactions.occurred_at` (ไม่นับ interaction ที่ผูก visit `CANCELLED`) · `leads.created_at` · `opportunities.created_at` · `opportunities.closed_at` · `transaction_refs.transacted_at` — รวมไว้ใน view ภายใน `analytics.customer_activity(customer_id, branch_id, occurred_at, kind)` | |
+ | **Unique Customer** | จำนวน `customer_id` ไม่ซ้ำใน `analytics.customer_activity` ที่ `occurred_at` อยู่ในช่วง | |
+ | **ลูกค้าใหม่ / New Customer** | Unique Customer ที่ `first_seen_at` อยู่ในช่วง | |
+ | **ลูกค้าเก่า / Returning Customer** | Unique Customer ที่ `first_seen_at < p_start` | |
+@@ -138,7 +138,7 @@
+ 2. **Walk-in:** visit เกิดเมื่อพนักงานกด "รับเข้าคิว" หรือ "เริ่มให้บริการ" (ข้อ 4.1) แม้ยังไม่รู้ตัวตน · **visit สร้างได้ผ่าน `api.open_visit` หรือ `api.quick_capture` เท่านั้น** และปิดผ่าน `api.close_visit`
+ 3. **ออนไลน์/โทร (V1 บันทึกด้วยมือ):** การติดต่อ `INBOUND` บนช่องทางอื่นที่ไม่ใช่ WALK_IN → ถ้าลูกค้า (หรือผู้ติดต่อนิรนามคนเดิม) มี visit ช่องทางเดียวกันที่ยังไม่ปิดในวันธุรกิจเดียวกัน ให้แนบ interaction เข้า visit นั้น **มิฉะนั้นเปิด visit ใหม่** สถานะ `IN_SERVICE` · Phase 4 ทำอัตโนมัติจาก `crm.online_conversations` **[รอยืนยัน Q19 · Q20]**
+ 4. interaction `OUTBOUND` และ `INTERNAL` **ไม่สร้าง visit**
+-5. ตัวนับบน Customer 360: **ติดต่อ N ครั้ง** = `count(interactions WHERE direction <> 'INTERNAL')` · **เข้าร้าน N ครั้ง** = `count(visits WHERE channel_code='WALK_IN' AND status <> 'CANCELLED')` · **ซื้อ N ครั้ง** = จำนวนเหตุการณ์การซื้อ (ข้อ 3.1) · **ยอดซื้อสะสม** = Σ `won_amount` + Σ `transaction_refs.amount` ของ ref ที่นับเป็นการซื้อและไม่ได้ผูก opportunity WON · **เป็นลูกค้ามา N เดือน** = จำนวนเดือนเต็มนับตาม **วันที่** (Asia/Bangkok) จาก `first_seen_at` ถึง `app.clock()` (11 ม.ค. → 11 ก.ย. = 8)
++5. ตัวนับบน Customer 360: **ติดต่อ N ครั้ง** = `count(interactions WHERE direction <> 'INTERNAL')` ไม่นับ interaction ของ visit `CANCELLED` · **เข้าร้าน N ครั้ง** = `count(visits WHERE channel_code='WALK_IN' AND status <> 'CANCELLED')` · **ซื้อ N ครั้ง** = จำนวนเหตุการณ์การซื้อ (ข้อ 3.1) · **ยอดซื้อสะสม** = Σ `won_amount` + Σ `transaction_refs.amount` ของ ref ที่นับเป็นการซื้อและไม่ได้ผูก opportunity WON · **เป็นลูกค้ามา N เดือน** = จำนวนเดือนเต็มนับตาม **วันที่** (Asia/Bangkok) จาก `first_seen_at` ถึง `app.clock()` (11 ม.ค. → 11 ก.ย. = 8)
+ 
+ ### 3.4 สถานะวงจรชีวิตลูกค้า `lifecycle_stage` (คำนวณจากข้อเท็จจริง · ห้ามแก้ด้วยมือ)
+ 
+@@ -168,7 +168,7 @@
+ | 3 | ลูกค้าใหม่ | `first_seen_at` อยู่ใน "30 วันล่าสุด" (ข้อ 1.2 · ค่า `badge.new_customer_days`) | info |
+ | 4 | ยังไม่ได้ติดต่อ | มี lead เปิดอยู่สถานะ `NEW` | danger |
+ 
+-คำนำหน้า "คุณ" เติมที่ UI เท่านั้น ไม่เก็บในฐานข้อมูล · ไม่มีรูปถ่ายลูกค้าใน V1 (แสดง avatar ตัวอักษรย่อ)
++คำนำหน้า "คุณ" เติมที่ UI เท่านั้น ไม่เก็บในคอลัมน์ชื่อ (ข้อความสำเร็จรูป เช่น `notifications.body` มี "คุณ" ได้) · ไม่มีรูปถ่ายลูกค้าใน V1 (แสดง avatar ตัวอักษรย่อ)
+ 
+ ---
+ 
+@@ -220,7 +220,8 @@
+ 
+ - lead ที่สร้างระหว่าง visit ช่องทาง **WALK_IN หรือ PHONE** (คุยกับลูกค้าสด) เริ่มที่ `CONTACTED` และ `first_contacted_at = created_at`
+ - lead จากช่องทางข้อความ (LINE · FACEBOOK · INSTAGRAM · TIKTOK · WEBSITE) เริ่มที่ `NEW` · `NEW → CONTACTED` อัตโนมัติเมื่อมี interaction `OUTBOUND` แรกที่ `lead_id` = lead หรือ `customer_id` เดียวกันและ `occurred_at ≥ created_at`
+-- `QUALIFIED → CONTACTED` ย้อนได้ · สถานะเปิดใดก็ได้ → `CONVERTED` (สร้าง opportunity `INTERESTED`) หรือ `LOST`
++- สถานะเริ่มต้นของ lead ทุกรายการ (มีหรือไม่มี visit) ตัดสินจาก `ref.channels.is_live` ของ `leads.channel_code`
++- เปลี่ยน `NEW → CONTACTED` หรือ `NEW → QUALIFIED` ด้วยมือได้ (เช่น โทรจากเครื่องอื่นแล้วมาบันทึก) → `first_contacted_at = greatest(now(), created_at)` · `QUALIFIED → CONTACTED` ย้อนได้ · สถานะเปิดใดก็ได้ → `CONVERTED` (สร้าง opportunity `INTERESTED`) หรือ `LOST`
+ - **การแปลง lead ทำผ่าน `api.convert_lead` เท่านั้น** (สร้าง opportunity แล้วตั้ง `converted_opportunity_id` ในทรานแซกชันเดียว)
+ - ออกจาก `CONVERTED`/`LOST` ต้องมี `lead.reopen` → กลับเป็น `CONTACTED` และล้าง `closed_at` `lost_reason_code` `converted_opportunity_id`
+ - ค่าเริ่มต้นเมื่อสร้างจาก Quick Capture: `priority_code='NORMAL'` · `next_action='ติดต่อกลับลูกค้า'` · `next_action_type_code='CALL'` · `next_action_at = created_at + 30 นาที` **[รอยืนยัน]** · `owner_staff_id` = ผู้บันทึก
+@@ -235,7 +236,8 @@
+ | `WON` | ปิดการขาย | บังคับ `won_amount > 0` · `won_at` · `closed_at = won_at` |
+ | `LOST` | ไม่สำเร็จ | บังคับ `lost_reason_code` · `closed_at` |
+ 
+-- `INTERESTED → QUOTATION` อัตโนมัติเมื่อ quotation ของ opportunity เปลี่ยนเป็น `SENT` · `QUOTATION → FOLLOW_UP` ด้วยมือ · `FOLLOW_UP → QUOTATION` เมื่อมีใบใหม่ `SENT` · สถานะเปิดใดก็ได้ → `WON`/`LOST`
++- `INTERESTED → QUOTATION` อัตโนมัติเมื่อ quotation ของ opportunity เปลี่ยนเป็น `SENT` · `QUOTATION → FOLLOW_UP` ด้วยมือ · `FOLLOW_UP → QUOTATION` อัตโนมัติเมื่อมีใบใหม่ `SENT` · สถานะเปิดใดก็ได้ → `WON`/`LOST`
++- **การเลื่อนขั้นด้วยมือที่อนุญาต (รวมการลากการ์ด):** `QUOTATION → FOLLOW_UP` เท่านั้น · `INTERESTED → QUOTATION/FOLLOW_UP` ด้วยมือได้เฉพาะเมื่อมี quotation `sent_at IS NOT NULL` แล้ว · **ห้ามย้อนกลับเป็น `INTERESTED`** (D48)
+ - ออกจาก `WON`/`LOST` ต้องมี `opportunity.reopen` → กลับเป็น `FOLLOW_UP` และล้าง `won_at` `won_amount` `closed_at` `lost_reason_code`
+ - `origin_channel_code NOT NULL` ตั้งครั้งเดียวไม่เปลี่ยน = `channel_code` ของ lead ต้นทาง หรือช่องทางของ visit/interaction ที่สร้าง opportunity ตรง
+ - **next action เป็นแหล่งจริงของงานติดตาม:** ทุก lead/opportunity ที่เปิดอยู่มี task ที่ `is_next_action = true` หนึ่งใบ (unique partial index) ซึ่ง trigger สร้าง/อัปเดตให้ตรงกับ `next_action` `next_action_type_code` `next_action_at` `owner_staff_id` · ปิดรายการ → task นั้น `CANCELLED` ถ้ายังไม่ DONE · ปิด task แล้วรายการยังเปิด → UI บังคับตั้ง next action ใหม่
+@@ -310,14 +312,16 @@
+ | `crm.customer_record_status` | `ACTIVE` · `MERGED` (มี `merged_into_id`) · `ANONYMIZED` |
+ | `crm.interaction_direction` | `INBOUND` ลูกค้าติดต่อมา · `OUTBOUND` พนักงานติดต่อไป · `INTERNAL` บันทึกภายใน |
+ | `crm.contact_type` | `PHONE` · `LINE_ID` · `LINE_USER_ID` · `FACEBOOK` · `INSTAGRAM` · `TIKTOK` · `EMAIL` |
+-| `crm.consent_status` | `GRANTED` · `WITHDRAWN` |
+-| `crm.consent_capture_via` | `STAFF_FORM` · `LINK_SENT` · `LINE_OA` · `WEB` |
+-| `crm.customer_link_via` | `CREATED` · `VISIT` · `INTERACTION` · `LEAD` · `OPPORTUNITY` · `MANUAL_LINK` · `MERGE` |
+-| `crm.duplicate_status` | `PENDING` · `MERGED` · `NOT_DUPLICATE` |
++| `crm.consent_status` | `GRANTED` ยินยอม/แจ้งแล้ว · `WITHDRAWN` ถอนแล้ว |
++| `crm.consent_capture_via` | `STAFF_FORM` พนักงานบันทึก · `LINK_SENT` ส่งลิงก์ประกาศ · `LINE_OA` ผ่าน LINE OA · `WEB` ผ่านเว็บไซต์ |
++| `crm.customer_link_via` | `CREATED` · `VISIT` · `INTERACTION` · `LEAD` · `OPPORTUNITY` · `MANUAL_LINK` · `MERGE` (transaction ref ใช้ `MANUAL_LINK` ใน V1) |
++| `crm.duplicate_status` | `PENDING` รอตัดสิน · `MERGED` รวมแล้ว · `NOT_DUPLICATE` ยืนยันคนละคน |
+ | `crm.dsr_type` | `ACCESS` ขอดู/ขอสำเนา · `CORRECTION` ขอแก้ไข · `DELETION` ขอลบ · `OBJECTION` คัดค้าน · `WITHDRAW_CONSENT` ถอนความยินยอม · `PORTABILITY` ขอโอนย้าย |
+-| `crm.dsr_status` | `RECEIVED` · `VERIFIED` · `IN_PROGRESS` · `COMPLETED` · `REJECTED` |
++| `crm.dsr_status` | `RECEIVED` รับคำขอแล้ว · `VERIFIED` ยืนยันตัวตนแล้ว · `IN_PROGRESS` กำลังดำเนินการ · `COMPLETED` เสร็จสิ้น · `REJECTED` ปฏิเสธคำขอ |
+ | `crm.interest_level` | `HOT` สนใจมาก · `WARM` สนใจ · `COLD` สนใจน้อย **[รอยืนยัน]** |
+-| `audit.export_status` | `REQUESTED` · `APPROVED` · `REJECTED` · `GENERATED` · `DOWNLOADED` · `EXPIRED` |
++| `audit.export_status` | `REQUESTED` รออนุมัติ · `APPROVED` อนุมัติแล้ว · `REJECTED` ไม่อนุมัติ · `GENERATED` พร้อมดาวน์โหลด · `DOWNLOADED` ดาวน์โหลดแล้ว · `EXPIRED` หมดอายุ |
++| `core.role_grant_status` (text CHECK) | `REQUESTED` รออนุมัติ · `APPROVED` อนุมัติแล้ว · `REJECTED` ไม่อนุมัติ · ชนิดคำขอ `GRANT` มอบ · `REVOKE` ถอน |
++| `crm.dsr_verification_method` (text CHECK) | `IN_PERSON_ID_SIGHTED` เห็นบัตรต่อหน้า · `OTP_TO_REGISTERED_CONTACT` รหัส OTP ไปช่องทางที่ลงทะเบียน · `OTHER` อื่น ๆ |
+ | `audit.actor_type` | `STAFF` · `SYSTEM` · `INTEGRATION` |
+ 
+ ---
+@@ -517,7 +521,7 @@
+ 
+ - เบอร์ถูกต้อง = มือถือ 10 หลักขึ้นต้น `06` `08` `09` หรือเบอร์บ้าน 9 หลักขึ้นต้น `02`–`07` · นอกนั้นเก็บได้ `is_valid = false`
+ - เพิ่ม/แก้ช่องทางติดต่อ: `api.save_contact(...)` (DEFINER · ตรวจ `customer.update` บนลูกค้า · normalize + mask ในฐานข้อมูล)
+-- **ค่าเต็มได้ทางเดียว: `api.reveal_contact(p_contact_id, p_purpose)`** · `p_purpose` ∈ `VIEW` `CALL` `COPY` `LINE_OPEN` · ตรวจ `customer.pii.reveal` · เขียน `audit.access_logs` `CONTACT_REVEALED` ก่อนคืนค่า · ปุ่ม "โทร" "คัดลอก" "เปิด LINE" เรียกฟังก์ชันนี้ก่อนเสมอ · ห้ามฝังค่าเต็มใน HTML ตอนโหลดหน้า · ค่าที่เปิดซ่อนกลับอัตโนมัติใน 30 วินาที **[รอยืนยัน]**
++- **ค่าเต็มได้ทางเดียว: `api.reveal_contact(p_contact_id, p_purpose)`** · `p_purpose` ∈ `VIEW` `CALL` `COPY` `LINE_OPEN` · ตรวจ `customer.pii.reveal` · เขียน `audit.access_logs` `CONTACT_REVEALED` ก่อนคืนค่า · ปุ่ม "โทร" "คัดลอก" "เปิด LINE" เรียกฟังก์ชันนี้ก่อนเสมอ · ห้ามฝังค่าเต็มใน HTML ตอนโหลดหน้า · ค่าที่เปิดซ่อนกลับอัตโนมัติใน 30 วินาที **[รอยืนยัน]** · เกิน `security.reveal_per_hour` → **ปฏิเสธ** (คืนผลแบบไม่ raise เพื่อให้ตัวนับและการแจ้งเตือนถูก commit) + แจ้ง `REVEAL_LIMIT_EXCEEDED`
+ - ปุ่ม "โทร" สร้าง interaction `OUTBOUND` PHONE แบบร่างให้ยืนยันหลังวางสาย
+ - `crm.customer_addresses` ใช้กติกาคอลัมน์เดียวกัน (แสดงระดับจังหวัด/อำเภอ · ที่อยู่เต็มผ่าน reveal)
+ 
+@@ -580,13 +584,13 @@
+ ### 6.9 โน้ต — `crm.customer_notes`
+ 
+ `customer_id` · `interaction_id` (nullable) · `branch_id` · `body text` (≤ 2,000 ตัวอักษร) · `is_pinned` · `created_*` · `updated_*` · ไม่มี DELETE
+-อ่าน = อ่านลูกค้าได้ · สร้าง = `note.create` · แก้ = `note.update` (ของตนภายใน 24 ชม.) · ฟอร์มแสดงคำเตือน **"ห้ามบันทึกเลขบัตรประชาชน รายได้ ข้อมูลสุขภาพหรือศาสนา"**
++อ่าน = อ่านลูกค้าได้ · สร้าง = `note.create` · แก้ = `note.update` (ภายใน 24 ชม. หลังสร้างสำหรับทุกคน · BUSINESS_ADMIN แก้ของคนอื่นได้แต่ยังอยู่ในกรอบ 24 ชม.) · ฟอร์มแสดงคำเตือน **"ห้ามบันทึกเลขบัตรประชาชน รายได้ ข้อมูลสุขภาพหรือศาสนา"**
+ 
+ ### 6.10 คอลัมน์หลักของตารางกิจกรรม (ตรึง · FK ไป `ref` ลงท้าย `_code` · ทุกตารางมี `id` `organization_id` `created_at` `created_by` `updated_at` `updated_by`)
+ 
+ | ตาราง | คอลัมน์ |
+ |---|---|
+-| `crm.visits` | `visit_no` · `branch_id NOT NULL` · `team_id` · `channel_code` · `status` · `queue_no` (WALK_IN เท่านั้น) · `party_size int ≥ 1 DEFAULT 1` · `customer_id` (nullable) · `interest_code` (บังคับเมื่อ WALK_IN) · `source_code` · `started_at` (เข้าคิว/ข้อความแรก) · `service_started_at` · `ended_at` · `owner_staff_id` (ผู้รับ · ว่างได้เมื่อ WAITING) · `outcome_code` · `cancel_reason` · `closed_by_system boolean` |
++| `crm.visits` | `visit_no` · `branch_id NOT NULL` · `team_id` · `channel_code` · `status` · `queue_no` (WALK_IN เท่านั้น) · `party_size int ≥ 1 DEFAULT 1` · `customer_id` (nullable) · `interest_code` (บังคับเมื่อ WALK_IN) · `source_code` · `started_at` (เข้าคิว/ข้อความแรก) · `service_started_at` · `ended_at` · `owner_staff_id` (ผู้รับ · ว่างได้เมื่อ WAITING) · `outcome_code` · `cancel_reason` · `closed_by_system boolean` · `unrecorded_ack_by` · `unrecorded_ack_at` |
+ | `crm.interactions` | `customer_id` (nullable) · `visit_id` · `is_visit_root boolean` · `lead_id` · `opportunity_id` · `branch_id NOT NULL` · `channel_code` · `direction` · `interaction_type_code` · `occurred_at` · `owner_staff_id` · `summary text` |
+ | `crm.leads` | `lead_no` · `customer_id NOT NULL` · `branch_id NOT NULL` · `owner_staff_id` · `team_id` · `channel_code NOT NULL` · `source_code` · `campaign_id` · `visit_id` · `interest_code NOT NULL` · `product_type_code` · `product_model` · `interest_level` · `status` · `priority_code` · `next_action` · `next_action_type_code` · `next_action_at` · `first_contacted_at` · `closed_at` · `lost_reason_code` · `lost_note` · `converted_opportunity_id` |
+ | `crm.opportunities` | `opportunity_no` · `customer_id NOT NULL` · `lead_id` · `origin_channel_code NOT NULL` · `origin_visit_id` · `branch_id NOT NULL` · `owner_staff_id` · `team_id` · `interest_code` · `stage` · `priority_code` · `expected_amount` (= ผลรวม items · trigger) · `next_action` · `next_action_type_code` · `next_action_at` · `won_amount numeric(12,2)` · `won_at` · `closed_at` · `lost_reason_code` · `lost_note` |
+@@ -645,7 +649,9 @@
+ - ห้ามมอบ/ถอนบทบาทของตนเอง · ห้ามมอบ rank ≥ rank สูงสุดของตน (SYSTEM_ADMIN ไม่มี rank จึงมอบตรงไม่ได้เลย)
+ - ผู้อนุมัติคำขอ ≠ ผู้ยื่น ≠ ผู้รับ ≠ บัญชีที่ `employee_code` เดียวกับผู้รับ · หน้าอนุมัติแสดงผู้เชิญ วันที่เชิญ อีเมล รหัสพนักงาน
+ - บัญชีที่ SYSTEM_ADMIN เป็นผู้เชิญ รับบทบาทธุรกิจไม่ได้จนกว่า BUSINESS_ADMIN ยืนยันตัวตนกับ HR (`identity_verified_by`)
+-- บัญชี EXECUTIVE คนแรกสร้างด้วยสคริปต์ bootstrap เท่านั้น
++- สคริปต์ bootstrap สร้าง EXECUTIVE คนแรก + SYSTEM_ADMIN คนแรก + บัญชี INVITED ของ BUSINESS_ADMIN คนแรก (บทบาท BA มอบผ่านคำขอ RG ที่ EXECUTIVE อนุมัติ และ EXECUTIVE ยืนยันตัวตนกับ HR แทน BA)
++- การถอน `EXECUTIVE` `BUSINESS_ADMIN` `SYSTEM_ADMIN` ใช้คำขอ RG ชนิด `REVOKE` เส้นทางเดียวกับการมอบ
++- ลบคำขอไม่ได้ · ห้ามมอบบทบาทให้บัญชี `DISABLED`
+ - `core.role_permissions` แก้ได้เฉพาะผ่าน migration (ไม่มีหน้าจอ/RPC ใน V1) · trigger บันทึก `PERMISSION_CHANGED` · test ยืนยันว่า SYSTEM_ADMIN ไม่มีสิทธิ์ `customer.*` `visit.*` `lead.*` `opportunity.*`
+ - ทุกการมอบ/ถอน/ยื่น/ตัดสิน บันทึก `ROLE_GRANTED` `ROLE_REVOKED` `ROLE_GRANT_REQUESTED` `ROLE_GRANT_DECIDED`
+ 
+@@ -654,9 +660,9 @@
+ 1. ผู้จัดการ → "ผู้ใช้งานในสาขา" → "เพิ่มผู้ใช้งาน" → กรอก ชื่อ · ชื่อเล่น · อีเมล · เบอร์ · รหัสพนักงาน → เลือกบทบาท (เฉพาะที่มอบได้) → สาขาถูกล็อก
+ 2. Edge Function `invite-staff`: verify JWT → เรียก `api.can_assign_role(...)` **ด้วย JWT ของผู้เรียก** → สร้าง `core.staff_invitations` + `core.staff_profiles` (`INVITED`, `invite_expires_at = +24 ชม.`) **ก่อน** → `auth.admin.generateLink`/`inviteUserByEmail` (service_role)
+ 3. พนักงานกดลิงก์ → ตั้งรหัสผ่าน → ถ้ามีบทบาทที่ `requires_mfa` ลงทะเบียน TOTP → `api.activate_self()` (ตรวจ `email_confirmed_at` · ไม่หมดอายุคำเชิญ · มี verified factor เมื่อจำเป็น) → `ACTIVE`
+-4. ปิดใช้งาน (`api.disable_staff` + Edge Function `disable-staff`): `DISABLED` **ห้ามลบ** · ban ผู้ใช้ใน Supabase Auth + เพิกถอน session · ตั้ง `valid_to = now()` ทุก assignment · opportunity ที่เปิดอยู่ → owner = ผู้จัดการสาขาของรายการ (`ownership_changes` เหตุผล `STAFF_LEFT`) · lead/task ที่เปิดอยู่ → owner ว่าง + แจ้ง `LEAD_UNASSIGNED` **[รอยืนยัน]** · เปิดใช้งานใหม่ต้องมอบบทบาทใหม่
++4. ปิดใช้งาน (`api.disable_staff` + Edge Function `disable-staff`): `DISABLED` **ห้ามลบ** · ban ผู้ใช้ใน Supabase Auth + เพิกถอน session · ตั้ง `valid_to = now()` ทุก assignment · opportunity ที่เปิดอยู่ → owner = ผู้จัดการสาขาของรายการ (ถ้ามีหลายคนใช้ `staff_code` น้อยสุด **[รอยืนยัน]** · ถ้าไม่มีผู้จัดการ → ปฏิเสธการปิดใช้งานจนกว่าจะโอนงานด้วย `api.assign_owner`) (`ownership_changes` เหตุผล `STAFF_LEFT`) · lead/task ที่เปิดอยู่ → owner ว่าง + แจ้ง `LEAD_UNASSIGNED` **[รอยืนยัน]** · เปิดใช้งานใหม่ต้องมอบบทบาทใหม่
+ 5. ข้อจำกัด: BRANCH_MANAGER ปิดใช้งาน/แก้โปรไฟล์ได้เฉพาะบัญชีที่ assignment ที่ยังมีผล **ทุกแถว** เป็น STAFF/SUPERVISOR ในสาขาที่ตนเป็นผู้จัดการ (กรณีอื่นถอนได้เฉพาะ assignment ในสาขาตน) · BRANCH_MANAGER แก้อีเมลไม่ได้ · ห้ามปิดใช้งานตนเอง · ห้ามปิดใช้งาน EXECUTIVE หรือ BUSINESS_ADMIN ที่ ACTIVE คนสุดท้าย · SYSTEM_ADMIN แก้/ปิดใช้งานได้เฉพาะบัญชีที่ไม่มีบทบาทธุรกิจ
+-6. เปลี่ยนอีเมล/ตัวตนล็อกอิน/รีเซ็ต MFA ของบัญชีที่มีบทบาท ≥ SUPERVISOR: BUSINESS_ADMIN (EXECUTIVE สำหรับบัญชี BA/EX) ผ่าน Edge Function `reset-mfa` ที่ผู้กระทำต้อง aal2 · แจ้งอีเมลเดิมทุกครั้ง · บันทึก `MFA_RESET`
++6. เปลี่ยนอีเมล/ตัวตนล็อกอิน/รีเซ็ต MFA: บัญชี STAFF และบทบาท ≥ SUPERVISOR → BUSINESS_ADMIN · บัญชี BA/EX/SA → EXECUTIVE ผ่าน Edge Function `reset-mfa` ที่ผู้กระทำต้อง aal2 · แจ้งอีเมลเดิมทุกครั้ง · บันทึก `MFA_RESET`
+ 
+ ---
+ 
+@@ -677,7 +683,10 @@
+ - **ห้ามยุบ scope ข้ามสาขา:** คนที่เป็น `BRANCH_MANAGER`@JP1 และ `STAFF`@JP2 ได้ `B` ที่ JP1 และ `O` ที่ JP2 เท่านั้น
+ - **MFA:** assignment ของบทบาท `requires_mfa = true` ไม่ถูกนับเมื่อ `coalesce(auth.jwt()->>'aal','aal1') <> 'aal2'` · สิทธิ์ที่ติด 🔐 (`role_permissions.requires_aal2 = true`) ไม่ถูกนับเมื่อไม่ใช่ aal2 (สิทธิ์จากบทบาท STAFF ยังใช้ได้ที่ aal1)
+ - **ห้ามฝังบทบาท/สิทธิ์ลง JWT** ตรวจสดจากตารางเท่านั้น
+-- **สิทธิ์ `*.create` และ `transaction.link` ประเมินกับแถวแม่:** quotation → opportunity · task → opportunity/lead ถ้ามี มิฉะนั้นลูกค้า · opportunity → lead ถ้ามี มิฉะนั้นลูกค้า · lead/interaction/visit → ลูกค้า (ถ้ามี) · `branch_id` ของแถวลูกต้องเท่าแถวแม่ (ถ้าไม่มีแม่ต้องอยู่ในสาขาของ assignment)
++- `lead.assign` และ `task.assign` ที่ scope **T** รวมรายการที่ **owner ว่าง** ในสาขาที่ตนเป็นหัวหน้าทีมด้วย (เพื่อรับเรื่อง `LEAD_UNASSIGNED`)
++- scope ที่สูงกว่ารวมเงื่อนไขของ scope ที่ต่ำกว่าเสมอ (รวมแถวไม่มี owner ที่ตนสร้าง)
++- `transaction_refs` ไม่มี owner → scope O ประเมินจาก `created_by`
++- **สิทธิ์ `*.create` และ `transaction.link` ประเมินกับแถวแม่:** quotation → opportunity · task → opportunity/lead ถ้ามี มิฉะนั้นลูกค้า · opportunity → lead ถ้ามี มิฉะนั้นลูกค้า · lead/interaction/visit → ลูกค้า (ถ้ามี) · `branch_id` ของแถวลูกต้องเท่าแถวแม่ (ถ้าไม่มีแม่ต้องอยู่ในสาขาของ assignment **และ** ต้องเป็นสาขาที่ลูกค้าเชื่อมอยู่แล้วใน `customer_branches`/`first_branch_id` เว้นแต่ scope ORGANIZATION — กันการผูกลูกค้าข้ามสาขาโดยไม่ผ่าน `api.link_customer_to_branch`)
+ - **สิทธิ์ที่ขึ้นกับคอลัมน์ที่เปลี่ยน** (assign · close · reopen · ย้ายสาขา · แก้หลังส่ง) ตรวจใน trigger ข้อ 9.4.2
+ 
+ ### 8.1 ตารางสิทธิ์
+@@ -767,6 +776,7 @@
+ 
+ - ไม่มีบทบาทใดได้โน้ต สรุปการติดต่อ สรุปธุรกรรม หรือ IMEI
+ - เหตุผลที่ `ref.export_reasons.is_marketing = true` → กรองเฉพาะลูกค้าที่ยินยอม `MARKETING` **ทุกบทบาท**
++- ครั้ง/วัน นับทุกคำขอที่ยื่นในวันธุรกิจ (Asia/Bangkok) ต่อผู้ขอและ `requested_as_role` **รวมที่ถูกปฏิเสธ** · คำขอของ BRANCH_MANAGER ที่ไม่เกินเพดาน = `APPROVED` ทันที (`approved_by` NULL)
+ - CHECK `approved_by <> requested_by` · ผู้อนุมัติกำหนดตาม `requested_as_role` · แจ้งเตือนเฉพาะผู้อนุมัติที่มีสิทธิ์ตามกติกานี้ · ห้ามถือ MARKETING ร่วมกับ BUSINESS_ADMIN ในบัญชีเดียว **[รอยืนยัน Q22]**
+ - สร้างไฟล์: Edge Function `generate-export` (service_role) → `app.build_export_dataset(export_id)` ตรวจซ้ำ: สถานะ, ผู้ขอยัง ACTIVE และมี `customer.export`, ขอบเขตสาขาและตัวกรองที่บันทึกตอนยื่น, whitelist คอลัมน์
+ - ลายน้ำ `ส่งออกโดย {staff_code} · {export_no} · {วันเวลา}` ในแถวหัวไฟล์และชื่อไฟล์
+@@ -814,8 +824,9 @@
+ | Session | idle 2 ชม. · สูงสุด 12 ชม. (Pro ขึ้นไป · ตรวจตอน refresh จึงยาวได้อีก ≤ 15 นาที) |
+ | อุปกรณ์ counter ใช้ร่วมกัน | ลงทะเบียนใน `core.devices(device_id, branch_id, is_shared_counter)` โดย BRANCH_MANAGER · idle 10 นาที → ล็อกหน้าจอและต้องล็อกอินใหม่ |
+ | "จดจำฉันไว้" (mockup A01) | จำเฉพาะอีเมล/รหัสพนักงานในช่องกรอก · **ไม่ยืดอายุ session** · ไม่ติ๊กไว้ก่อน · ซ่อนบนอุปกรณ์ counter |
++| ลิงก์อีเมล | Supabase ใช้อายุ OTP/ลิงก์ค่าเดียว → ตั้ง 3600 วินาที · คำเชิญอายุ 24 ชม. ตาม `staff_profiles.invite_expires_at` โดย `invite-staff` ออกลิงก์ใหม่ได้ภายในกรอบนี้ |
+ | ลืมรหัสผ่าน | กรอกอีเมลหรือ `ST-NNNN` → Edge Function `password-reset` ส่งลิงก์ (อายุ 1 ชม.) ไปอีเมลที่ลงทะเบียน เฉพาะบัญชี ACTIVE · ตอบข้อความเดียวกันเสมอ · เพิกถอน session ทั้งหมดหลังตั้งรหัสใหม่ |
+-| Logout | ล้าง Cache Storage · IndexedDB · sessionStorage · localStorage (ยกเว้น `device_id`) |
++| Logout | ล้าง Cache Storage · IndexedDB · sessionStorage · localStorage (ยกเว้น `device_id` และค่าที่ "จดจำ" `login_id`) |
+ | PWA | service worker **ห้าม** cache route ที่ต้องล็อกอิน และห้าม cache `/rest/v1` `/rpc` `/auth` · response ข้อมูลลูกค้า `Cache-Control: no-store` |
+ | Cookie | HttpOnly · Secure · SameSite=Lax · CSP แบบ strict |
+ | บันทึก | เหตุการณ์ล็อกอินทั้งหมด (password · SSO · MFA · refresh · lockout) อยู่ที่ `audit.login_events` แหล่งเดียว · `ip`/`device_id` เป็นข้อมูลประกอบ ห้ามใช้ตัดสินสิทธิ์ |
+@@ -839,6 +850,8 @@
+ | `app.can_access_record(p_permission, p_branch_id, p_owner_staff_id, p_created_by)` | ตัดสินแถวเดียว **ใช้ใน trigger และ RPC เท่านั้น ห้ามใช้ใน policy** |
+ | `app.can_access_customer(p_permission, p_customer_id)` | ตัดสินลูกค้ารายเดียว **ใช้ใน trigger และ RPC เท่านั้น** |
+ | `app.staff_has_branch_assignment(p_staff_id, p_branch_id)` | boolean · ใช้ใน trigger/RPC เท่านั้น |
++| `app.team_scope_pairs(p_permission text)` | `TABLE(branch_id uuid, staff_id uuid)` คู่ (สาขา, สมาชิกทีม) ที่ผู้ใช้เป็นหัวหน้าในสาขานั้นและสิทธิ์นี้เป็น scope TEAM · policy ใช้ `(branch_id, owner_staff_id) IN (SELECT … FROM app.team_scope_pairs(p))` แทนการเทียบสองเงื่อนไขแยกกัน |
++| `app.current_organization_id()` | องค์กรของผู้ใช้ (ใช้เป็น DEFAULT ของ `organization_id`) |
+ 
+ ### 9.4 รูปแบบ RLS มาตรฐาน (A30)
+ 
+@@ -891,12 +904,12 @@
+ 
+ #### 9.4.2 สิทธิ์ที่ขึ้นกับการเปลี่ยนแปลง — `app.enforce_row_transition()` (BEFORE UPDATE · SECURITY INVOKER)
+ 
+-ติดทุกตาราง `customers` `visits` `interactions` `leads` `opportunities` `quotations` `tasks` · ข้ามเมื่อ `current_user <> 'authenticated'` (service_role/งานระบบ) · mapping คอลัมน์→สิทธิ์ฉบับเต็มอยู่ใน `docs/04-security/rls-spec.md` และมี test ทุกแถว
++ติดทุกตาราง `customers` `visits` `interactions` `leads` `opportunities` `quotations` `tasks` ทั้ง **BEFORE INSERT และ BEFORE UPDATE** (INSERT ตรวจสถานะเริ่มต้นที่อนุญาตและ owner ที่ไม่ใช่ตนต้องมี `*.assign`) · ลำดับ BEFORE trigger: `trg_05_running_number` → `trg_10_enforce_transition` → `trg_20_guard_text` → `trg_90_stamp_row` · ข้ามเมื่อ `current_user <> 'authenticated'` (service_role/งานระบบ) · mapping คอลัมน์→สิทธิ์ฉบับเต็มอยู่ใน `docs/04-security/rls-spec.md` และมี test ทุกแถว
+ 
+ | การเปลี่ยน | ต้องมี |
+ |---|---|
+ | visit `WAITING → IN_SERVICE` ที่ owner เดิมว่างและ owner ใหม่ = ผู้กด | ข้อ 4.1 เท่านั้น (ไม่ต้องมี assign) |
+-| `owner_staff_id` หรือ `team_id` เปลี่ยน | lead/opportunity/task ใช้ `*.assign` · ลูกค้าใช้ `customer.assign` · visit ใช้ `visit.update` scope T/B · interaction/quotation **เปลี่ยน owner ไม่ได้** · owner ใหม่ต้องมี assignment ในสาขาของแถว (`app.staff_has_branch_assignment`) · บันทึก `ownership_changes` |
++| `owner_staff_id` หรือ `team_id` เปลี่ยน (**ทำผ่าน `api.assign_owner` เท่านั้น** เพื่อส่งเหตุผล · คอลัมน์ owner ไม่อยู่ใน column grant ของ UPDATE ยกเว้นการรับคิวของ visit) | lead/opportunity/task ใช้ `*.assign` · ลูกค้าใช้ `customer.assign` · visit ใช้ `visit.update` scope T/B · interaction/quotation **เปลี่ยน owner ไม่ได้** · owner ใหม่ต้องมี assignment ในสาขาของแถว (`app.staff_has_branch_assignment`) · บันทึก `ownership_changes` |
+ | `branch_id` เปลี่ยน (lead/opportunity/task เท่านั้น · visit/interaction เปลี่ยนไม่ได้) | `*.assign` ทั้งสาขาต้นทางและปลายทาง · บันทึก `ownership_changes` เหตุผล `BRANCH_TRANSFER` |
+ | stage/status → `WON`/`LOST` | `opportunity.close` (lead ใช้ `lead.update`) |
+ | ออกจาก `WON`/`LOST`/`CONVERTED` | `opportunity.reopen` / `lead.reopen` |
+@@ -911,8 +924,10 @@
+ 
+ คอลัมน์: `id bigint identity` · `occurred_at` · `organization_id` · `actor_type` · `actor_staff_id` · `actor_staff_code` · `actor_label` (เช่น `SYSTEM:close_stale_visits`) · `actor_roles text[]` · `aal` · `action` · `entity_type` · `entity_id` · `entity_ref` · `branch_id` · `before jsonb` · `after jsonb` · `changed_fields text[]` · `reason` · `ip` · `user_agent` · `device_id` · `request_id`
+ 
++- `before`/`after` = **ภาพทั้งแถว** (ปิดบัง PII) · `changed_fields` = คอลัมน์ที่เปลี่ยน · `entity_id` เป็น `text` · `entity_type` ∈ `CUSTOMER` `CONTACT` `ADDRESS` `NOTE` `CONSENT` `VISIT` `INTERACTION` `LEAD` `OPPORTUNITY` `QUOTATION` `TASK` `TRANSACTION_REF` `STAFF` `ROLE_ASSIGNMENT` `ROLE_GRANT_REQUEST` `TEAM` `EXPORT` `DSR` `SETTING` `REF` `DUPLICATE_DECISION`
++- เมื่อ Edge Function เขียนด้วย service_role: เรียก `api.svc_*` ซึ่งตั้ง `set_config('app.actor_staff_id', <sub จาก JWT ที่ verify แล้ว>, true)` และ trigger ใช้ค่านี้เมื่อ `auth.role() = 'service_role'`
+ - trigger `audit.log_row_change()` (SECURITY DEFINER) ติด **INSERT/UPDATE/DELETE** บนตารางใน `crm` `core` `ref` **ยกเว้น** `crm.notifications` · `crm.lead_status_history` · `crm.opportunity_stage_history` · `crm.ownership_changes` · `crm.customer_branches`
+-- ไม่บันทึกเมื่อคอลัมน์ที่เปลี่ยนมีแค่ `updated_at` `updated_by` `last_activity_at` `lifecycle_stage` `first_seen_at` `note_summary`
++- ไม่บันทึกเมื่อคอลัมน์ที่เปลี่ยนมีแค่ `updated_at` `updated_by` `last_activity_at` `last_channel_code` `last_branch_id` `has_open_followup` `has_new_lead` `lifecycle_stage` `first_seen_at` `note_summary`
+ - **คอลัมน์ที่ data dictionary ติดป้าย `pii` บันทึกเป็นค่าปิดบัง + hash** `{"masked":"081-XXX-1234","sha256":"…"}` ไม่เก็บค่าเต็ม · การกู้ข้อมูลใช้ PITR ไม่ใช้ audit · `crm.customer_merges.snapshot` ใช้กติกาเดียวกัน
+ - `actor_type`: `STAFF` จาก `app.current_staff_id()` · `SYSTEM` งานตามเวลา · `INTEGRATION` · `aal` จาก JWT
+ - `ip` `user_agent` `device_id` `request_id` อ่านจาก `current_setting('request.headers', true)::jsonb` คีย์ `x-client-ip` `x-client-ua` `x-device-id` `x-request-id` ที่ Next.js ส่งต่อ (ถือเป็นค่า "ที่รายงาน" ไม่ใช่หลักฐาน)
+@@ -955,13 +970,23 @@
+ | `api.list_staff(...)` · `api.update_staff(...)` | DEFINER | STABLE / VOLATILE | `user.read` / `user.update` |
+ | `api.save_team(...)` · `api.set_team_member(...)` | DEFINER | VOLATILE | `team.manage` |
+ | `api.update_setting(p_key, p_value)` | DEFINER | VOLATILE | `settings.business` / `settings.system` ตาม `editable_by` |
++| `api.get_my_access()` | DEFINER | STABLE | ผู้ใช้ที่เข้าสู่ระบบ · คืนโปรไฟล์ของตน บทบาท/สาขา `(permission_code, scope, branch_id, requires_aal2)` `requires_mfa` และ aal ปัจจุบัน (ใช้สร้างเมนูและซ่อนปุ่ม) |
++| `api.assign_owner(p_entity_type, p_entity_id, p_to_staff_id, p_reason_code, p_note, p_to_branch_id)` | DEFINER | VOLATILE | `*.assign` / `customer.assign` ตามข้อ 9.4.2 |
++| `api.acknowledge_unrecorded_visit(p_visit_id)` | DEFINER | VOLATILE | `visit.update` (ตั้ง `visits.unrecorded_ack_by/_at`) |
++| `api.list_export_requests(...)` · `api.list_role_grant_requests(...)` · `api.get_settings()` · `api.list_integration_logs(...)` · `api.list_dsr(...)` | DEFINER | STABLE | `customer.export`/`export.approve` · `role.request`/`role.decide`/`user.read` · `settings.*` · `integration.manage` · `dsr.manage` |
++| `api.update_dsr(p_dsr_id, p_status, p jsonb)` | DEFINER | VOLATILE | `dsr.manage` 🔐 |
++| `api.record_report_export(p_code, p_params)` | DEFINER | VOLATILE | `report.export` · เขียน `REPORT_EXPORTED` |
++| `api.register_device(p_device_id, p_branch_id, p_is_shared_counter)` | DEFINER | VOLATILE | `user.update` scope B ของสาขานั้น |
++| `api.reveal_address(p_address_id, p_purpose)` | DEFINER | VOLATILE | `customer.pii.reveal` |
+ 
++**RPC สำหรับ Edge Function เท่านั้น (schema `api` · ชื่อขึ้นต้น `svc_` · GRANT EXECUTE ให้ `service_role` เท่านั้น · ตรวจ `auth.role() = 'service_role'` บรรทัดแรก):** `api.svc_build_export_dataset(p_export_id)` · `api.svc_mark_export_generated(p_export_id, p_file_path)` · `api.svc_prepare_invite(...)` · `api.svc_finalize_disable(...)` · `api.svc_resolve_staff_code(p_staff_code)` (คืน user_id ภายในฟังก์ชัน Edge เท่านั้น ห้ามส่งอีเมลออก) · `api.svc_reset_mfa_authorize(...)` · `api.svc_expired_export_files()`
++
+ **ภายใน (schema `app` · ไม่ GRANT ให้ authenticated นอกจาก helper ข้อ 9.3)**
+ trigger: `audit.log_row_change` · `audit.deny_change` · `app.trg_assign_running_number` · `app.trg_write_status_history` · `app.trg_write_ownership_change` · `app.trg_link_customer_branch` · `app.trg_touch_customer_activity` · `app.trg_refresh_lifecycle` · `app.trg_sync_next_action_task` · `app.trg_emit_notification` · `app.enforce_row_transition` (INVOKER) · `app.trg_guard_restricted_text`
+ งานระบบ (เรียกโดย cron ด้วย service_role): `app.job_close_stale_visits(p_as_of)` · `app.job_notifications(p_as_of)` · `app.job_expire_quotations(p_as_of)` · `app.job_retention(p_as_of)` · `app.job_expire_exports(p_as_of)`
+ อื่น ๆ: `app.refresh_customer_lifecycle` · `app.build_export_dataset` · `app.rate_limit_hit`
+ 
+-migration ที่เรียก `cron.schedule` แยกไฟล์ `supabase/migrations/*_cron.sql` (PGlite runner ข้าม) · เวลา cron เป็น UTC (00:05 Asia/Bangkok = `5 17 * * *`)
++migration ที่เรียก `cron.schedule` แยกไฟล์ `supabase/migrations/*_cron.sql` (PGlite runner ข้าม) · pg_cron รันในฐานข้อมูลในฐานะ `postgres` · ตารางเวลา (Asia/Bangkok → cron UTC): `job_close_stale_visits` 00:05 (`5 17 * * *`) · `job_expire_quotations` 00:10 (`10 17 * * *`) · `job_retention` 02:00 (`0 19 * * *`) · `job_expire_exports` ทุกชั่วโมงนาทีที่ 15 (`15 * * * *`) · `job_notifications` ทุก 5 นาที (`*/5 * * * *`) · การลบไฟล์ใน Storage ทำโดย Edge Function `cron-export-cleanup` ที่อ่าน `api.svc_expired_export_files()` **[รอยืนยัน]**
+ 
+ ### 9.7 Environment · Backup (A35 · A36 · B24) **[รอยืนยัน]**
+ 
+@@ -971,7 +996,7 @@
+ | ข้อมูลใน dev/staging | seed สังเคราะห์ (`supabase/seed.sql`) เท่านั้น · หรือสำเนา prod ที่ผ่านขั้นตอนด้านล่าง |
+ | สำเนา prod เพื่อทดสอบ | restore ไป project แยก region เดียวกัน → รัน `tools/db/anonymize.sql` (ครอบคลุม `crm.*` · truncate `audit.*` · อีเมลใน `auth.users` เป็น `@example.com` · truncate `login_events`) → สคริปต์ตรวจว่าไม่พบเบอร์/อีเมลจริง → dump → ลบ project ภายใน 24 ชม. · บันทึกผู้ทำใน runbook |
+ | Backup | Supabase daily backup + **PITR 7 วัน** (prod) · logical dump รายสัปดาห์ **เข้ารหัสฝั่งต้นทาง** (age/GPG · กุญแจถือโดยคนที่ไม่ใช่ผู้ดูแล storage) ไป storage ที่เปิด versioning/object lock เก็บ 90 วัน · ทบทวนรายชื่อผู้เข้าถึงทุกไตรมาส |
+-| Restore test | ทุกเดือน restore ไป project ทดสอบแล้วรัน `supabase/tests/acceptance.sql` ต้องผ่าน · บันทึกผล |
++| Restore test | ทุกเดือน restore ไป project ทดสอบ: (A) ตรวจความครบของข้อมูลจริง (จำนวนแถว · เลขอ้างอิงสูงสุดก่อนเวลา T · invariant) (B) ล้างข้อมูลแล้วโหลด `seed.sql` รัน `acceptance.sql` + `rls_*.sql` ต้องผ่าน · ลบ project ภายใน 24 ชม. · บันทึกผล |
+ | เป้าหมาย | RPO ≤ 5 นาที · RTO ≤ 4 ชม. |
+ | Monitoring | แจ้งเมื่อ backup ล้มเหลว · พื้นที่ DB > 80% · error rate RPC > 2% |
+ | สิทธิ์ Supabase organization Owner/Admin ของ prod | บุคคลที่ระบุชื่อ ≤ 2 คน ใช้แบบ break-glass มีบันทึกเหตุผล **[รอยืนยัน Q25]** |
+@@ -979,7 +1004,7 @@
+ ### 9.8 service_role และ Edge Functions
+ 
+ service_role ใช้ได้เฉพาะ Edge Functions: `invite-staff` · `disable-staff` · `reset-mfa` · `staff-code-login` · `password-reset` · `generate-export` · `integration-*` · `cron-*`
+-ทุกฟังก์ชันที่มีผู้เรียกเป็นผู้ใช้ต้อง (1) verify JWT (2) เรียก RPC ตรวจสิทธิ์ด้วย **JWT ของผู้เรียก** ก่อนใช้ service_role (3) ไม่รับ actor/staff_id จาก body (4) เขียน audit ด้วย actor จาก JWT · service_role key อยู่ใน secret ของ Edge Function เท่านั้น ห้ามอยู่ใน Next.js หรือมนุษย์ถือ
++ทุกฟังก์ชันที่มีผู้เรียกเป็นผู้ใช้ต้อง (1) verify JWT (2) เรียก RPC ตรวจสิทธิ์ด้วย **JWT ของผู้เรียก** ก่อนใช้ service_role (3) ไม่รับ actor/staff_id จาก body (4) เขียน audit ด้วย actor จาก JWT · service_role key อยู่ใน secret ของ Edge Function เท่านั้น ห้ามอยู่ใน Next.js หรือมนุษย์ถือ · Edge Function เรียกฐานข้อมูลผ่าน `api.svc_*` (ไม่ใช้ connection string ตรง) · bucket `exports` ไม่มี storage policy ให้ authenticated · signed URL 60 วินาทีออกโดย `generate-export` หลัง `api.record_export_download` สำเร็จด้วย JWT ของผู้ขอเท่านั้น
+ 
+ ---
+ 
+@@ -1059,11 +1084,20 @@
+ | `EXPORT_APPROVAL_REQUIRED` · `EXPORT_DECIDED` | มีคำขอส่งออกรออนุมัติ · คำขอส่งออกได้รับการตัดสินแล้ว | ข้อ 8.2 | ผู้อนุมัติตามกติกา · ผู้ขอ | in-app + email |
+ | `ROLE_GRANT_APPROVAL_REQUIRED` | มีคำขอมอบบทบาทรออนุมัติ | SYSTEM_ADMIN ยื่นคำขอ | EXECUTIVE ทุกคน (ยกเว้นผู้รับ) | in-app + email |
+ | `REVEAL_LIMIT_EXCEEDED` · `SEARCH_LIMIT_EXCEEDED` | การเปิดดู/ค้นหาเกินเกณฑ์ | ข้อ 6.4–6.5 | BUSINESS_ADMIN | in-app + email |
+-| `RETENTION_ANONYMIZE_UPCOMING` | ข้อมูลใกล้ครบระยะเก็บ | ข้อ 10.3 | BUSINESS_ADMIN | in-app |
++| `RETENTION_ANONYMIZE_UPCOMING` | ข้อมูลใกล้ครบระยะเก็บ | ข้อ 10.3 (สรุปรายวันทั้งองค์กร) | BUSINESS_ADMIN | in-app |
++| `LOCKOUT_REPEATED` | บัญชีถูกล็อกซ้ำ | ถูกล็อกเกิน 3 ครั้ง/วัน (ข้อ 9.2) | BUSINESS_ADMIN | in-app + email |
++| `LINK_LIMIT_EXCEEDED` | ผูกลูกค้าข้ามสาขาเกินเกณฑ์ | เกิน `security.link_per_day` (ข้อ 6.6) | BRANCH_MANAGER ของสาขานั้น | in-app |
++| `CUSTOMER_VIEW_LIMIT_EXCEEDED` | เปิดดูลูกค้าจำนวนมาก | เกิน `security.customer_view_per_hour` (**แจ้งเท่านั้น ไม่บล็อก**) | BUSINESS_ADMIN | in-app |
++| `EXPORT_READY` | ไฟล์ส่งออกพร้อมดาวน์โหลด | คำขอเปลี่ยนเป็น `GENERATED` | ผู้ขอ | in-app |
++| `ROLE_GRANT_DECIDED` | คำขอบทบาทได้รับการตัดสินแล้ว | `api.decide_role_grant` | ผู้ยื่นคำขอ | in-app + email |
++| `DSR_DUE_SOON` | คำขอเจ้าของข้อมูลใกล้ครบกำหนด | 7 วันก่อน `due_at` และยังไม่ `COMPLETED`/`REJECTED` | BUSINESS_ADMIN | in-app + email |
+ 
+ - ข้อความเต็ม (มีชื่อลูกค้า) อยู่ใน `crm.notifications` เท่านั้น · push/email ใช้ title + เลขอ้างอิง (เช่น `TK-2026-012508`) + deep link
+ - body มาตรฐาน: `{ชื่อลูกค้า} · {ชื่องาน/รายการ} · {เวลาครบกำหนด}` เช่น "คุณพิมพ์ชนก ศรีสุข · ติดตามใบเสนอราคา iPhone 17 Pro Max · ครบกำหนด 10 ก.ย. 2569 15:00"
+-- `dedupe_key = '{code}:{entity_id}:{escalation_level}:{วันที่ Asia/Bangkok}'` · UNIQUE(`recipient_staff_id`, `dedupe_key`)
++- `dedupe_key = '{code}:{entity_id}:{escalation_level}:{วันที่ Asia/Bangkok ของจุดยึดของรายการ}'` (จุดยึด = `due_at` · `due_at + 24 ชม.` · เวลาที่ lead เริ่มไม่มี owner · วันที่ของสรุป) — **ไม่ใช่วันที่ job รัน** จึงไม่แจ้งซ้ำทุกวัน · UNIQUE(`recipient_staff_id`, `dedupe_key`)
++- "ในเวลาทำการ": `LEAD_UNASSIGNED` `LEAD_NOT_CONTACTED` นับเฉพาะนาทีในเวลาทำการและส่งเฉพาะในเวลาทำการ · `VISITOR_WAITING_LONG` นับนาทีปฏิทินและส่งเฉพาะในเวลาทำการ · `business_hours` รองรับคีย์รหัสสาขาทับค่า `default` · ยังไม่มีวันหยุด
++- SUPERVISOR เป็นผู้รับได้เมื่อเป็นหัวหน้าทีมในสาขานั้น · การยกระดับไม่ส่งกลับไปที่ owner · ระดับที่ไม่มีผู้รับให้ข้าม · `TASK_ASSIGNED` ไม่ส่งสำหรับ task `is_next_action` · ไม่ส่ง `*_ASSIGNED` เมื่อ `app.bulk = on`
++- `DATA_MISSING` สรุปรายสัปดาห์ของผู้จัดการ = วันจันทร์ 09:00
+ - "หัวหน้าทีม" = หัวหน้าทีมปัจจุบันของ owner · Staff ได้เฉพาะของตน · หัวหน้า/ผู้จัดการได้ของทีม/สาขา (A27)
+ - สร้างโดย trigger (เหตุการณ์ทันที) และ `app.job_notifications(p_as_of)` ทุก 5 นาที
+ 
+@@ -1083,6 +1117,8 @@
+ | `export.limits` · `export.link_ttl_hours` · `export.max_downloads` | ตามข้อ 8.2 · 24 · 3 | BA |
+ | `security.reveal_per_hour` · `security.search_per_hour` · `security.search_miss_per_hour` · `security.link_per_day` · `security.customer_view_per_hour` | 30 · 60 · 20 · 10 · 100 | BA |
+ | `session.shared_counter_idle_min` | 10 | BA |
++| `pdpa.current_notice_version` | `"PN-2026-01"` | BA |
++| `security.login_ip_per_15min` · `dsr.anonymize_per_day` | 20 · 20 | BA |
+ 
+ ---
+ 
+@@ -1104,6 +1140,8 @@
+ 
+ - ป้ายการ์ด **ห้ามเขียน "เดือนนี้"** เว้นแต่ preset = `THIS_MONTH` (mockup ใช้ "เดือนนี้" กับตัวเลขชุด 30 วัน → D27)
+ - ช่วงที่ยังไม่จบ (รวมวันนี้) เทียบกับช่วงก่อนหน้าทั้งช่วงสำหรับ preset แบบ "N วันล่าสุด" · tooltip บอกว่า "ช่วงปัจจุบันรวมวันนี้ที่ยังไม่จบ"
++- `TODAY` เทียบ `[วันเดียวกันสัปดาห์ก่อน 00:00, app.clock() − 7 วัน)` (ขอบบน `<`) · `THIS_WEEK`/`THIS_MONTH`/`THIS_QUARTER` เทียบแบบทั้งวัน ช่วงวันที่ตรงกัน ตัดที่สิ้นเดือนถ้าเดือนก่อนสั้นกว่า · `CUSTOM` ส่ง `p_end` แบบ exclusive (UI ส่งวันที่เลือก + 1)
++- `api.get_report` รหัส `p_code`: `OVERVIEW` · `CUSTOMERS` · `SALES` · `CHANNELS` · `STAFF` · `BRANCHES` · `LOST_REASONS` · `DATA_QUALITY`
+ - prototype เปิดใช้เฉพาะ `TODAY` และ `LAST_30_DAYS` · preset อื่นแสดงแบบปิดพร้อม tooltip "ไม่มีข้อมูลตัวอย่างสำหรับช่วงนี้"
+ 
+ ### 12.1 KPI หลัก
+@@ -1182,6 +1220,8 @@
+ | พนักงาน | `visits.owner_staff_id` (ผู้รับ) | `owner_staff_id` ปัจจุบัน | `owner_staff_id` ปัจจุบัน | – | `tasks.owner_staff_id` |
+ | ช่องทาง | `visits.channel_code` | `leads.channel_code` | `origin_channel_code` | `first_channel_code` | – |
+ 
++- KPI ภายใต้ scope TEAM/OWN ผูกด้วย **owner เท่านั้น** (ไม่ใช้ `created_by` สำรอง) · ถ้าผู้เรียกมีบางสาขาเป็น TEAM/OWN KPI ที่ไม่มีการผูกพนักงานคืน `NULL` · `BUYERS` `REPEAT_*` `DUPLICATE_RATE` `MISSING_REQUIRED_RATE` ไม่มีการผูกพนักงาน · `OPEN_FOLLOWUP_CUSTOMERS` ผูกด้วย owner ของ task · owner ที่อยู่หลายทีมนับในทุกทีม
++- `DUPLICATE_RATE`/`MISSING_REQUIRED_RATE` รายสาขา ใช้ `first_branch_id` ทั้งตัวตั้งและตัวหาร (seed: ไม่มีลูกค้า ACTIVE ที่ `first_branch_id = JPON`)
+ - Drill-down: องค์กร → สาขา → ทีม → พนักงาน (ต้องมี `report.staff_performance`) → รายชื่อลูกค้า (ต้องมี `customer.read`) · MARKETING ไปได้ถึงระดับทีม
+ - Phase: ช่วงเวลา + สาขา = Phase 1 · ทีม/พนักงาน/ช่องทาง + drill-down = Phase 3
+ 
+@@ -1331,6 +1371,8 @@
+ - ทีม `JP2-SALES` `JP3-SALES` `JP4-SALES` มีอยู่แต่ไม่มีสมาชิก · รายการของ JP2–JP4 ใน seed มี owner = ผู้จัดการสาขานั้น (ข้อสมมติเพื่อความง่าย) **ยกเว้น** lead เปิดอยู่ที่ไม่มี owner สาขาละ 2 รายการ (`LEAD_WITHOUT_OWNER`)
+ - ทุกบัญชีตัวอย่างที่ `requires_mfa` มี TOTP factor ที่ verified แล้ว · test ใช้ `aal2` เว้นแต่ระบุ
+ - ฝน (JPON) เห็นหน้าว่าง (empty state) ในทุกหน้าที่เป็นรายการ
++- **ลูกค้าของฉันล่าสุด (คุณขวัญ · หน้า 02 STAFF และมือถือ):** คุณสมชาย ใจดี 11 ก.ย. 2569 10:24 · คุณมานพ รักงาน 10 ก.ย. 2569 16:40 · คุณพิมพ์ชนก ศรีสุข 10 ก.ย. 2569 14:05 · คุณชนากานต์ ใจงาม 10 ก.ย. 2569 11:20 · คุณอรอุมา แสนดี 9 ก.ย. 2569 15:10 = ลูกค้าที่ `owner_staff_id` = คุณขวัญ เรียง `last_activity_at DESC` (seed: ลูกค้ารายอื่นของคุณขวัญมี `last_activity_at` ก่อน 9 ก.ย. 2569 15:10 · ผู้ดูแลลูกค้าของคุณวิไลวรรณ ลูกค้าคิว 001 ลูกค้าออนไลน์รายการที่ 3 และลูกค้า OUTBOUND 3 รายของ JP1 วันนี้ = คุณคิม)
++- **กิจกรรมล่าสุด (หน้า 02):** 5 แถวแรกของข้อ 13.8 (ชื่อ · ช่องทางล่าสุด · สาขา · เวลา) · BRANCH_MANAGER เห็นเฉพาะแถวของ JP1
+ 
+ ### 13.6 ตัวเลขรายพนักงาน JP1 (P · owner ปัจจุบัน)
+ 
+@@ -1419,6 +1461,7 @@
+ | ปิดการขาย (7 วัน) | 8 | ฿285,400 | คุณมานพ รักงาน `CUS-2026-006310` · iPhone 16 128GB · ฿28,900 · won 10 ก.ย. · คุณขวัญ ／ คุณศิริพร พรมดี `CUS-2026-006455` · iPhone 15 · ฿25,900 · won 9 ก.ย. · คุณคิม |
+ 
+ - วันที่บนการ์ด = `next_action_at` (WON = `won_at`) · ขอบซ้ายสีตาม `priority_code` · มูลค่า = `expected_amount` (WON = `won_amount`)
++- ความสำคัญของการ์ดตัวอย่าง: อรอุมา `HIGH` · ปกรณ์ `NORMAL` · พิมพ์ชนก `HIGH` · วรเชษฐ์ `NORMAL` · สมชาย `HIGH` · สุภาวดี `NORMAL` · มานพ `NORMAL` · ศิริพร `NORMAL`
+ - ใน Sales 82 รายการของ JP1: 8 รายการ `won_at ∈ [5 ก.ย., 12 ก.ย.)` รวม ฿285,400 · อีก 74 รายการรวม ฿959,600
+ 
+ ### 13.10 งานของคุณขวัญ (หน้า 08 · มือถือ) — ทั้งหมด 12 = วันนี้ 8 + เกินกำหนด 4
+@@ -1491,7 +1534,7 @@
+ | คุณนัท (SV@JP1 · **aal1**) | ✗ | ✗ | ✗ | ✗ | ✗ | ปฏิเสธ |
+ | คุณเจ (BM@JP1) | ✓ | ✓ | ✓ | ✓ | ✓ | แถว JAUNPHONE 1 |
+ | คุณบอส (BM@JP2) | ✗ | ✗ | ✗ | ✗ | ✗ | แถว JAUNPHONE 2 |
+-| คุณฝน (ST@JPON · aal1) | ✗ | ✗ | ✗ | ✗ | ✗ | ศูนย์ทั้งหมด |
++| คุณฝน (ST@JPON · aal1) | ✗ | ✗ | ✗ | ✗ | ✗ | จำนวนเป็น 0 · KPI ที่ไม่ผูกพนักงานและอัตรา 0/0 เป็น `NULL` |
+ | คุณปุ๊ก (OP@JP1–4) | ✓ | ✗ | ✗ | ✓ | ✗ | = ข้อ 13.1 |
+ | คุณมายด์ (MK) | ✗ | ✗ | ✗ | ✗ | ✗ | = ข้อ 13.1 |
+ | จ๋าอั๋น (EX) | ✓ | ✗ | ✗ | ✓ | ✓ | = ข้อ 13.1 |
+@@ -1507,7 +1550,7 @@
+ 
+ **ตรวจซ้ำบนหน้า 04 (mockup A04):** กรอก `081-234-5678` + "สมชาย ใจดี" → 2 รายการ: `CUS-2026-000297` คะแนน 100 "เบอร์โทรตรงกัน" · `CUS-2026-004410` คุณสมชาย ใจดี `081-234-5679` JP1 มีโอกาสซื้อ · ติดตามอยู่ คะแนน 40 "ชื่อคล้าย + สาขาแรกเดียวกัน"
+ 
+-**คู่ซ้ำตัวอย่างแรกบนหน้า 12:** `CUS-2026-006633` คุณณัฐพล สุขใจ (สร้างโดยคุณคิม 3 ก.ย. 2569 · เหตุผล `FAMILY_SHARED_PHONE`) ↔ `CUS-2026-002118` คุณณัฐพร สุขใจ · คะแนน 100 "เบอร์โทรตรงกัน" · `PENDING`
++**คู่ซ้ำตัวอย่างแรกบนหน้า 12:** `CUS-2026-006633` คุณณัฐพล สุขใจ (สร้างโดยคุณคิม 3 ก.ย. 2569 · เหตุผล `FAMILY_SHARED_PHONE`) ↔ `CUS-2026-002118` คุณณัฐพร สุขใจ (ทั้งสองราย สาขาแรก JP1 · ผู้ดูแลคุณคิม) · คะแนน 100 "เบอร์โทรตรงกัน" · `PENDING`
+ 
+ **แจ้งเตือนที่ยังไม่อ่าน (กระดิ่ง):**
+ | ผู้ใช้ | จำนวน | รายการ |
+@@ -1568,6 +1611,7 @@
+ | 19 | `quotations` | ใบเสนอราคา | การขาย | STAFF SUPERVISOR BRANCH_MANAGER OPERATIONS EXECUTIVE BUSINESS_ADMIN | – | 2 |
+ 
+ ข้อตกลงของ prototype:
++- หน้า 01 และ `index.html` ใช้ `data-roles=""` (`data-page="login"` / `"index"`)
+ - `prototype/index.html` = หน้ารวมลิงก์ + ตัวสลับผู้ใช้ · เก็บ `localStorage['jcrm.staff']` = staff_code · บทบาทได้จากข้อ 13.5 · ค่าเริ่มต้น `ST-0001`
+ - ผู้ใช้ตัวแทนต่อบทบาท: STAFF→`ST-0045` · SUPERVISOR→`ST-0030` · BRANCH_MANAGER→`ST-0020` · OPERATIONS→`ST-0010` · MARKETING→`ST-0011` · EXECUTIVE→`ST-0001` · BUSINESS_ADMIN→`ST-0002` · SYSTEM_ADMIN→`ST-0003` (สลับเป็น `ST-0046` `ST-0021` `ST-0050` ได้จาก index)
+ - หน้าแรกหลังล็อกอิน: SYSTEM_ADMIN → `18-settings` · คนอื่น → `02-dashboard`
+@@ -1593,7 +1637,7 @@
+ 
+ ### 14.3 แถบบน (ทุกหน้า · A22 · A26)
+ 
+-ช่องค้นหากลาง placeholder **"ค้นหาชื่อ เบอร์ LINE Customer ID IMEI"** → `api.search_customers` (ข้อ 6.5) · กระดิ่งแจ้งเตือน (จำนวนที่ยังไม่อ่าน) · ชื่อ/บทบาท/สาขา · ตัวเลือกสาขา (เฉพาะผู้มีหลายสาขา) · ตัวเลือกช่วงเวลา (ข้อ 12.0)
++ช่องค้นหากลาง placeholder **"ค้นหาชื่อ เบอร์ LINE Customer ID IMEI"** → `api.search_customers` (ข้อ 6.5 · ซ่อนสำหรับ MARKETING และ SYSTEM_ADMIN) · กระดิ่งแจ้งเตือน (จำนวนที่ยังไม่อ่าน) · ชื่อ/บทบาท/สาขา · ตัวเลือกสาขา (เฉพาะผู้มีหลายสาขา) · ตัวเลือกช่วงเวลา (ข้อ 12.0) **อยู่ในหัวหน้า 02 09 12 เท่านั้น** · Serial ค้นไม่ได้ใน V1 **[รอยืนยัน]**
+ 
+ ### 14.4 แท็บเล็ตและมือถือ (A23 · A24)
+ 
+@@ -1654,9 +1698,9 @@
+ 
+ ### 14.9 หน้าอื่นที่ต้องตรึง
+ 
+-- **รายการลูกค้า (03):** ตัวกรอง สาขา (ในสิทธิ์) · สถานะ = lifecycle + ป้ายเสริม · ช่องทาง = ช่องทางล่าสุด · ช่วงวันที่ = `last_activity_at` · **ไม่มีปุ่ม "นำเข้า" ใน V1** (นำเข้าข้อมูลเดิมครั้งเดียวด้วยสคริปต์ตาม data-migration-plan) · เลือกหลายแถว = เพิ่ม tag / ขอส่งออก (ตามสิทธิ์)
++- **รายการลูกค้า (03):** ตัวกรอง สาขา (ในสิทธิ์ · กรองด้วย `customer_branches` · คอลัมน์ "สาขา" แสดง `last_branch_id`) · สถานะ = lifecycle + ป้ายเสริม · ช่องทาง = ช่องทางล่าสุด · ช่วงวันที่ = `last_activity_at` · **ไม่มีปุ่ม "นำเข้า" ใน V1** (นำเข้าข้อมูลเดิมครั้งเดียวด้วยสคริปต์ตาม data-migration-plan) · เลือกหลายแถว = เพิ่ม tag / ขอส่งออก (ตามสิทธิ์)
+ - **รับลูกค้า (07):** จำนวนลูกค้า (stepper `party_size`) · รู้จักร้านจาก (`source_code`) · วัตถุประสงค์หลัก (ชิป 7 ค่า) · ระบุลูกค้า (ถ้ามี): ค้นหา หรือ "+ สร้างลูกค้าใหม่" (เปิด quick-capture ผูก visit) · ปุ่ม "รับเข้าคิว" / "เริ่มให้บริการ" · ขวา: คิววันนี้ (ข้อ 13.11)
+-- **Pipeline (06):** สลับ "มุมมอง Pipeline / มุมมองรายการ" · ตัวกรอง สาขา · ประเภทสินค้า · พนักงาน · ลากการ์ดได้เฉพาะระหว่าง สนใจ ↔ เสนอราคา ↔ รอตัดสินใจ · ปิด WON/LOST ผ่าน dialog บังคับกรอก · LOST ไม่มีคอลัมน์ (ดูในมุมมองรายการ) · มุมมองรายการ: OP no · ลูกค้า · สินค้า · ขั้น · มูลค่า · next action · วันที่ · owner · สาขา
++- **Pipeline (06):** สลับ "มุมมอง Pipeline / มุมมองรายการ" · ตัวกรอง สาขา · ประเภทสินค้า · พนักงาน · ลากการ์ดได้ตามข้อ 4.4 (เสนอราคา → รอตัดสินใจ · สนใจ → เสนอราคา/รอตัดสินใจเฉพาะเมื่อส่งใบเสนอราคาแล้ว · ห้ามย้อนเป็นสนใจ · ทิศที่ไม่อนุญาตแสดง toast เหตุผล · เมนู "ย้ายไปขั้น…" แสดงเฉพาะปลายทางที่อนุญาต) · ปิด WON/LOST ผ่าน dialog บังคับกรอก · LOST ไม่มีคอลัมน์ (ดูในมุมมองรายการ) · มุมมองรายการ: OP no · ลูกค้า · สินค้า · ขั้น · มูลค่า · next action · วันที่ · owner · สาขา
+ - **ใบเสนอราคา (19):** รายการ + drawer สร้าง/แก้จาก opportunity · ฟิลด์ตามข้อ 6.10 · ปุ่ม "ส่ง" (DRAFT → SENT)
+ 
+ ---
+@@ -1687,10 +1731,11 @@
+ | `--chart-2` | `#2F6FD6` | LINE · Funnel ขั้น Lead · ลูกค้าใหม่ |
+ | `--chart-3` | `#C2410C` | Facebook · Funnel ขั้น Opportunity |
+ | `--chart-4` | `#B42359` | Instagram |
+-| `--chart-5` | `#101828` | TikTok |
++| `--chart-5` | `#7C3AED` | TikTok (D49) |
+ | `--chart-6` | `#5B6B8C` | โทรศัพท์ · Funnel ขั้น Sale |
+ | `--chart-7` | `#15803D` | เว็บไซต์ · ลูกค้าเก่า |
+ 
++ทุกกราฟวงกลม/funnel มีเส้นคั่น 2px สี `#FBFBFB` · legend ข้อความ (ชื่อ · จำนวน · %) ตาม `sort_order` · ปุ่ม "ดูเป็นตาราง" · ปุ่มส้มหลักคือ CTA หลัก 1 ปุ่มต่อพื้นที่ตัดสินใจ (+ รับลูกค้าทั่วระบบ) ไม่ใช้กับการลบ อนุมัติ ส่งออก ตัวกรอง หรือการนำทาง · placeholder ใช้ `--gray-600` (5.17:1)
+ เหตุผลที่ไม่สำเร็จ = แท่งสีเดียว (`--support-blue`) เรียงตามค่า · ป้าย lifecycle: `REPEAT`/`CUSTOMER` success · `OPPORTUNITY` warning · `LEAD` info · `LOST` danger · `IDENTIFIED` neutral · ป้ายเสริมตามข้อ 3.5
+ 
+ ---
+@@ -1746,6 +1791,10 @@
+ | D45 | ตัวอย่าง Audit A32 ลงวันที่ 15 ก.ย. หลัง "ตอนนี้" · A28 ตัวอย่าง "15 Sep ขวัญ → คิม" | A28 · A32 | ย้ายเป็น 10 ก.ย. 2569 ตามข้อ 13.14 |
+ | D46 | ลูกค้าแถว 5 ใน A03 ช่องทาง "โทรศัพท์" แต่ป้าย "ยังไม่ได้ติดต่อ" (โทรเข้ามาแปลว่าคุยสดแล้ว) | mockup A03 | เปลี่ยนช่องทางเป็น TikTok (ข้อ 4.3) |
+ | D47 | บรีฟไม่มีกติกาแยกช่องทางคุยสด/ข้อความสำหรับสถานะเริ่มต้นของ lead | A7 · A20 | ข้อ 4.3 และ `LEAD_RESPONSE_MIN` ใช้เฉพาะช่องทางข้อความ |
++| D48 | ข้อ 14.9 (v2.1) ให้ลากการ์ดย้อนเป็น "สนใจ" ได้ ขัดกับนิยามขั้นในข้อ 4.4 | 14.9 · 4.4 | ห้ามย้อนเป็น INTERESTED · ลากได้เฉพาะทิศที่ข้อ 4.4 อนุญาต |
++| D49 | `--chart-5` `#101828` แทบแยกจาก `--chart-1` ไม่ได้ (1.07:1) | ข้อ 15 (v2.1) | เปลี่ยน TikTok เป็น `#7C3AED` (5.51:1 บนพื้น) |
++| D50 | ป้าย "รู้จักร้านจาก Facebook" ใน 13.7 ต่างจาก `ref.sources.FACEBOOK_PAGE` = "เพจ Facebook" | 6.8 · 13.7 | prototype แสดงตาม 13.7 · ระบบจริงใช้ `label_th` |
++| D51 | acceptance ข้อ "สนใจอะไร" ไม่มี KPI รวม | A44 | ตอบระดับรายการ (Customer 360 · การ์ด pipeline · `interest_code`) ใน V1 · รายงานรวมตามความสนใจ = Phase 3 **[รอยืนยัน]** |
+ 
+ ---
+ 
+@@ -1753,7 +1802,7 @@
+ 
+ | # | คำถาม | ค่าที่ใช้ไปก่อน |
+ |---|---|---|
+-| Q1 | "ระบบ Login/สิทธิ์ที่กำลังพัฒนาอยู่" (A10) คือระบบใด และจะเป็นระบบกลางจริงหรือไม่ · พนักงานทุกคนมีรหัสพนักงาน HR หรือไม่ | CRM มี `core` ของตัวเอง ออกแบบให้ sync/แทนที่ได้ · `employee_code` NOT NULL UNIQUE |
++| Q1 | "ระบบ Login/สิทธิ์ที่กำลังพัฒนาอยู่" (A10) คือระบบใด และจะเป็นระบบกลางจริงหรือไม่ · พนักงานทุกคนมีรหัสพนักงาน HR หรือไม่ | CRM มี `core` ของตัวเอง ออกแบบให้ sync/แทนที่ได้ · `employee_code` NOT NULL (ห้ามซ้ำในบัญชีที่ไม่ใช่ DISABLED ตามข้อ 7.1) |
+ | Q2 | สาขา pilot | JP1 |
+ | Q3 | ทีมออนไลน์ส่วนกลางมีจริงหรือแอดมินสังกัดสาขา · การส่งต่อรายการจาก JPON ไปสาขาทำโดยใคร | มี `JPON` · ย้ายสาขาต้องมี assign ทั้งสองฝั่ง |
+ | Q4 | เวลาทำการของแต่ละสาขา | 10:00–21:00 |
+@@ -1778,6 +1827,11 @@
+ | Q23 | คำขอส่งออกของ EXECUTIVE ต้องให้ใครอนุมัติ | BUSINESS_ADMIN |
+ | Q24 | พนักงานที่ไม่มีอีเมลบริษัทจะรับคำเชิญและรีเซ็ตรหัสอย่างไร | ต้องมีอีเมล (ส่วนตัวได้) |
+ | Q25 | ใครถือสิทธิ์ Owner ของ Supabase organization (prod) | ≤ 2 คนที่ระบุชื่อ |
++| Q26 | การลบข้อมูลตาม DSR ต้องมี BUSINESS_ADMIN ≥ 2 คน (ผู้ยืนยัน ≠ ผู้ดำเนินการ) · ยอมรับหรือให้ EXECUTIVE ยืนยันแทน | ต้องมี BA ≥ 2 คน |
++| Q27 | ระบบภายนอกควรเก็บ `customer_no` หรือ uuid เป็นกุญแจลูกค้า | `customer_no` (ลูกค้าที่ถูกรวมชี้ไป survivor) |
++| Q28 | SUPERVISOR ควรมอบ lead ที่ไม่มี owner ได้ (v2.2 อนุญาตในสาขาที่เป็นหัวหน้าทีม) | อนุญาต |
++| Q29 | การแก้/ยกเลิก transaction ref ที่ผูกผิด | V1 เพิ่มได้อย่างเดียว · แก้ด้วยสคริปต์ BA |
++| Q30 | ขอบเขตการลบใน backup หลัง anonymize (restore แล้วต้องทำซ้ำ) | เก็บรายการ `customer_no` + เวลา anonymize นอกฐานข้อมูล แล้วรันซ้ำหลัง restore |
+ 
+ ---
+ 
+@@ -1808,3 +1862,63 @@
+ ```
+ 
+ เอกสาร 20 ชุดตาม A45 ↔ ไฟล์: 01 PRD · 02 BRD → `requirement-review.md` · 03 → `permission-matrix.md` · 04 → `user-flows.md` · 05 · 06 → `sitemap-screen-specs.md` · 07 → `data-dictionary.md` · 08 → `er-diagram.md` · 09 → `supabase/migrations/` + `schema-notes.md` · 10 → `api-spec.md` · 11 → `rls-spec.md` · 12 → `security-design.md` · 13 → `pdpa.md` · 14 → `kpi-definitions.md` · 15 → `notification-rules.md` · 16 → `data-migration-plan.md` · 17 · 18 → `test-cases-uat.md` · 19 · 20 → `deployment-backup-recovery.md`
++
++---
++
++## 19. ข้อตัดสินรายละเอียดจากผู้สร้างรอบแรก (v2.2 · มีผลบังคับเท่ากับข้ออื่น)
++
++ผู้สร้าง Phase 0 รอบแรกพบช่องว่าง ~180 จุดและเลือกทางที่สอดคล้องกับ CANONICAL ข้อที่ตัดสินแล้วแก้ในเนื้อหาข้างบน ส่วนที่เหลือถือเป็นมาตรฐานตามรายการนี้ · **ถ้าข้อ 19 ขัดกับข้ออื่น ให้ข้ออื่นชนะ**
++
++### 19.1 ฐานข้อมูล (แหล่งจริง = `supabase/migrations/0001–0009`)
++
++1. ชุดค่าปิดที่ไม่อยู่ในข้อ 4.8 (`lifecycle_stage` `created_via` `branch_type` `verification_method` `customer_type` สถานะคำขอบทบาท) ใช้ `text` + CHECK ชื่อคงที่
++2. การยกเลิกสิทธิ์ EXECUTE ของ PUBLIC ใช้ `ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC` แบบทั้งฐาน → **ทุกฟังก์ชันที่ authenticated/service_role เรียกตรง (helper ใน policy · api RPC · ฟังก์ชันที่ INVOKER code เรียก) ต้อง GRANT EXECUTE เอง**
++3. ป้าย `pii` เก็บเป็น COMMENT ที่ขึ้นต้น `[pii]` · data dictionary, audit masking และ anonymize อ่านจากป้ายนี้
++4. `label_en` ว่างได้ (ว่าง = รอยืนยัน) · ค่า `is_system` ตาม `0003_ref.sql` · ธงความหมาย (`creates_lead` `counts_as_purchase` `is_live` `is_marketing` `controller_entity`) ตั้งตอนเพิ่มค่า แก้ภายหลังได้ด้วย migration เท่านั้น
++5. `crm.customer_addresses`: คอลัมน์ซ่อน `address_line` `subdistrict` `postal_code` · แสดง `district` `province_code` `value_masked` (`{อำเภอ} · {จังหวัด}`) · เปิดเต็มผ่าน `api.reveal_address`
++6. `customer_notes.branch_id NOT NULL` · `quotations.customer_id/branch_id` และ `tasks.due_at` NOT NULL (คัดลอกจากแม่ด้วย trigger)
++7. `duplicate_decisions.matched_rules` เก็บข้อความเหตุผลบนการ์ด (รหัสกฎ **[รอยืนยัน]**) · CHECK `score >= 70`
++8. `export.limits` = `{ROLE: {max_rows, per_day, approver_role}}`
++9. ค่าที่ส่งเข้า trigger ผ่าน transaction-local setting: `app.status_reason` · `app.audit_reason` · `app.actor_type` · `app.actor_label` · `app.actor_staff_id` (service_role เท่านั้น) · `app.bulk` · `app.seed_mode` · `app.audit_redaction`
++10. `app.is_seed_mode()` = `app.seed_mode = 'on'` และ role GUC = `none` และ session user เป็น superuser/postgres (PGlite ใช้ `web_user`)
++11. เมื่อ `app.bulk = on` ข้าม: lifecycle · next-action sync · NEW→CONTACTED อัตโนมัติ · QUOTATION อัตโนมัติ · แคช `last_*`/`has_*` · การแจ้งเตือน `*_ASSIGNED` — งาน bulk เรียก `app.refresh_customer_activity` และ `app.refresh_customer_lifecycle` ท้ายงาน
++12. visit: `COMPLETED`/`LEFT` ต้องมี `ended_at` · `WAITING` เฉพาะ WALK_IN · `IN_SERVICE` ต้องมี owner และ `service_started_at` · `UNRECORDED` เฉพาะ `closed_by_system`
++13. audit: `audit_retention` ได้ SELECT/DELETE เฉพาะตาราง log · `deny_change` อนุญาต DELETE เมื่อแถวเก่ากว่าระยะเก็บเท่านั้น · `export_requests` เป็นตาราง workflow (ป้องกันด้วย GRANT + trigger สถานะ) · TRUNCATE ทำได้เฉพาะ project ทิ้งหลังปิด trigger
++
++### 19.2 สิทธิ์และ RLS (แหล่งจริง = `docs/04-security/rls-spec.md`)
++
++1. คอลัมน์ `organization_id` `created_by` `updated_*` เติมด้วย DEFAULT + trigger `trg_90_stamp_row`
++2. visit/interaction: `channel_code` `started_at` `direction` `visit_id` เปลี่ยนไม่ได้ · visit ที่ปิดแล้วตั้ง `customer_id` ได้จาก NULL เท่านั้น (เปลี่ยนลูกค้าที่ระบุแล้วต้อง `visit.update` scope ≥ T) · interaction ต้นทางเปลี่ยน `customer_id` ไม่ได้
++3. lead/opportunity ที่ปิดแล้วเป็นอ่านอย่างเดียวจนกว่าจะ reopen · task `DONE`/`CANCELLED` แก้ไม่ได้ · task `is_next_action` แก้ owner/branch/due/ประเภทตรงไม่ได้
++4. `customer_id` และลิงก์แม่ของรายการกิจกรรมแก้ไม่ได้ (ย้ายได้เฉพาะ merge) · `leads.channel_code` `first_contacted_at` `quotations.sent_at` `valid_until` ตั้งโดยระบบ
++5. interaction `INBOUND` ที่ INSERT ตรงต้องมี `visit_id` ของ visit ที่เปิดอยู่สาขาเดียวกัน · นอกนั้นใช้ `api.open_visit`
++6. `transaction_refs` INSERT ได้อย่างเดียว (`source_system_code = 'MANUAL'`)
++7. `core.roles` `core.permissions` `core.role_permissions` อ่านได้โดยพนักงาน ACTIVE ทุกคน · `campaign.read` ทุก scope เห็นแคมเปญทั้งองค์กร
++8. CI ตรวจ view `security_invoker` เฉพาะ schema ของโครงการ (`api` `crm` `core` `ref` `app` `analytics` `audit` `restricted`)
++
++### 19.3 เวิร์กโฟลว์ (แหล่งจริง = `docs/01-requirement/user-flows.md`)
++
++1. `api.open_visit` แนบหรือเปิด visit: จับคู่ `customer_id` (หรือ visit นิรนามที่พนักงานเลือก) + `channel_code` + `branch_id` + วันธุรกิจ กับ visit `IN_SERVICE` · ไม่สร้าง lead อัตโนมัติ (UI เสนอปุ่ม "สร้าง Lead")
++2. `api.quick_capture` รับ `visit_id` ของ visit ที่เปิดอยู่ได้ (หน้า 07 "+ สร้างลูกค้าใหม่" → หน้า 04 `?visit={visit_no}`) และคำนวณผู้สมัครซ้ำใหม่ฝั่ง server
++3. `api.close_visit` กับ `NOT_INTERESTED` รับ `lost_reason_code` แล้วปิด lead ที่เปิดจาก visit นั้นเป็น LOST ในทรานแซกชันเดียว (ไม่มีเหตุผล = ปฏิเสธ) · `LEFT` = `api.close_visit` ด้วย `LEFT_BEFORE_SERVICE` · แก้ outcome วันเดียวกัน = เรียกซ้ำ
++4. โหมด "เพิ่มลูกค้า" (ไม่มี visit) ปุ่ม "ใช้ลูกค้าเดิม" ของลูกค้านอกขอบเขตแสดงแบบปิดพร้อมเหตุผล "ผูกลูกค้าจากสาขาอื่นได้เฉพาะตอนรับลูกค้า"
++5. ส่งใบเสนอราคา = UPDATE `status = 'SENT'` + `sent_channel_code` → trigger ตั้ง `sent_at` `valid_until` สร้าง interaction `QUOTATION_SENT` และเลื่อนขั้น
++6. คำเชิญสร้าง assignment พร้อมคำเชิญ (มีผลเมื่อ ACTIVE) · บัญชีสาย SYSTEM_ADMIN ไม่มี assignment จนกว่าคำขอได้รับอนุมัติ · คำเชิญหมดอายุ = เชิญใหม่
++7. merge จากเมนู Customer 360 ส่ง `p_duplicate_decision_id` เป็น NULL ได้ · ปฏิเสธลูกค้า `MERGED`/`ANONYMIZED` · ลูกค้า `legal_hold` **[รอยืนยัน]**
++
++### 19.4 ความปลอดภัยและ PDPA (แหล่งจริง = `docs/04-security/`)
++
++1. `app.job_retention` เป็น SECURITY INVOKER: anonymize ก่อน แล้ว `SET LOCAL ROLE audit_retention` แล้ว DELETE
++2. anonymize ลูกค้าใดให้ anonymize แถว `MERGED` ที่ `merged_into_id` ชี้มาหาด้วย (วนซ้ำ) · แทนเฉพาะคีย์ PII ใน `before/after` · คอลัมน์ `reason` ของ audit ห้ามมี PII
++3. ช่อง "อายุ ≥ 20 ปีหรือผู้ปกครองยินยอม" เก็บใน `evidence` · RPC ปฏิเสธ `MARKETING` GRANTED ถ้าไม่ติ๊ก
++4. เซสชันเป็น HttpOnly cookie → ทุกการเรียก Supabase ที่ต้องใช้เซสชัน (รวม MFA enroll/challenge) ทำผ่าน Server Action/Route Handler
++5. `MFA_ENROLLED` เขียนโดย trigger บน `auth.mfa_factors` · แพ็กเกจ DSR เก็บ bucket `exports` อายุ 24 ชม. ไม่แนบอีเมล
++6. hash ใน access_logs เป็น sha256 ไม่ใส่ salt (ความเสี่ยงที่ยอมรับ · keyed hash พิจารณา Phase 3) และไม่ส่งออกนอกฐานข้อมูล
++
++### 19.5 prototype และ UX (แหล่งจริง = `docs/06-ux/` และ `prototype/README.md`)
++
++1. คีย์ป้ายเสริมใน data.js: `vip` · `followingUp` · `newCustomer` · `notContacted`
++2. การ์ดที่ไม่มี priority ใช้ขอบกลาง `--priority-unknown` (ไม่ใช่สี NORMAL)
++3. หน้า 10 แสดงมุมมองคุณขวัญเสมอพร้อมแถบอธิบาย · หน้าแรกมือถือของบทบาทอื่น = การ์ด KPI + widget แรกของบทบาทนั้น
++4. วันเวลาในตารางไม่มี "น." · เวลาเดี่ยวมี "น." (`10:24 น.`)
++5. `data.js` มีจังหวัดเฉพาะ `TH-10` (ฐานข้อมูลมีครบ 77)

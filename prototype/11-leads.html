@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leads · JAUN CRM</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+/* หน้า 11 · Leads — CANONICAL v2.2 ข้อ 4.3 · 4.5 · 8.0 · 13.6 · 13.7 · 13.8 · 13.14 · sitemap-screen-specs ข้อ 14 · ไม่มี hex */
+.ld-filters .field--inline { min-width: 150px; }
+.ld-mobile-add { display: none; }
+.kv { display: grid; grid-template-columns: minmax(120px, 34%) minmax(0, 1fr); gap: var(--space-2) var(--space-4); font-size: var(--fs-sm); }
+.kv dt { color: var(--text-secondary); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.ld-section { display: flex; flex-direction: column; gap: var(--space-2); padding-block: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.ld-section:first-child { padding-top: 0; }
+.ld-section:last-child { border-bottom: 0; }
+.ld-section__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+.ld-section__title { font-size: var(--fs-h4); font-weight: var(--fw-semibold); color: var(--text-heading); }
+.ld-steps { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; font-size: var(--fs-xs); }
+.ld-step { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-3); border-radius: var(--radius-full); border: 1px solid var(--border-default); background: var(--surface-card); color: var(--text-secondary-sunk); }
+.ld-step[data-state="done"] { background: var(--navy-50); border-color: var(--navy-200); color: var(--navy-800); }
+.ld-step[data-state="done"]::before { content: "✓"; }
+.ld-step[data-state="current"] { background: var(--navy-900); border-color: var(--navy-900); color: var(--white); font-weight: var(--fw-medium); }
+.ld-step[data-state="lost"] { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-text); font-weight: var(--fw-medium); }
+.ld-step-sep { color: var(--text-secondary); }
+.ld-history { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--fs-sm); }
+.ld-history li { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.ld-history time { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+@media (max-width: 767px) {
+  .ld-desktop-add { display: none; }
+  .ld-mobile-add { display: inline-flex; }
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .kv dd { margin-bottom: var(--space-2); }
+}
+</style>
+</head>
+<body data-page="leads" data-roles="STAFF SUPERVISOR BRANCH_MANAGER OPERATIONS EXECUTIVE BUSINESS_ADMIN">
+<div class="app" data-jcrm-app>
+  <aside data-jcrm-sidebar></aside>
+  <header data-jcrm-topbar></header>
+  <main id="main" data-jcrm-main><div class="page" id="page"></div></main>
+</div>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  "use strict";
+  var D = JCRM.data, fmt = JCRM.fmt, ui = JCRM.ui, esc = JCRM.esc, DASH = fmt.DASH, T = D.meta.texts;
+  var NOW = D.meta.now;
+  var OPEN = ["NEW", "CONTACTED", "QUALIFIED"];
+  var TABS = [{ id: "open", status: "OPEN", label: "เปิดอยู่" }, { id: "new", status: "NEW", label: "ใหม่" }, { id: "contacted", status: "CONTACTED", label: "ติดต่อแล้ว" },
+    { id: "qualified", status: "QUALIFIED", label: "คัดกรองแล้ว" }, { id: "converted", status: "CONVERTED", label: "แปลงเป็นโอกาสขาย" }, { id: "lost", status: "LOST", label: "ไม่สำเร็จ" }];
+
+  var S = {
+    ctx: null, tab: null, owner: JCRM.param("owner"), channel: "", interest: "", priority: "",
+    over: {}, created: [], ledger: [],
+    nextLd: D.runningNumbers["LD:2026"] + 1, nextOp: D.runningNumbers["OP:2026"] + 1,   /* ตัวนับหลัง seed (ข้อ 13.0 ข้อ 8) */
+    drawer: null, drawerId: null, paramHandled: false
+  };
+
+  function isNil(v) { return v === null || v === undefined || v === ""; }
+  function me() { return S.ctx ? S.ctx.staffCode : JCRM.currentStaffCode(); }
+  function toIso(v) { return String(v).length === 16 ? v + ":00+07:00" : v; }
+  function pad6(n) { var s = String(n); while (s.length < 6) { s = "0" + s; } return s; }
+  function copy(o) { var x = {}; Object.keys(o || {}).forEach(function (k) { x[k] = o[k]; }); return x; }
+  function isOpen(l) { return l.status === null || OPEN.indexOf(l.status) !== -1; }
+  function channelLive(code) { var c = JCRM.find(D.channels, "code", code); return !!(c && c.isLive); }
+
+  /* ---------------------------------------------------------------------------
+     โมเดล Lead: รายการที่ระบุชื่อ (ข้อ 13.7 · 13.14) + ลูกค้า 13.8 ที่ป้าย "สนใจซื้อ" แต่ไม่มีเลข Lead + ที่สร้างในหน้านี้
+     ------------------------------------------------------------------------ */
+  function samples() {
+    var list = D.leads.map(function (l) {
+      var m = { id: l.leadNo, leadNo: l.leadNo, customerNo: l.customerNo, branch: l.branch, channel: l.channel || null, status: l.status || null, createdAt: l.createdAt || null,
+        /* CANONICAL ไม่พิมพ์ผู้รับผิดชอบของ Lead ที่ปิดแล้ว → ownerUnknown แสดง "–" ไม่ใช่ป้าย "ยังไม่มีผู้รับผิดชอบ" */
+        owner: l.owner === undefined ? null : l.owner, ownerUnknown: isNil(l.owner),
+        productModel: l.productModel || null, productType: null, interestLevel: l.interestLevel || null, interest: null,
+        priority: null, source: null, nextAt: l.nextAction ? l.nextAction.at : null, nextType: l.nextAction ? l.nextAction.type : null, nextText: null, visitNo: null, firstContactedAt: null,
+        convertedOpportunityNo: l.convertedOpportunityNo || null, closedAt: null, lostReason: null, lostNote: null, statusHistory: [], ownerHistory: [], sample: true, derived: false };
+      /* LD-2026-007460: สร้างระหว่าง visit V-JP1-260908-017 ช่องทาง WALK_IN → เริ่มที่ติดต่อแล้ว first_contacted_at = created_at (ข้อ 4.3 · 13.7) */
+      D.customer360["CUS-2026-000297"].interactions.forEach(function (ix) { if (ix.visit && ix.visit.visitNo && ix.summary.indexOf(l.leadNo) !== -1) { m.visitNo = ix.visit.visitNo; } });
+      if (m.status === "CONTACTED" && channelLive(m.channel) && m.createdAt) { m.firstContactedAt = m.createdAt; m.statusHistory = [{ from: null, to: "CONTACTED", at: m.createdAt, by: null }]; }
+      if (m.status === "CONVERTED" && m.convertedOpportunityNo) { var op = JCRM.find(D.opportunities, "opportunityNo", m.convertedOpportunityNo); m.closedAt = op && op.createdAt ? op.createdAt : null; }
+      D.ownershipChanges.forEach(function (oc) { if (oc.entityRef === l.leadNo) { m.ownerHistory.push({ at: oc.changedAt, from: oc.fromStaff, to: oc.toStaff, by: oc.changedBy, reason: oc.reason, fromBranch: null, toBranch: null }); } });
+      return m;
+    });
+    D.customerList.rows.map(JCRM.customer).forEach(function (c) {
+      if (!c || c.lifecycle !== "LEAD" || D.leads.some(function (l) { return l.customerNo === c.customerNo; })) { return; }
+      list.push({ id: "derived-" + c.customerNo, leadNo: null, customerNo: c.customerNo, branch: c.branch, channel: null, status: c.badges.indexOf("notContacted") !== -1 ? "NEW" : null, createdAt: null,
+        owner: null, ownerUnknown: true, productModel: null, productType: null, interestLevel: null, interest: null, priority: null, source: null, nextAt: null, nextType: null, nextText: null, visitNo: null,
+        firstContactedAt: null, convertedOpportunityNo: null, closedAt: null, lostReason: null, lostNote: null, statusHistory: [], ownerHistory: [], sample: true, derived: true });
+    });
+    return list;
+  }
+  function allLeads() {
+    return samples().concat(S.created.map(copy)).map(function (m) {
+      var o = S.over[m.id]; if (o) { Object.keys(o).forEach(function (k) { m[k] = o[k]; }); }
+      return m;
+    });
+  }
+  function findLead(id) { return allLeads().filter(function (m) { return m.id === id; })[0] || null; }
+  function rowCtx(m) { return { branch: m.branch, owner: m.owner }; }
+  function readable(m) { return JCRM.can("lead.read", { branch: m.branch, owner: m.owner, viaCustomer: JCRM.customerCtx(m.customerNo) }); }
+  function setOver(id, patch) { S.over[id] = S.over[id] || {}; Object.keys(patch).forEach(function (k) { S.over[id][k] = patch[k]; }); }
+  function ownerFilter() { return S.owner === "me" ? me() : S.owner; }
+  function statusKey(m) { return m.status === null ? "UNKNOWN" : m.status; }
+  /* บันทึกการเปลี่ยนเพื่อปรับจำนวนแท็บ (ข้อ 13.6 · kpis.current) */
+  function ledger(m, sign) {
+    if (!isOpen(m)) { return; }
+    S.ledger.push({ branch: m.branch, owner: m.owner, key: "OPEN", d: sign });
+    if (m.status === null) { S.ledger.push({ branch: m.branch, owner: m.owner, key: "UNKNOWN", d: sign }); }
+    else { S.ledger.push({ branch: m.branch, owner: m.owner, key: m.status, d: sign }); }
+  }
+  function tabCounts(base, effB) {
+    if (!base) { return null; }
+    var owner = ownerFilter(), c = copy(base), unknown = false;
+    S.ledger.forEach(function (e) {
+      if (e.branch !== effB) { return; }
+      if (owner && (owner === "none" ? e.owner !== null : e.owner !== owner)) { return; }
+      if (e.key === "UNKNOWN") { unknown = true; return; }
+      if (!isNil(c[e.key])) { c[e.key] += e.d; }
+    });
+    if (unknown) { c.NEW = null; c.CONTACTED = null; c.QUALIFIED = null; }
+    return c;
+  }
+
+  /* ---------------------------------------------------------------------------
+     render
+     ------------------------------------------------------------------------ */
+  function selectHtml(id, label, options, value, action) {
+    return '<div class="field field--inline"><label class="label" for="' + esc(id) + '">' + esc(label) + '</label><select class="select" id="' + esc(id) + '" data-jcrm-change="' + esc(action) + '">' +
+      options.map(function (o) { return '<option value="' + esc(o.value) + '"' + (String(o.value) === String(value || "") ? " selected" : "") + ">" + esc(o.label) + "</option>"; }).join("") + "</select></div>";
+  }
+  function statusCell(m) {
+    if (m.status === null) { return '<span class="t-muted">' + DASH + " (เปิดอยู่)</span>"; }
+    return ui.status("leadStatuses", m.status) + (m.status === "NEW" ? " " + ui.badge("ยังไม่ได้ติดต่อ", "danger", "badge--supp") : "");
+  }
+  function ownerCell(m) {
+    if (m.ownerUnknown) { return '<span class="t-muted">' + DASH + "</span>"; }
+    return m.owner ? esc(JCRM.staffName(m.owner)) : ui.badge("ยังไม่มีผู้รับผิดชอบ", "warning", "badge--square");
+  }
+  function render(ctx) {
+    S.ctx = ctx;
+    var host = document.getElementById("page");
+    if (!JCRM.can("lead.read")) { host.innerHTML = ui.noPermission({ roles: ctx.screen.roles }); return; }
+    var tabParam = JCRM.qs("tab");
+    S.tab = S.tab || (JCRM.find(TABS, "id", tabParam) ? tabParam : "open");
+    var owner = ownerFilter();
+    var base = JCRM.select.leadsFor(undefined, { branch: ctx.branch, status: "OPEN", owner: owner });
+    var rb = JCRM.scopeBranches("lead.read", "OWN");
+    var effB = ctx.branch === "ALL" && rb.length === 1 ? rb[0] : ctx.branch;
+    var counts = tabCounts(base.counts, effB);
+    var hasFilter = !!(S.channel || S.interest || S.priority);
+    var all = allLeads().filter(function (m) {
+      if (!readable(m) || (effB !== "ALL" && m.branch !== effB)) { return false; }
+      if (owner) { if (m.ownerUnknown) { return false; } if (owner === "none" ? m.owner !== null : m.owner !== owner) { return false; } }
+      return (!S.channel || m.channel === S.channel) && (!S.interest || m.interest === S.interest) && (!S.priority || m.priority === S.priority);
+    });
+    var addBtn = { label: "+ สร้าง Lead", variant: "accent", permission: "lead.create", action: "ld-create" };
+    var header = ui.pageHeader({ title: "Leads", lead: "การแสดงความสนใจของลูกค้าที่รู้ตัวตน · ใหม่ → ติดต่อแล้ว → คัดกรองแล้ว → แปลงเป็นโอกาสขาย หรือไม่สำเร็จ (ข้อ 4.3)",
+      actions: [JCRM.raw('<span class="ld-desktop-add">' + ui.permButton(addBtn) + "</span>"), JCRM.raw('<span class="ld-mobile-add">' + ui.permButton({ label: "สร้าง Lead", variant: "accent", permission: "lead.create", action: "ld-create", icon: "plus", iconOnly: true }) + "</span>")] });
+    var owners = [];
+    allLeads().forEach(function (m) { if (m.owner && owners.indexOf(m.owner) === -1 && readable(m) && (effB === "ALL" || m.branch === effB)) { owners.push(m.owner); } });
+    if (owner && owner !== "none" && owners.indexOf(owner) === -1) { owners.push(owner); }
+    var canOwn = JCRM.effectiveAssignments().some(function (a) { return a.branch && D.permissions["lead.update"][a.role]; });
+    var ownerOpts = [{ value: "", label: "ทั้งหมด" }].concat(canOwn ? [{ value: "me", label: "ของฉัน" }] : []).concat([{ value: "none", label: "ยังไม่มีผู้รับผิดชอบ" }])
+      .concat(owners.filter(function (c) { return !(canOwn && c === me()); }).map(function (c) { return { value: c, label: JCRM.staffName(c) }; }));
+    var filters = '<div class="filter-bar filter-bar--panel ld-filters" role="group" aria-label="ตัวกรอง Lead">' +
+      ui.branchSelect({ id: "ld-branch", permission: "lead.read", value: ctx.branch, action: "ld-branch" }) +
+      selectHtml("ld-channel", "ช่องทาง", [{ value: "", label: "ทั้งหมด" }].concat(D.channels.map(function (c) { return { value: c.code, label: c.labelTh }; })), S.channel, "ld-channel") +
+      selectHtml("ld-owner", "ผู้รับผิดชอบ", ownerOpts, S.owner === "me" && !canOwn ? "" : S.owner, "ld-owner") +
+      selectHtml("ld-interest", "ความสนใจ", [{ value: "", label: "ทั้งหมด" }].concat(D.interestTypes.map(function (c) { return { value: c.code, label: c.labelTh }; })), S.interest, "ld-interest") +
+      selectHtml("ld-priority", "ความสำคัญ", [{ value: "", label: "ทั้งหมด" }].concat(D.priorities.map(function (c) { return { value: c.code, label: c.labelTh }; })), S.priority, "ld-priority") +
+      (hasFilter || owner ? '<div class="filter-bar__clear">' + ui.button({ label: "ล้างตัวกรอง", variant: "ghost", size: "sm", action: "ld-clear" }) + "</div>" : "") + "</div>";
+
+    var tabs = TABS.map(function (t) {
+      var rows = all.filter(function (m) { return t.status === "OPEN" ? isOpen(m) : m.status === t.status; })
+        .sort(function (a, b) { if (!a.createdAt) { return 1; } if (!b.createdAt) { return -1; } return -fmt.compareIso(a.createdAt, b.createdAt); });
+      var total = counts && !hasFilter && !isNil(counts[t.status]) ? counts[t.status] : null;
+      return { id: t.id, label: t.label, count: counts && !hasFilter ? counts[t.status] : null, html: tableHtml(t, rows, total, base.empty) };
+    });
+    host.innerHTML = header + filters + ui.tabs({ id: "ld-tabs", label: "สถานะ Lead", param: "tab", selected: S.tab, tabs: tabs }) +
+      '<p class="proto-note" style="margin-top:var(--space-4)">เปลี่ยนสถานะ แปลง ไม่สำเร็จ มอบหมาย และสร้าง Lead เก็บในหน่วยความจำของหน้านี้เท่านั้น · ระบบจริง UPDATE crm.leads ผ่าน RLS + trigger (lead_status_history) · แปลงผ่าน api.convert_lead · มอบหมายผ่าน api.assign_owner · แถวที่ไม่มีเลข Lead มาจากป้าย "สนใจซื้อ" ของข้อ 13.8</p>';
+    tabs.forEach(function (t) { mountTable(t.id); });
+  }
+  var TABLES = {};
+  function tableHtml(t, rows, total, empty) {
+    TABLES[t.id] = { rows: rows, total: total, empty: empty, tab: t };
+    var sample = !empty && (rows.length === 0 && total ? { shown: 0, total: total } : ((isNil(total) || rows.length < total) && (rows.length || !isNil(total)) ? { shown: rows.length, total: total } : null));
+    if (!empty && !rows.length && isNil(total)) { sample = { text: "ไม่มีรายการที่ระบุชื่อในข้อมูลตัวอย่างสำหรับแท็บนี้" }; }
+    return (sample ? ui.sampleNote(sample) : "") + '<div class="card card--flush" id="ld-table-' + esc(t.id) + '"></div>';
+  }
+  function mountTable(id) {
+    var d = TABLES[id];
+    JCRM.table.mount("ld-table-" + id, {
+      caption: "Lead · " + d.tab.label, rowKey: "id", rowAction: "ld-open",
+      columns: [
+        { key: "leadNo", label: "เลข Lead", render: function (m) { return m.leadNo ? '<span class="code">' + esc(m.leadNo) + "</span>" : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "customerNo", label: "ลูกค้า", render: function (r) { return '<a class="nowrap" href="' + esc(JCRM.link("customer-360", { c: r.customerNo })) + '">' + esc(JCRM.customerName(r.customerNo)) + "</a>"; } },
+        { key: "interest", label: "ความสนใจ", hide: "tablet", render: function (m) { return m.interest ? esc(JCRM.label("interestTypes", m.interest)) : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "productModel", label: "สินค้า", render: function (m) { return (m.productModel ? esc(m.productModel) : '<span class="is-null">' + DASH + "</span>") + (m.interestLevel ? " " + ui.interestLevel(m.interestLevel) : ""); },
+          sub: function (m) { return m.productType ? esc(JCRM.label("productTypes", m.productType)) : ""; } },
+        { key: "channel", label: "ช่องทาง", format: "channel" },
+        { key: "status", label: "สถานะ", render: statusCell },
+        { key: "priority", label: "ความสำคัญ", render: function (m) { return m.priority ? ui.priorityBadge(m.priority) : '<span class="is-null">' + DASH + "</span>"; } },
+        { key: "nextAt", label: "การติดตามถัดไป", render: function (m) {
+          if (!isOpen(m)) { return '<span class="is-null">' + DASH + "</span>"; }
+          var over = m.nextAt && fmt.compareIso(m.nextAt, NOW) < 0;
+          return (m.nextAt ? esc(fmt.dateTime(m.nextAt)) : '<span class="is-null">' + DASH + "</span>") + (over ? " " + ui.badge("เกินกำหนด", "danger", "badge--square") : "");
+        }, sub: function (m) { return isOpen(m) ? esc(m.nextText || DASH) : ""; } },
+        { key: "owner", label: "ผู้รับผิดชอบ", render: ownerCell },
+        { key: "createdAt", label: "สร้างเมื่อ", format: "dateTime", hide: "tablet" },
+        { key: "branch", label: "สาขา", format: "branch", hide: "tablet" }
+      ],
+      rows: d.rows, footer: { shown: d.rows.length, total: d.total, unit: "รายการ" },
+      empty: { title: d.empty ? "ยังไม่มี Lead" : (d.tab.status === "OPEN" ? "ยังไม่มี Lead" : "ไม่มีรายการ"), compact: true },
+      mobileCard: function (m) {
+        return ui.listCard({ action: "ld-open", id: m.id, avatar: JCRM.customerName(m.customerNo), title: JCRM.customerName(m.customerNo),
+          meta: [[m.leadNo, m.productModel].filter(Boolean).join(" · ") || DASH, isOpen(m) ? "ติดตามถัดไป " + (m.nextAt ? fmt.dateTime(m.nextAt) : DASH) : null, m.ownerUnknown ? "ผู้รับผิดชอบ " + DASH : (m.owner ? JCRM.staffName(m.owner) : "ยังไม่มีผู้รับผิดชอบ")],
+          badges: statusCell(m) });
+      }
+    });
+  }
+  function rerender() { if (S.ctx) { render(JCRM.state()); JCRM.initTabs(document); } }
+  function refreshDrawer() { if (S.drawer && S.drawerId) { var id = S.drawerId; S.drawer.close(); S.drawer = null; openDrawer(id); } }
+  function closeDrawer() { if (S.drawer) { S.drawer.close(); S.drawer = null; S.drawerId = null; } }
+
+  /* ---------------------------------------------------------------------------
+     Drawer Lead (640px · sitemap ข้อ 14.5)
+     ------------------------------------------------------------------------ */
+  function kv(rows) { return '<dl class="kv">' + rows.map(function (r) { return '<div style="display:contents"><dt>' + esc(r[0]) + "</dt><dd>" + r[1] + "</dd></div>"; }).join("") + "</dl>"; }
+  function txt(v) { return isNil(v) ? '<span class="t-muted">' + DASH + "</span>" : esc(v); }
+  function stepsHtml(m) {
+    var order = ["NEW", "CONTACTED", "QUALIFIED", "CONVERTED"], idx = m.status ? order.indexOf(m.status) : -1;
+    var steps = order.map(function (s, i) {
+      var st = m.status === "LOST" ? "todo" : (idx === -1 ? "todo" : (i < idx ? "done" : (i === idx ? "current" : "todo")));
+      return '<span class="ld-step" data-state="' + st + '"' + (st === "current" ? ' aria-current="step"' : "") + ">" + esc(JCRM.label("leadStatuses", s)) + "</span>";
+    }).join('<span class="ld-step-sep" aria-hidden="true">→</span>');
+    return '<div class="ld-steps" role="list" aria-label="ขั้นของ Lead">' + steps + '<span class="ld-step-sep">/</span><span class="ld-step" data-state="' + (m.status === "LOST" ? "lost" : "todo") + '">' + esc(JCRM.label("leadStatuses", "LOST")) + "</span>" +
+      (m.status === null ? '<span class="t-xs t-muted">สถานะปัจจุบันไม่มีในข้อมูลตัวอย่าง (เปิดอยู่)</span>' : "") + "</div>";
+  }
+  function gateConvert(m) {
+    var ctx = rowCtx(m), a1 = JCRM.access("lead.update", ctx), a2 = JCRM.access("opportunity.create", ctx);
+    if (!a1.visible || !a2.visible) { return null; }
+    return { allowed: a1.allowed && a2.allowed, reason: !a1.allowed ? a1.reason : a2.reason };
+  }
+  function openDrawer(id) {
+    var m = findLead(id);
+    if (!m || !readable(m)) {
+      S.drawer = JCRM.drawer({ title: "Lead", wide: true, body: ui.state("notfound", {}), footer: ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }), onCancel: function () { S.drawer = null; } });
+      S.drawerId = null; return;
+    }
+    var rc = rowCtx(m), open = isOpen(m), noNo = !m.leadNo, sampleReason = "ข้อมูลตัวอย่างไม่มีเลข Lead ของรายการนี้ (prototype)";
+    var head = '<div class="ld-section"><div class="badge-row">' + statusCell(m) + (m.priority ? ui.priorityBadge(m.priority) : "") + "</div>" +
+      '<p class="t-h3"><a href="' + esc(JCRM.link("customer-360", { c: m.customerNo })) + '">' + esc(JCRM.customerName(m.customerNo)) + '</a> <span class="code">' + esc(m.customerNo) + "</span></p>" +
+      '<p class="t-sm t-muted">' + esc(JCRM.branchName(m.branch)) + "</p>" + stepsHtml(m) + "</div>";
+    var editNext = !open ? "" : ui.permButton({ label: "แก้ไข", variant: "secondary", size: "sm", action: "ld-next", id: m.id, permission: "lead.update", ctx: rc, extra: { ok: !noNo, reason: sampleReason } });
+    var info = '<div class="ld-section"><h3 class="ld-section__title">ข้อมูล</h3>' + kv([
+      ["เลข Lead", m.leadNo ? '<span class="code">' + esc(m.leadNo) + "</span>" : txt(null)],
+      ["ความสนใจ", txt(m.interest ? JCRM.label("interestTypes", m.interest) : null)],
+      ["ประเภทสินค้า", txt(m.productType ? JCRM.label("productTypes", m.productType) : null)],
+      ["รุ่น", txt(m.productModel)],
+      ["ระดับความสนใจ", m.interestLevel ? ui.interestLevel(m.interestLevel) : txt(null)],
+      ["ช่องทาง", m.channel ? ui.channel(m.channel) : txt(null)],
+      ["แหล่งที่มา", txt(m.source ? JCRM.label("sources", m.source) : null)],
+      ["visit ต้นทาง", m.visitNo ? '<span class="code">' + esc(m.visitNo) + "</span>" : txt(null)],
+      ["สาขา", txt(JCRM.branchName(m.branch))],
+      ["ความสำคัญ", txt(m.priority ? JCRM.label("priorities", m.priority) : null)],
+      ["ผู้รับผิดชอบ", ownerCell(m)],
+      ["ติดต่อครั้งแรก", txt(m.firstContactedAt ? fmt.dateTime(m.firstContactedAt) : null)],
+      ["สร้างเมื่อ", txt(m.createdAt ? fmt.dateTime(m.createdAt) : null)]
+    ]) + "</div>";
+    var next = open ? '<div class="ld-section"><div class="ld-section__head"><h3 class="ld-section__title">การติดตามถัดไป</h3>' + editNext + "</div>" +
+      kv([["ข้อความ", txt(m.nextText)], ["ประเภท", txt(m.nextType ? JCRM.label("taskTypes", m.nextType) : null)], ["วันเวลา", txt(m.nextAt ? fmt.dateTime(m.nextAt) : null)]]) + "</div>" : "";
+    var result = !open ? '<div class="ld-section"><h3 class="ld-section__title">ผลการปิด</h3>' + kv([
+      ["สถานะ", ui.status("leadStatuses", m.status)],
+      ["แปลงเป็นโอกาสขาย", m.convertedOpportunityNo ? '<span class="code">' + esc(m.convertedOpportunityNo) + "</span>" : txt(null)],
+      ["เหตุผลที่ไม่สำเร็จ", txt(m.lostReason ? JCRM.label("lostReasons", m.lostReason) : null)], ["หมายเหตุ", txt(m.lostNote)],
+      ["ปิดเมื่อ", txt(m.closedAt ? fmt.dateTime(m.closedAt) : null)]]) + "</div>" : "";
+    var hist = '<div class="ld-section"><h3 class="ld-section__title">ประวัติสถานะ</h3>' + (m.statusHistory.length ? '<ol class="ld-history">' + m.statusHistory.map(function (h) {
+      return "<li><span>" + esc((h.from ? JCRM.label("leadStatuses", h.from) : DASH) + " → " + JCRM.label("leadStatuses", h.to)) + "</span><time>" + esc(fmt.dateTime(h.at)) + "</time>" + (h.by ? '<span class="t-muted">โดย ' + esc(JCRM.staffName(h.by)) + "</span>" : "") + (h.note ? '<span class="t-muted">' + esc(h.note) + "</span>" : "") + "</li>";
+    }).join("") + "</ol>" : '<p class="t-sm t-muted">' + DASH + "</p>") +
+      '<h3 class="ld-section__title" style="margin-top:var(--space-3)">ประวัติผู้รับผิดชอบ</h3>' + (m.ownerHistory.length ? '<ol class="ld-history">' + m.ownerHistory.map(function (h) {
+        return "<li><time>" + esc(fmt.dateTime(h.at)) + "</time><span>" + esc((h.from ? JCRM.staffName(h.from) : "ยังไม่มีผู้รับผิดชอบ") + " → " + JCRM.staffName(h.to)) + "</span><span class=\"t-muted\">โดย" + esc(JCRM.staffName(h.by)) + " · " +
+          esc(JCRM.label("ownershipChangeReasons", h.reason)) + (h.toBranch && h.fromBranch && h.toBranch !== h.fromBranch ? " · " + esc(JCRM.branchName(h.fromBranch) + " → " + JCRM.branchName(h.toBranch)) : "") + "</span></li>";
+      }).join("") + "</ol>" : '<p class="t-sm t-muted">' + DASH + "</p>") + "</div>";
+
+    var footer;
+    var close = ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" });
+    if (!open) {
+      footer = close + '<span class="spacer"></span>' + ui.permButton({ label: "เปิด Lead อีกครั้ง", variant: "primary", action: "ld-reopen", id: m.id, permission: "lead.reopen", ctx: rc, extra: { ok: !noNo, reason: sampleReason } });
+    } else {
+      var statusBtns = "";
+      var su = function (label, action, variant) { return ui.permButton({ label: label, variant: variant || "secondary", action: action, id: m.id, permission: "lead.update", ctx: rc, extra: { ok: !noNo, reason: sampleReason } }); };
+      if (m.status === "NEW") { statusBtns = su("ติดต่อแล้ว", "ld-contacted") + su("คัดกรองแล้ว", "ld-qualified"); }
+      else if (m.status === "CONTACTED") { statusBtns = su("คัดกรองแล้ว", "ld-qualified"); }
+      else if (m.status === "QUALIFIED") { statusBtns = su("ย้อนเป็นติดต่อแล้ว", "ld-back", "ghost"); }
+      var g = gateConvert(m);
+      var conv = !g ? "" : ui.button({ label: "แปลงเป็นโอกาสขาย", variant: "primary", action: "ld-convert", id: m.id, disabledReason: noNo ? sampleReason : (g.allowed ? null : g.reason) });
+      footer = ui.permButton({ label: "ไม่สำเร็จ", variant: "danger-outline", action: "ld-lost", id: m.id, permission: "lead.update", ctx: rc, extra: { ok: !noNo, reason: sampleReason } }) +
+        '<span class="spacer"></span>' + statusBtns + ui.permButton({ label: "มอบหมาย", variant: "secondary", action: "ld-assign", id: m.id, permission: "lead.assign", ctx: rc, extra: { ok: !noNo && !m.ownerUnknown, reason: sampleReason } }) + conv;
+    }
+    S.drawer = JCRM.drawer({ title: "Lead · " + JCRM.customerName(m.customerNo), ref: m.leadNo || "เลข Lead " + DASH + " (ไม่มีในข้อมูลตัวอย่าง)", wide: true, body: head + info + next + result + hist, footer: footer,
+      onCancel: function () { S.drawer = null; S.drawerId = null; } });
+    S.drawerId = m.id;
+  }
+
+  /* ---------------------------------------------------------------------------
+     การกระทำ
+     ------------------------------------------------------------------------ */
+  function guard(m, perm, needOpen) {
+    if (!m) { JCRM.toast(T.stateNotFound, "warning"); return false; }
+    if (!m.leadNo) { JCRM.toast("ข้อมูลตัวอย่างไม่มีเลข Lead ของรายการนี้ (prototype)", "info"); return false; }
+    var a = JCRM.access(perm, rowCtx(m));
+    if (!a.allowed) { JCRM.toast(a.visible ? a.reason : T.rpcDenied, "warning"); return false; }
+    if (needOpen === true && !isOpen(m)) { JCRM.toast("รายการที่ปิดแล้วแก้ไขไม่ได้", "warning"); return false; }
+    if (needOpen === false && isOpen(m)) { JCRM.toast(T.reasonStatus, "warning"); return false; }
+    return true;
+  }
+  function changeStatus(id, to, extra, toastText) {
+    var m = findLead(id);
+    ledger(m, -1);
+    var patch = { status: to, statusHistory: m.statusHistory.concat([{ from: m.status, to: to, at: NOW, by: me(), note: extra && extra.note ? extra.note : null }]) };
+    Object.keys(extra || {}).forEach(function (k) { if (k !== "note") { patch[k] = extra[k]; } });
+    setOver(id, patch);
+    ledger(findLead(id), 1);
+    rerender();
+    if (OPEN.indexOf(to) === -1) { closeDrawer(); } else { refreshDrawer(); }
+    JCRM.toast(toastText, "success", { title: "prototype" });
+  }
+  JCRM.on("ld-open", function (id) { openDrawer(id); });
+  JCRM.on("ld-branch", function (v) { JCRM.setBranch(v); });
+  JCRM.on("ld-channel", function (v) { S.channel = v || ""; rerender(); });
+  JCRM.on("ld-interest", function (v) { S.interest = v || ""; rerender(); });
+  JCRM.on("ld-priority", function (v) { S.priority = v || ""; rerender(); });
+  JCRM.on("ld-owner", function (v) { S.owner = v || null; try { var u = new URL(window.location.href); if (S.owner) { u.searchParams.set("owner", S.owner); } else { u.searchParams.delete("owner"); } window.history.replaceState(null, "", u.toString()); } catch (e) { /* file:// */ } rerender(); });
+  JCRM.on("ld-clear", function () { S.channel = ""; S.interest = ""; S.priority = ""; S.owner = null; rerender(); });
+  document.addEventListener("jcrm:tabchange", function (e) { if (e.detail && e.detail.tabsId === "ld-tabs") { S.tab = e.detail.tab; } });
+
+  /* NEW → CONTACTED ด้วยมือ · first_contacted_at = greatest(now(), created_at) (ข้อ 4.3 v2.2) */
+  JCRM.on("ld-contacted", function (id) {
+    var m = findLead(id); if (!guard(m, "lead.update", true)) { return; }
+    JCRM.confirm({ title: "ยืนยันว่าติดต่อลูกค้าแล้ว", message: "ใช้เมื่อติดต่อจากช่องทางอื่นแล้วมาบันทึก เวลาติดต่อครั้งแรกจะเป็นเวลาปัจจุบัน", confirmLabel: "ยืนยัน", variant: "primary",
+      onConfirm: function () { changeStatus(id, "CONTACTED", { firstContactedAt: NOW }, "เปลี่ยน " + m.leadNo + " เป็นติดต่อแล้ว · ติดต่อครั้งแรก " + fmt.dateTime(NOW)); return true; } });
+  });
+  JCRM.on("ld-qualified", function (id) {
+    var m = findLead(id); if (!guard(m, "lead.update", true)) { return; }
+    JCRM.confirm({ title: "ยืนยันว่าคัดกรองแล้ว", message: "ยืนยันความต้องการ งบ และช่วงเวลาซื้อของลูกค้าแล้ว" + (m.status === "NEW" ? " · เวลาติดต่อครั้งแรกจะเป็นเวลาปัจจุบัน" : ""), confirmLabel: "ยืนยัน", variant: "primary",
+      onConfirm: function () { changeStatus(id, "QUALIFIED", m.status === "NEW" ? { firstContactedAt: NOW } : {}, "เปลี่ยน " + m.leadNo + " เป็นคัดกรองแล้ว"); return true; } });
+  });
+  JCRM.on("ld-back", function (id) {
+    var m = findLead(id); if (!guard(m, "lead.update", true)) { return; }
+    JCRM.confirm({ title: "ย้อนเป็นติดต่อแล้ว", message: "สถานะจะกลับจากคัดกรองแล้วเป็นติดต่อแล้ว", confirmLabel: "ยืนยัน", variant: "primary",
+      onConfirm: function () { changeStatus(id, "CONTACTED", {}, "เปลี่ยน " + m.leadNo + " กลับเป็นติดต่อแล้ว"); return true; } });
+  });
+  JCRM.on("ld-reopen", function (id) {
+    var m = findLead(id); if (!guard(m, "lead.reopen", false)) { return; }
+    JCRM.confirm({ title: "เปิด Lead อีกครั้ง?", message: "สถานะจะกลับเป็นติดต่อแล้ว และล้างวันปิด เหตุผล และโอกาสขายที่แปลง", confirmLabel: "เปิดอีกครั้ง", variant: "primary",
+      onConfirm: function () { changeStatus(id, "CONTACTED", { closedAt: null, lostReason: null, lostNote: null, convertedOpportunityNo: null }, "เปิด " + m.leadNo + " อีกครั้งแล้ว (ติดต่อแล้ว)"); return true; } });
+  });
+  JCRM.on("ld-lost", function (id) {
+    var m = findLead(id); if (!guard(m, "lead.update", true)) { return; }
+    JCRM.reasonDialog({ title: "บันทึกไม่สำเร็จ", ref: "lostReasons", label: "เหตุผลที่ไม่สำเร็จ", requiredMessage: "เลือกเหตุผลที่ไม่สำเร็จ", intro: "<p>" + esc(m.leadNo + " · " + JCRM.customerName(m.customerNo)) + "</p>",
+      submitLabel: "บันทึกไม่สำเร็จ", submitVariant: "danger",
+      onSubmit: function (v) { changeStatus(id, "LOST", { lostReason: v.reason, lostNote: v.note || null, closedAt: NOW, note: JCRM.label("lostReasons", v.reason) }, "บันทึก " + m.leadNo + " ไม่สำเร็จ (" + JCRM.label("lostReasons", v.reason) + ") · ดูได้ในแท็บไม่สำเร็จ"); return true; } });
+  });
+  JCRM.on("ld-next", function (id) {
+    var m = findLead(id); if (!guard(m, "lead.update", true)) { return; }
+    JCRM.dialog({ title: "แก้การติดตามถัดไป", size: "md", intro: "<p>" + esc(m.leadNo) + "</p>",
+      fields: [
+        { name: "next_text", label: "การติดตามถัดไป", type: "text", required: true, piiWarn: true, maxLength: 200, value: m.nextText || "" },
+        { name: "next_type", label: "ประเภท", type: "select", ref: "taskTypes", required: true, value: m.nextType || "", width: "half" },
+        { name: "next_at", label: "วันเวลา", type: "datetime", required: true, width: "half", value: m.nextAt ? m.nextAt.slice(0, 16) : "" },
+        { name: "priority", label: "ความสำคัญ", type: "select", ref: "priorities", required: true, value: m.priority || "", width: "half" }
+      ], submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        setOver(id, { nextText: v.next_text, nextType: v.next_type, nextAt: toIso(v.next_at), priority: v.priority });
+        rerender(); refreshDrawer();
+        JCRM.toast("บันทึกการติดตามถัดไปของ " + m.leadNo + " แล้ว · ระบบจริง trigger ปรับงานติดตามถัดไปให้ตรง", "success", { title: "prototype" });
+        return true;
+      } });
+  });
+
+  /* แปลงเป็นโอกาสขาย (lead.update บน Lead + opportunity.create ประเมินกับ Lead · api.convert_lead) */
+  JCRM.on("ld-convert", function (id) {
+    var m = findLead(id);
+    if (!m || !m.leadNo) { JCRM.toast("ข้อมูลตัวอย่างไม่มีเลข Lead ของรายการนี้ (prototype)", "info"); return; }
+    var g = gateConvert(m);
+    if (!g || !g.allowed) { JCRM.toast(g ? g.reason : T.rpcDenied, "warning"); return; }
+    if (!isOpen(m)) { JCRM.toast("รายการที่ปิดแล้วแก้ไขไม่ได้", "warning"); return; }
+    JCRM.dialog({ title: "แปลงเป็นโอกาสขาย", size: "md", intro: '<p class="t-sm">' + esc(m.leadNo + " · " + JCRM.customerName(m.customerNo)) + " · สร้างโอกาสขายขั้นสนใจ และเปลี่ยน Lead เป็นแปลงเป็นโอกาสขายในทรานแซกชันเดียว</p>",
+      fields: [
+        { name: "product_type", label: "ประเภทสินค้า", type: "select", ref: "productTypes", value: m.productType || "", width: "half" },
+        { name: "product_model", label: "รุ่น", type: "text", required: true, value: m.productModel || "", maxLength: 120, width: "half" },
+        { name: "quantity", label: "จำนวน", type: "number", required: true, value: 1, min: 1, minMessage: "จำนวนต้องไม่น้อยกว่า 1", width: "half" },
+        { name: "unit_price", label: "ราคา/หน่วย (บาท)", type: "money", min: 0.01, minMessage: "ราคาต้องมากกว่า 0", width: "half" },
+        { name: "interest_level", label: "ระดับความสนใจ", type: "select", ref: "interestLevel", value: m.interestLevel || "", width: "half" },
+        { name: "priority", label: "ความสำคัญ", type: "select", ref: "priorities", required: true, value: m.priority || "", width: "half" },
+        { name: "next_text", label: "การติดตามถัดไป", type: "text", required: true, piiWarn: true, maxLength: 200 },
+        { name: "next_type", label: "ประเภท", type: "select", ref: "taskTypes", required: true, width: "half" },
+        { name: "next_at", label: "วันเวลา", type: "datetime", required: true, width: "half", validate: function (v) { return fmt.compareIso(toIso(v), NOW) <= 0 ? "เลือกเวลาหลังจากตอนนี้" : null; } }
+      ], submitLabel: "แปลงเป็นโอกาสขาย", submitVariant: "primary",
+      onSubmit: function (v) {
+        var op = "OP-2026-" + pad6(S.nextOp); S.nextOp += 1;
+        changeStatus(id, "CONVERTED", { convertedOpportunityNo: op, closedAt: NOW, productModel: v.product_model, productType: v.product_type || m.productType, interestLevel: v.interest_level || m.interestLevel, note: "→ " + op },
+          "แปลงเป็นโอกาสขาย " + op + " แล้วในหน้านี้ (ไม่บันทึกจริง) · ระบบจริง api.convert_lead สร้างโอกาสขายขั้นสนใจ ช่องทางต้นทาง " + (m.channel ? JCRM.label("channels", m.channel) : DASH));
+        return true;
+      } });
+  });
+
+  /* มอบหมาย / ย้ายสาขา (lead.assign · T รวม Lead ที่ไม่มีผู้รับผิดชอบในสาขาที่ตนเป็นหัวหน้าทีม · api.assign_owner('LEAD', …)) */
+  JCRM.on("ld-assign", function (id) {
+    var m = findLead(id); if (!guard(m, "lead.assign", true)) { return; }
+    var PERM = "lead.assign", dest = JCRM.scopeBranches(PERM, "OWN");
+    if (dest.indexOf(m.branch) === -1) { dest.unshift(m.branch); }
+    var canMove = dest.length > 1, others = dest.filter(function (b) { return b !== m.branch; });
+    var cands = D.staff.filter(function (s) { return s.status === "ACTIVE" && s.staffCode !== m.owner && dest.some(function (b) { return s.assignments.some(function (a) { return a.branch === b; }) && JCRM.can(PERM, { branch: b, owner: s.staffCode }); }); });
+    var fields = [];
+    if (canMove) { fields.push({ name: "to_branch", label: "สาขาปลายทาง", type: "select", required: true, value: m.branch, options: dest.map(function (b) { return { value: b, label: JCRM.branchName(b) }; }), help: "ย้ายสาขาต้องมีสิทธิ์มอบหมายทั้งสาขาต้นทางและปลายทาง" }); }
+    fields.push({ name: "to_staff", label: "ผู้รับผิดชอบใหม่", type: "select", required: true, requiredMessage: "เลือกผู้รับผิดชอบใหม่",
+      options: cands.map(function (s) { return { value: s.staffCode, label: s.displayName + " · " + JCRM.assignmentText(s, { branchNames: true }) }; }),
+      validate: function (v, values) {
+        var b = values.to_branch || m.branch, s = JCRM.staff(v);
+        if (!s || !s.assignments.some(function (a) { return a.branch === b; })) { return "ผู้รับผิดชอบใหม่ต้องมีบทบาทในสาขาปลายทาง"; }
+        return JCRM.can(PERM, { branch: b, owner: v }) ? null : "ผู้รับผิดชอบนี้อยู่นอกขอบเขตที่คุณมอบหมายได้";
+      } });
+    fields.push({ name: "reason", label: "เหตุผล", type: "select", required: true, requiredMessage: "เลือกเหตุผล", visibleWhen: canMove ? { field: "to_branch", equals: m.branch } : null,
+      options: D.ownershipChangeReasons.filter(function (r) { return r.code !== "BRANCH_TRANSFER"; }).map(function (r) { return { value: r.code, label: r.labelTh }; }) });
+    if (canMove) { fields.push({ name: "reason_auto", type: "static", label: "เหตุผล", html: '<p class="t-sm">ย้ายสาขา (ตั้งอัตโนมัติเมื่อเปลี่ยนสาขา)</p>', visibleWhen: { field: "to_branch", in: others } }); }
+    fields.push({ name: "note", label: "หมายเหตุ", type: "text", piiWarn: true, maxLength: 200 });
+    JCRM.dialog({ title: "เปลี่ยนผู้รับผิดชอบ " + m.leadNo, size: "md", intro: '<p class="t-sm">ปัจจุบัน: ' + esc(m.owner ? JCRM.staffName(m.owner) : "ยังไม่มีผู้รับผิดชอบ") + " · " + esc(JCRM.branchName(m.branch)) + "</p>",
+      fields: fields, submitLabel: "บันทึก", submitVariant: "accent",
+      onSubmit: function (v) {
+        var cur = findLead(id), b = v.to_branch || cur.branch, reason = b !== cur.branch ? "BRANCH_TRANSFER" : v.reason;
+        ledger(cur, -1);
+        setOver(id, { owner: v.to_staff, branch: b, ownerHistory: cur.ownerHistory.concat([{ at: NOW, from: cur.owner, to: v.to_staff, by: me(), reason: reason, fromBranch: cur.branch, toBranch: b }]) });
+        ledger(findLead(id), 1);
+        rerender(); refreshDrawer();
+        JCRM.toast("เปลี่ยนผู้รับผิดชอบ " + cur.leadNo + " เป็น " + JCRM.staffName(v.to_staff) + " แล้วในหน้านี้ · ระบบจริง api.assign_owner('LEAD', …, " + reason + ") · audit LEAD_ASSIGNED · แจ้ง LEAD_ASSIGNED", "success", { title: "prototype" });
+        return true;
+      } });
+  });
+
+  /* + สร้าง Lead (lead.create ประเมินกับลูกค้า · สถานะเริ่มตาม ref.channels.is_live · ข้อ 4.3) */
+  JCRM.on("ld-create", function () {
+    if (!JCRM.can("lead.create")) { JCRM.toast(T.rpcDenied, "warning"); return; }
+    var branches = JCRM.scopeBranches("lead.create", "OWN");
+    var customers = D.customers.filter(function (c) { return JCRM.can("customer.read", { customer: JCRM.customerCtx(c) }) && JCRM.can("lead.create", { customer: JCRM.customerCtx(c) }); });
+    var live = D.channels.filter(function (c) { return c.isLive; }).map(function (c) { return c.code; }), msg = D.channels.filter(function (c) { return !c.isLive; }).map(function (c) { return c.code; });
+    var canAssign = JCRM.can("lead.assign");
+    var fields = [
+      { name: "customer_no", label: "ลูกค้า", type: "select", required: true, requiredMessage: "เลือกลูกค้า", options: customers.map(function (c) { return { value: c.customerNo, label: JCRM.customerName(c.customerNo) + " · " + c.customerNo }; }),
+        help: "ค้นเฉพาะลูกค้าที่คุณอ่านได้ (ข้อมูลตัวอย่างมีเฉพาะรายการที่ระบุชื่อ)" },
+      { name: "channel", label: "ช่องทาง", type: "select", ref: "channels", required: true, width: "half" },
+      { name: "status_live", type: "static", label: "สถานะเริ่มต้น", html: '<p class="t-sm">ติดต่อแล้ว (ช่องทางคุยสด · ติดต่อครั้งแรก = เวลาที่สร้าง)</p>', visibleWhen: { field: "channel", in: live } },
+      { name: "status_msg", type: "static", label: "สถานะเริ่มต้น", html: '<p class="t-sm">ใหม่ (ช่องทางข้อความ · เปลี่ยนเป็นติดต่อแล้วเมื่อมีการติดต่อกลับครั้งแรก)</p>', visibleWhen: { field: "channel", in: msg } },
+      { name: "interest", label: "ความสนใจ", type: "select", ref: "interestTypes", required: true, width: "half" },
+      { name: "source", label: "แหล่งที่มา", type: "select", ref: "sources", width: "half" },
+      { name: "product_type", label: "ประเภทสินค้า", type: "select", ref: "productTypes", width: "half" },
+      { name: "product_model", label: "รุ่น", type: "text", maxLength: 120, width: "half" },
+      { name: "interest_level", label: "ระดับความสนใจ", type: "select", ref: "interestLevel", width: "half" }
+    ];
+    if (branches.length > 1) { fields.push({ name: "branch", label: "สาขา", type: "select", required: true, width: "half", options: branches.map(function (b) { return { value: b, label: JCRM.branchName(b) }; }) }); }
+    else { fields.push({ name: "branch", type: "hidden", value: branches[0] }); fields.push({ name: "branch_static", type: "static", label: "สาขา", html: '<p class="t-sm">' + esc(JCRM.branchName(branches[0])) + "</p>" }); }
+    fields = fields.concat([
+      { name: "priority", label: "ความสำคัญ", type: "select", ref: "priorities", required: true, value: "NORMAL", width: "half" },
+      { name: "next_text", label: "การติดตามถัดไป", type: "text", required: true, piiWarn: true, maxLength: 200 },
+      { name: "next_type", label: "ประเภท", type: "select", ref: "taskTypes", required: true, width: "half" },
+      { name: "next_at", label: "วันเวลา", type: "datetime", required: true, width: "half", validate: function (v) { return fmt.compareIso(toIso(v), NOW) <= 0 ? "เลือกเวลาหลังจากตอนนี้" : null; } }
+    ]);
+    var meHasBranch = JCRM.effectiveAssignments().some(function (a) { return a.branch; });
+    if (canAssign) {
+      var cands = D.staff.filter(function (s) { return s.status === "ACTIVE" && branches.some(function (b) { return s.assignments.some(function (a) { return a.branch === b; }) && JCRM.can("lead.assign", { branch: b, owner: s.staffCode }); }); });
+      fields.push({ name: "owner", label: "ผู้รับผิดชอบ", type: "select", placeholder: "ยังไม่มีผู้รับผิดชอบ", value: meHasBranch ? me() : "", options: cands.map(function (s) { return { value: s.staffCode, label: s.displayName + " · " + JCRM.assignmentText(s, { branchNames: true }) }; }) });
+    } else {
+      fields.push({ name: "owner", type: "hidden", value: me() });
+      fields.push({ name: "owner_static", type: "static", label: "ผู้รับผิดชอบ", html: '<p class="t-sm">' + esc(JCRM.staffName(me())) + " (ผู้บันทึก)</p>" });
+    }
+    JCRM.drawer({ title: "สร้าง Lead", wide: true, fields: fields, submitLabel: "สร้าง Lead",
+      onSubmit: function (v) {
+        var c = JCRM.customer(v.customer_no), b = v.branch, errs = {};
+        var g = JCRM.topScope("lead.create") === "ORGANIZATION";
+        if (c && !g && c.branch !== b) { errs.customer_no = "ลูกค้ายังไม่เชื่อมกับสาขานี้ (ผูกลูกค้าข้ามสาขาได้ผ่านการรับลูกค้าเท่านั้น)"; }
+        if (v.owner && v.owner !== me() && !JCRM.can("lead.assign", { branch: b, owner: v.owner })) { errs.owner = "มอบให้คนอื่นต้องมีสิทธิ์มอบหมายในสาขานี้"; }
+        if (v.owner && !JCRM.staff(v.owner).assignments.some(function (a) { return a.branch === b; })) { errs.owner = "ผู้รับผิดชอบต้องมีบทบาทในสาขาของ Lead"; }
+        if (Object.keys(errs).length) { return { errors: errs }; }
+        var no = "LD-2026-" + pad6(S.nextLd); S.nextLd += 1;
+        var isLive = channelLive(v.channel), st = isLive ? "CONTACTED" : "NEW";
+        var model = { id: no, leadNo: no, customerNo: v.customer_no, branch: b, channel: v.channel, status: st, createdAt: NOW, owner: v.owner || null, ownerUnknown: false,
+          productModel: v.product_model || null, productType: v.product_type || null, interestLevel: v.interest_level || null, interest: v.interest, priority: v.priority, source: v.source || null,
+          nextAt: toIso(v.next_at), nextType: v.next_type, nextText: v.next_text, visitNo: null, firstContactedAt: isLive ? NOW : null, convertedOpportunityNo: null, closedAt: null, lostReason: null, lostNote: null,
+          statusHistory: [{ from: null, to: st, at: NOW, by: me() }], ownerHistory: [], sample: false, derived: false };
+        S.created.push(model);
+        ledger(model, 1);
+        rerender();
+        JCRM.toast("สร้าง " + no + " แล้วในหน้านี้ (ไม่บันทึกจริง) · สถานะเริ่มต้น " + JCRM.label("leadStatuses", st) + " ตามช่องทาง " + JCRM.label("channels", v.channel), "success", { title: "prototype" });
+        return true;
+      } });
+  });
+
+  var ctx0 = JCRM.page({ id: "leads", render: render });
+  if (ctx0 && ctx0.allowed && !S.paramHandled) {
+    S.paramHandled = true;
+    var lp = JCRM.param("lead");
+    if (lp) { var hit = allLeads().filter(function (m) { return m.leadNo === lp; })[0]; if (hit) { openDrawer(hit.id); } else { S.drawer = JCRM.drawer({ title: "Lead", ref: lp, wide: true, body: ui.state("notfound", {}), footer: ui.button({ label: "ปิด", variant: "ghost", attrs: "data-jcrm-overlay-cancel" }), onCancel: function () { S.drawer = null; } }); } }
+  }
+})();
+</script>
+</body>
+</html>

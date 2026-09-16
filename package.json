@@ -1,0 +1,22 @@
+{
+  "name": "jaun-crm-customer-360",
+  "version": "0.0.0-phase0",
+  "private": true,
+  "description": "JAUN CRM · Customer 360 — Phase 0: เอกสาร · Supabase migrations · prototype",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "db:migrate": "node tools/db/run.mjs",
+    "db:test": "node tools/db/run.mjs --seed --test --quiet",
+    "db:test:verbose": "node tools/db/run.mjs --seed --test",
+    "db:dictionary": "node tools/db/gen-data-dictionary.mjs",
+    "check:prototype": "node tools/check-prototype.mjs",
+    "check:canonical": "node tools/check-canonical.mjs",
+    "check": "npm run db:test && npm run check:prototype && npm run check:canonical"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.4.1"
+  }
+}
