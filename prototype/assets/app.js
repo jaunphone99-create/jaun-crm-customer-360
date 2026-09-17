@@ -656,7 +656,9 @@
   ui.customerBadges = function (c) {
     var cu = typeof c === "string" ? customer(c) : c;
     if (!cu) { return ""; }
-    return '<span class="badge-row">' + ui.lifecycle(cu.lifecycle) + ui.supplementary(cu.badges) + "</span>";
+    var anon = cu.isAnonymous ? ui.badge("ยังไม่ระบุตัวตน", "danger") : "";
+    var wasAnon = cu.wasAnonymous ? ui.badge("เคยไม่ระบุตัวตน", "neutral") : "";
+    return '<span class="badge-row">' + anon + wasAnon + ui.lifecycle(cu.lifecycle) + ui.supplementary(cu.badges) + "</span>";
   };
   /* ป้ายสถานะจากรายการที่มี tone · ui.status("exportStatus", "EXPIRED") · รองรับ D.enums */
   ui.status = function (listName, code) {

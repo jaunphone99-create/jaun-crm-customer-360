@@ -21,7 +21,7 @@
 .rc-result:hover, .rc-result[aria-pressed="true"] { background: var(--navy-50); border-color: var(--navy-200); }
 .rc-result__main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
 .rc-selected { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.rc-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.rc-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
 .rc-actions .btn { width: 100%; min-height: var(--touch-counter); }
 .queue-item__actions .btn { min-height: var(--touch-counter); }
 .rc-mobile-switch { display: none; margin-bottom: var(--space-3); }
@@ -138,7 +138,8 @@
       '<p class="help">ไม่พบลูกค้า? กด ‘สร้างลูกค้าใหม่’ แล้วกรอกเบอร์ ระบบจะตรวจลูกค้าจากสาขาอื่นให้ · การค้นหาบันทึก CUSTOMER_SEARCH</p></div>';
     return '<section class="card rc-form-col" aria-labelledby="rc-form-title"><div class="rc-card-head"><h2 class="card__title" id="rc-form-title">รับลูกค้าเข้าร้าน</h2><span class="t-xs t-muted">visit เกิดเมื่อกด "รับเข้าคิว" หรือ "เริ่มให้บริการ" แม้ยังไม่รู้ตัวตน</span></div>' +
       '<form id="rc-form" novalidate>' + JCRM.form.render(FORM_FIELDS, S.formValues, "rc") + ident +
-      '<div class="rc-actions">' + ui.permButton({ label: "รับเข้าคิว", variant: "secondary", size: "lg", permission: "visit.create", action: "rc-open", id: "queue" }) +
+      '<div class="rc-actions">' + ui.permButton({ label: "รับลูกค้าด่วน", variant: "outline", size: "lg", permission: "visit.create", action: "rc-open-anon", id: "express", attrs: 'data-tooltip="ไม่ต้องระบุลูกค้า ไม่ต้องกรอกอะไร · สร้าง visit ทันทีแล้วเติมข้อมูลภายหลัง"' }) +
+      ui.permButton({ label: "รับเข้าคิว", variant: "secondary", size: "lg", permission: "visit.create", action: "rc-open", id: "queue" }) +
       ui.permButton({ label: "เริ่มให้บริการ", variant: "accent", size: "lg", permission: "visit.create", action: "rc-open", id: "service" }) + "</div></form></section>";
   }
   function rowHtml(r) {
@@ -322,6 +323,18 @@
   }
 
   JCRM.on("rc-open", function (mode) { openVisit(mode === "service" ? "service" : "queue"); });
+  /* รับลูกค้าด่วน — ไม่ต้องระบุลูกค้า ไม่ต้องกรอกอะไร สร้าง visit ทันที */
+  JCRM.on("rc-open-anon", function () {
+    readForm();
+    var v = JCRM.form.read(document.getElementById("rc-form"), FORM_FIELDS);
+    if (!v.interest) { JCRM.toast("เลือกความสนใจก่อนกดรับลูกค้าด่วน", "warning"); return; }
+    var anonName = "Walk-in #" + String(Math.floor(Math.random() * 900) + 100);
+    var next = S.queue.filter(function (r) { return r.status === "WAITING" || r.status === "IN_SERVICE"; }).length + 1;
+    var qNo = "Q-" + S.branch + "-" + DAY6 + "-" + String(next).padStart(3, "0");
+    JCRM.toast("รับลูกค้าด่วนแล้ว · " + qNo + " (" + anonName + ") · ยังไม่ระบุตัวตน สามารถระบุภายหลังได้ (prototype ไม่บันทึกจริง)", "success", { persistent: true });
+    S.queue.unshift({ queueNo: qNo, visitNo: "V-" + S.branch + "-" + DAY6 + "-" + String(next).padStart(3, "0"), status: "IN_SERVICE", interest: v.interest, queuedAt: NOW, receiver: D.meta.defaultStaffCode, customerNo: null, identified: false, outcome: null, partySize: 1 });
+    rerender();
+  });
   JCRM.on("rc-branch", function (v) { JCRM.setBranch(v); });
   JCRM.on("rc-mview", function (v) { readForm(); S.mview = v === "queue" ? "queue" : "form"; var g = document.querySelector(".rc-grid"); if (g) { g.setAttribute("data-mview", S.mview); } });
   JCRM.on("rc-search", function () { readForm(); S.searched = true; rerender(); var s = document.getElementById("rc-search"); if (s) { s.focus(); } });

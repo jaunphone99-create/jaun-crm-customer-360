@@ -913,9 +913,11 @@
      contacts[].full มีเพื่อจำลอง api.reveal_contact เท่านั้น ห้ามแสดงก่อนกดเปิดดู
      ---------------------------------------------------------------------- */
   function CU(no, first, last, branch, owner, extra) {
-    var o = { customerNo: no, firstName: first, lastName: last, displayName: first + " " + last, branch: branch, owner: owner,
-      lifecycle: null, badges: [], contacts: [], lastChannel: null, lastActivityAt: null, source: null };
+    var name = (first || "") + (first && last ? " " : "") + (last || "");
+    var o = { customerNo: no, firstName: first, lastName: last, displayName: name || null, branch: branch, owner: owner,
+      lifecycle: null, badges: [], contacts: [], lastChannel: null, lastActivityAt: null, source: null, isAnonymous: false };
     Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
+    if (!o.displayName) { o.displayName = o.anonymousLabel || o.nickname || ("ลูกค้า " + no); }
     return o;
   }
   function PH(full, masked) { return { type: "PHONE", full: full, masked: masked }; }
@@ -944,7 +946,11 @@
     CU("CUS-2026-004410", "สมชาย", "ใจดี", "JP1", null, { lifecycle: "OPPORTUNITY", badges: ["followingUp"], firstBranch: "JP1", source: "13.14 ตรวจซ้ำ", contacts: [PH("081-234-5679", "081-XXX-5679")] }),
     /* คู่ซ้ำ (ข้อ 13.14 v2.2): ทั้งสองราย สาขาแรก JP1 · ผู้ดูแลคุณคิม */
     CU("CUS-2026-006633", "ณัฐพล", "สุขใจ", "JP1", "ST-0046", { firstBranch: "JP1", source: "13.14 คู่ซ้ำ", createdBy: "ST-0046", createdAt: "2026-09-03" }),
-    CU("CUS-2026-002118", "ณัฐพร", "สุขใจ", "JP1", "ST-0046", { firstBranch: "JP1", source: "13.14 คู่ซ้ำ" })
+    CU("CUS-2026-002118", "ณัฐพร", "สุขใจ", "JP1", "ST-0046", { firstBranch: "JP1", source: "13.14 คู่ซ้ำ" }),
+    /* ลูกค้านิรนาม — ไม่มีชื่อ/เบอร์ (เพิ่มใหม่) */
+    CU("CUS-2026-006900", null, null, "JP1", "ST-0045", { lifecycle: "IDENTIFIED", badges: ["notContacted"], lastChannel: "WALK_IN", lastActivityAt: "2026-09-11T09:30:00+07:00", lastBranch: "JP1", firstBranch: "JP1", source: "ลูกค้านิรนาม Walk-in", isAnonymous: true, anonymousLabel: "Walk-in #001", displayName: "Walk-in #001 (11 ก.ย. 68)", interest: "ซ่อมเครื่อง", contacts: [] }),
+    CU("CUS-2026-006910", null, null, "JP2", null, { lifecycle: "IDENTIFIED", badges: [], lastChannel: "LINE", lastActivityAt: "2026-09-10T14:20:00+07:00", lastBranch: "JP2", firstBranch: "JP2", source: "ลูกค้านิรนาม LINE", isAnonymous: true, anonymousLabel: "LINE #042", displayName: "น้องมิ้นท์ 🌸 (LINE)", nickname: "น้องมิ้นท์ 🌸", interest: "ซื้อเครื่อง", contacts: [{ type: "LINE_ID", full: "mint_sweet99", masked: "mi***" }] }),
+    CU("CUS-2026-006920", "ประวิทย์", "จันทร์เพ็ญ", "JP1", "ST-0045", { lifecycle: "LEAD", badges: [], lastChannel: "WALK_IN", lastActivityAt: "2026-09-11T11:00:00+07:00", lastBranch: "JP1", firstBranch: "JP1", source: "เคยเป็นนิรนาม อัพเดทข้อมูลแล้ว", wasAnonymous: true, anonymousLabel: "Walk-in #098", interest: "ซื้อเครื่อง", contacts: [PH("089-111-2233", "089-XXX-2233")] })
   ];
 
   /* 10.1 Customer 360 — คุณสมชาย ใจดี (ข้อ 13.7) */

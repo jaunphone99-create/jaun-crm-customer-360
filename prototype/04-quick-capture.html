@@ -82,7 +82,7 @@
     nickname: "more", line_id: "more", email: "more", province: "more", source: "more", note: "more", marketing: "more", marketing_channels: "more", age_ok: "more" };
   var CONSENT_CHANNEL_LABEL = { LINE: "LINE", SMS: "SMS", PHONE: JCRM.label("channels", "PHONE"), EMAIL: "อีเมล" };
   var S = { mode: "customer", visitNo: null, visitBranch: null, branches: [], activeTab: "basic",
-    dup: { status: "idle", candidates: [], key: "", decision: null } };
+    dup: { status: "idle", candidates: [], key: "", decision: null }, anonymousMode: false };
   var formEl = null;
 
   /* ---------- ช่วยเหลือ ---------- */
@@ -346,10 +346,18 @@
   }
 
   /* ---------- ตรวจความถูกต้อง ---------- */
-  function validateAll() {
+  function validateAll(isAnonymous) {
     var list = fields(), v = JCRM.form.read(formEl, list);
     var errors = JCRM.form.validate(list, v);
-    if (!errors.phone && !hasIdent(v)) { errors.phone = "ต้องมีช่องทางติดต่ออย่างน้อย 1 รายการ (เบอร์โทร LINE ID หรืออีเมล)"; }
+    if (isAnonymous) {
+      /* โหมดนิรนาม: ไม่บังคับชื่อ เบอร์ LINE email — บังคับแค่ช่องทาง + ความสนใจ + privacy */
+      delete errors.phone; delete errors.first_name; delete errors.last_name; delete errors.nickname;
+      if (!v.channel) { errors.channel = "เลือกช่องทางที่ติดต่อมา"; }
+      if (!v.interest) { errors.interest = "เลือกความสนใจ"; }
+      if (!v.privacy) { errors.privacy = "ต้องแจ้งประกาศความเป็นส่วนตัวให้ลูกค้าก่อนบันทึก"; }
+    } else {
+      if (!errors.phone && !hasIdent(v)) { errors.phone = "ต้องมีช่องทางติดต่ออย่างน้อย 1 รายการ (เบอร์โทร LINE ID หรืออีเมล)"; }
+    }
     JCRM.form.showErrors(formEl, list, errors);
     var names = Object.keys(errors);
     TABS.forEach(function (t) {
@@ -362,7 +370,7 @@
       var firstTab = TABS.filter(function (t) { return names.some(function (n) { return FIELD_PANEL[n] === t.id; }); })[0];
       if (firstTab && window.matchMedia && window.matchMedia("(min-width: 768px)").matches) { selectTab(firstTab.id); }
     }
-    return { values: v, errors: errors, ok: !names.length };
+    return { values: v, errors: errors, ok: !names.length, isAnonymous: !!isAnonymous };
   }
   function selectTab(id, focus) {
     S.activeTab = id;
@@ -396,6 +404,16 @@
     else { finish((S.visitNo ? "บันทึกลูกค้าและผูกกับ " + S.visitNo + " แล้ว" : "บันทึกลูกค้าและเปิดการรับลูกค้า (" + JCRM.label("visitStatuses", "IN_SERVICE") + ") แล้ว") + suffix, JCRM.link("customer-360", {})); }
   });
   JCRM.on("qc-check", function () { runCheck(false); });
+  /* ปุ่ม "บันทึกแบบไม่ระบุตัวตน" — ข้าม validation ชื่อ/เบอร์ บังคับแค่ช่องทาง + ความสนใจ + privacy */
+  JCRM.on("qc-save-anon", function () {
+    var r = validateAll(true);
+    if (!r.ok) { var bad = JCRM.$("#qc [aria-invalid=true]"); if (bad) { bad.focus(); } return; }
+    var v = r.values;
+    var channelLabel = JCRM.label("channels", v.channel) || v.channel || "ไม่ระบุ";
+    var anonName = channelLabel + " #" + String(Math.floor(Math.random() * 900) + 100);
+    var suffix = " (prototype ไม่บันทึกจริง)" + leadNote(v);
+    finish("บันทึกลูกค้านิรนามแล้ว · " + anonName + " · สามารถเติมชื่อ/เบอร์ภายหลังได้ที่หน้า Customer 360" + suffix, JCRM.canOpen("customers") ? JCRM.link("customers", {}) : landing());
+  });
   JCRM.on("qc-decide-new", function () { S.dup.decision = "new"; renderDup(); refreshDynamic(); var f = JCRM.$("#qc-override_reason"); if (f) { f.focus(); } });
   JCRM.on("qc-undecide", function () { S.dup.decision = null; renderDup(); refreshDynamic(); });
   JCRM.on("qc-more", function (id, el) { var open = !formEl.classList.contains("more-open"); formEl.classList.toggle("more-open", open); el.setAttribute("aria-expanded", String(open)); });
