@@ -338,7 +338,8 @@
       return '<button type="button" class="btn btn--' + variant + '" data-jcrm-action="qc-save" data-jcrm-id="' + id + '"' +
         (blocked ? ' aria-disabled="true" data-tooltip="' + esc(blocked) + '"' : "") + ">" + inner + "</button>";
     };
-    var html = '<button type="button" class="btn btn--ghost qc-cancel" data-jcrm-action="qc-cancel"><span>ยกเลิก</span></button><span class="spacer"></span>';
+    var anonBtn = '<button type="button" class="btn btn--outline" data-jcrm-action="qc-save-anon" title="บันทึกโดยไม่ต้องกรอกชื่อหรือเบอร์ ระบบจะสร้าง ID ให้อัตโนมัติ เติมข้อมูลภายหลังได้"><span class="qc-label-long">บันทึกแบบไม่ระบุตัวตน</span><span class="qc-label-short">ไม่ระบุตัวตน</span></button>';
+    var html = '<button type="button" class="btn btn--ghost qc-cancel" data-jcrm-action="qc-cancel"><span>ยกเลิก</span></button><span class="spacer"></span>' + anonBtn;
     if (S.mode === "customer") { html += btn("บันทึก", "บันทึกลูกค้า", "accent", "customer"); }
     else if (S.visitNo || (v.channel && v.channel !== "WALK_IN")) { html += btn("บันทึก", "บันทึกลูกค้า", "accent", "save"); }
     else { html += btn("รับเข้าคิว", null, "secondary", "queue") + btn("เริ่มให้บริการ", null, "accent", "serve"); }
