@@ -1296,5 +1296,63 @@
   ];
   D.mobileHome = { taskCardTh: "งานทั้งหมด 12 · เกินกำหนด 4", quickActionsTh: ["รับลูกค้า", "ค้นหาลูกค้า", "งานของฉัน"], recentCustomersTh: "ลูกค้าที่ฉันรับล่าสุด 5 ราย (เฉพาะลูกค้า JP1 ของคุณขวัญ)", recentCustomersRef: "recentCustomers.ST-0045" };
 
+  /* ===== localStorage persistence (prototype only) ===== */
+  /* โหลดลูกค้าที่เคยบันทึกไว้จาก localStorage กลับเข้า D.customers */
+  (function loadSaved() {
+    try {
+      var raw = localStorage.getItem("jcrm.savedCustomers");
+      if (!raw) return;
+      var list = JSON.parse(raw);
+      if (!Array.isArray(list)) return;
+      list.forEach(function (c) {
+        /* ป้องกันซ้ำ */
+        if (D.customers.some(function (ex) { return ex.customerNo === c.customerNo; })) return;
+        D.customers.push(c);
+        /* เพิ่มใน customerList ด้วย */
+        if (D.customerList && D.customerList.rows.indexOf(c.customerNo) === -1) {
+          D.customerList.rows.unshift(c.customerNo);
+        }
+      });
+    } catch (e) { /* ข้ามถ้า parse ไม่ได้ */ }
+  })();
+
+  /* ฟังก์ชันบันทึกลูกค้าใหม่ — เรียกจากหน้า Quick Capture */
+  D._saveCustomer = function (customerObj) {
+    /* เพิ่มใน memory */
+    D.customers.unshift(customerObj);
+    if (D.customerList && D.customerList.rows.indexOf(customerObj.customerNo) === -1) {
+      D.customerList.rows.unshift(customerObj.customerNo);
+    }
+    /* บันทึกลง localStorage */
+    try {
+      var raw = localStorage.getItem("jcrm.savedCustomers");
+      var list = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(list)) list = [];
+      /* ป้องกันซ้ำ */
+      list = list.filter(function (c) { return c.customerNo !== customerObj.customerNo; });
+      list.unshift(customerObj);
+      localStorage.setItem("jcrm.savedCustomers", JSON.stringify(list));
+    } catch (e) { /* ข้ามถ้า localStorage เต็ม */ }
+  };
+
+  /* สร้างเลขลูกค้าถัดไป */
+  D._nextCustomerNo = function () {
+    var max = 0;
+    try {
+      var raw = localStorage.getItem("jcrm.savedCustomers");
+      var list = raw ? JSON.parse(raw) : [];
+      list.forEach(function (c) {
+        var m = /CUS-\d{4}-(\d+)/.exec(c.customerNo);
+        if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
+      });
+    } catch (e) {}
+    D.customers.forEach(function (c) {
+      var m = /CUS-\d{4}-(\d+)/.exec(c.customerNo);
+      if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
+    });
+    var next = max + 1;
+    return "CUS-2026-" + String(next).padStart(6, "0");
+  };
+
   window.JCRM_DATA = D;
 })();
