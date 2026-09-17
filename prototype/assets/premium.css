@@ -109,12 +109,13 @@ body {
 /* C. แถบด้านบน (Topbar) */
 /* -------------------------------------------------------------------------- */
 .topbar {
-  /* เอฟเฟกต์กระจก (Glassmorphism) */
-  background-color: rgba(255, 255, 255, 0.85) !important;
+  /* เอฟเฟกต์กระจก (Glassmorphism) — ใช้สี White 60% ตาม CI Ratio */
+  background-color: var(--white) !important;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: none !important;
   box-shadow: 0 1px 15px -3px var(--gray-200);
+  opacity: 0.97;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -196,7 +197,8 @@ body {
   background-color: var(--navy-50) !important;
   font-weight: var(--fw-semibold) !important;
   color: var(--text-heading);
-  border-bottom: 2px solid var(--jaun-orange) !important;
+  /* CI Ratio: Navy 25% — ใช้ navy เป็นเส้นเน้น, ส้มใช้เป็น accent เท่านั้น */
+  border-bottom: 2px solid var(--support-blue) !important;
   padding: var(--space-4) var(--space-4) !important;
 }
 
