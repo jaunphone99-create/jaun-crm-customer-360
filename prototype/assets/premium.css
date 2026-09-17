@@ -1,0 +1,300 @@
+/*
+ * ==============================================================================
+ * JAUN CRM - Premium CSS Overlay
+ * ==============================================================================
+ * ไฟล์นี้ถูกสร้างขึ้นเพื่อยกระดับ UI ให้มีความหรูหรา ทันสมัย และมีระดับมากขึ้น (Premium, Expensive, Modern)
+ * โดยใช้ Token จาก app.css ในการจัดการสีและขนาด 
+ * เพื่อป้องกันการกระทบกับการทำงานหลักของระบบและทำให้การออกแบบลื่นไหล
+ * ==============================================================================
+ */
+
+/* -------------------------------------------------------------------------- */
+/* I. ไมโครแอนิเมชัน (Micro-Animations) */
+/* -------------------------------------------------------------------------- */
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  0% {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--orange-400);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* A. พื้นหลังและพื้นผิว (Background & Surface) */
+/* -------------------------------------------------------------------------- */
+body {
+  /* เพิ่ม Gradient อ่อนๆ ให้กับพื้นหลังของเพจ */
+  background: linear-gradient(135deg, var(--surface-page) 0%, var(--navy-50) 100%) !important;
+  min-height: 100vh;
+}
+
+.card {
+  /* เพิ่มเงาแบบมีมิติและแอนิเมชันเมื่อนำเมาส์ไปชี้ */
+  box-shadow: var(--shadow-1), 0 4px 20px -2px var(--gray-100);
+  transition: transform var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
+  border: 1px solid var(--border-subtle);
+  animation: fadeInUp 0.6s var(--ease) backwards;
+}
+
+/* เลื่อน Card ขึ้นเมื่อ Hover */
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2), 0 8px 30px -4px var(--gray-200);
+}
+
+/* -------------------------------------------------------------------------- */
+/* B. แถบเมนูด้านข้าง (Sidebar Enhancement) */
+/* -------------------------------------------------------------------------- */
+.sidebar {
+  /* เพิ่มไล่ระดับสี (Gradient) ที่หรูหราให้กับ Sidebar */
+  background: linear-gradient(180deg, var(--jaun-navy) 0%, var(--support-blue) 100%) !important;
+  box-shadow: var(--shadow-3);
+  border-right: none;
+}
+
+.sidebar .brand {
+  /* ขอบล่างใต้โลโก้แบบไล่สี */
+  border-bottom: 1px solid transparent;
+  border-image: linear-gradient(to right, transparent, var(--support-blue), transparent) 1;
+}
+
+.nav-item {
+  transition: all var(--dur-fast) var(--ease);
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-1);
+}
+
+.nav-item:hover {
+  background-color: var(--surface-nav-hover);
+  transform: translateX(4px);
+}
+
+.nav-item.is-active {
+  background-color: var(--surface-nav-active);
+  /* ขอบสีส้มด้านซ้ายแบบ Premium */
+  border-left: 4px solid var(--jaun-orange);
+  /* เพิ่ม Glow สีส้มจางๆ */
+  box-shadow: inset 20px 0 20px -20px var(--jaun-orange);
+}
+
+/* -------------------------------------------------------------------------- */
+/* C. แถบด้านบน (Topbar) */
+/* -------------------------------------------------------------------------- */
+.topbar {
+  /* เอฟเฟกต์กระจก (Glassmorphism) */
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: none !important;
+  box-shadow: 0 1px 15px -3px var(--gray-200);
+}
+
+/* -------------------------------------------------------------------------- */
+/* D. การ์ดตัวชี้วัด (KPI Cards) */
+/* -------------------------------------------------------------------------- */
+.kpi-card {
+  position: relative;
+  overflow: hidden;
+}
+
+/* เส้นขอบไล่สีด้านบนสุดของ KPI Card */
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--jaun-navy) 0%, var(--jaun-orange) 100%);
+  opacity: 0.8;
+}
+
+.kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-3), 0 12px 24px -8px var(--gray-300);
+}
+
+.kpi-card__value {
+  font-size: var(--fs-display) !important;
+  font-weight: var(--fw-bold) !important;
+  color: var(--text-heading);
+  letter-spacing: -0.5px;
+}
+
+.delta {
+  box-shadow: 0 1px 3px -1px var(--gray-200);
+}
+
+/* -------------------------------------------------------------------------- */
+/* E. ปุ่มกด (Buttons) */
+/* -------------------------------------------------------------------------- */
+.btn {
+  transition: all var(--dur-fast) var(--ease) !important;
+  border-radius: var(--radius-lg) !important;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+/* ปุ่มสีส้มเด่น (Accent) */
+.btn--accent {
+  background: linear-gradient(135deg, var(--orange-500) 0%, var(--orange-400) 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px -4px var(--jaun-orange) !important;
+}
+
+.btn--accent:hover {
+  background: linear-gradient(135deg, var(--orange-400) 0%, var(--orange-300) 100%) !important;
+  box-shadow: 0 6px 16px -4px var(--jaun-orange) !important;
+}
+
+/* ปุ่มหลัก (Primary) */
+.btn--primary {
+  background: linear-gradient(135deg, var(--jaun-navy) 0%, var(--support-blue) 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px -4px var(--jaun-navy) !important;
+}
+
+.btn--primary:hover {
+  background: linear-gradient(135deg, var(--support-blue) 0%, var(--navy-700) 100%) !important;
+  box-shadow: 0 6px 16px -4px var(--jaun-navy) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* F. ตารางข้อมูล (Tables) */
+/* -------------------------------------------------------------------------- */
+.table th {
+  background-color: var(--navy-50) !important;
+  font-weight: var(--fw-semibold) !important;
+  color: var(--text-heading);
+  border-bottom: 2px solid var(--jaun-orange) !important;
+  padding: var(--space-4) var(--space-4) !important;
+}
+
+.table td {
+  padding: var(--space-4) var(--space-4) !important;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+/* สลับสีพื้นหลังแถวคู่ (Zebra striping) */
+.table tr:nth-child(even) td {
+  background-color: var(--gray-50);
+}
+
+.table tr:hover td {
+  background-color: var(--navy-50) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* G. องค์ประกอบฟอร์ม (Form Controls) */
+/* -------------------------------------------------------------------------- */
+.input, .select {
+  border-radius: var(--radius-md) !important;
+  transition: all var(--dur-fast) var(--ease);
+  box-shadow: inset 0 1px 2px var(--gray-50);
+}
+
+.input:focus, .select:focus {
+  border-color: var(--support-blue) !important;
+  box-shadow: 0 0 0 3px var(--navy-100), inset 0 1px 2px var(--gray-50) !important;
+  outline: none;
+}
+
+/* ช่องค้นหาใน Topbar */
+.topbar .input {
+  border-radius: var(--radius-full) !important;
+  background-color: var(--gray-50);
+  border-color: transparent;
+  box-shadow: inset 0 1px 3px var(--gray-100);
+}
+
+.topbar .input:focus {
+  background-color: var(--surface-card);
+  border-color: var(--support-blue) !important;
+  box-shadow: 0 0 0 3px var(--navy-100), inset 0 1px 2px var(--gray-50) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* H. ป้ายสถานะ (Badges & Chips) */
+/* -------------------------------------------------------------------------- */
+.badge {
+  box-shadow: 0 2px 4px -1px var(--gray-200);
+  padding: var(--space-1) var(--space-3) !important;
+  font-weight: var(--fw-semibold) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* J. ตัวอักษร (Typography) */
+/* -------------------------------------------------------------------------- */
+h1, h2, h3, h4, .page-title {
+  letter-spacing: -0.02em;
+  font-weight: var(--fw-bold) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* K. แถบเลื่อน (Scrollbar) */
+/* -------------------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-page); 
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--navy-200); 
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--support-blue); 
+}
+
+/* -------------------------------------------------------------------------- */
+/* L. รูปโปรไฟล์ (Avatar Enhancement) */
+/* -------------------------------------------------------------------------- */
+.avatar {
+  box-shadow: 0 2px 8px -2px var(--jaun-navy);
+  border: 2px solid var(--surface-card);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.avatar:hover {
+  transform: scale(1.05);
+}
+
+/* Notification dot animation */
+.notification-dot {
+  animation: pulse 2s infinite;
+}
