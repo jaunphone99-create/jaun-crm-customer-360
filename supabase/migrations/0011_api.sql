@@ -3236,6 +3236,8 @@ BEGIN
            AND NOT EXISTS (SELECT 1 FROM core.staff_role_assignments a
                            JOIN core.staff_profiles s ON s.id = a.staff_id AND s.status = 'ACTIVE'
                            WHERE a.role_code = v_role AND a.staff_id <> p_staff_id
+                             AND a.organization_id = (SELECT s2.organization_id FROM core.staff_profiles s2
+                                                       WHERE s2.id = p_staff_id)   -- ข้อ 7.3: นับเฉพาะองค์กรเดียวกัน
                              AND a.valid_from <= now() AND (a.valid_to IS NULL OR now() < a.valid_to)) THEN
             PERFORM app.api_denied('ห้ามปิดใช้งาน ' || v_role || ' ที่ใช้งานอยู่คนสุดท้าย');
         END IF;

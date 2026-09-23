@@ -102,7 +102,15 @@ async function main() {
 
   if (flag("--seed")) {
     const seed = join(ROOT, "supabase/seed.sql");
-    if (!existsSync(seed)) { console.error("ไม่พบ supabase/seed.sql"); process.exit(1); }
+    /* seed.sql เป็นไฟล์ที่สร้างได้ (14 MB · deterministic) จึงไม่เก็บใน git — สร้างให้อัตโนมัติถ้ายังไม่มี */
+    if (!existsSync(seed)) {
+      const gen = join(ROOT, "tools/db/gen-seed.mjs");
+      if (!existsSync(gen)) { console.error("ไม่พบ supabase/seed.sql และไม่พบ tools/db/gen-seed.mjs"); process.exit(1); }
+      console.log("ไม่พบ supabase/seed.sql — สร้างจาก tools/db/gen-seed.mjs");
+      const { execFileSync } = await import("node:child_process");
+      try { execFileSync(process.execPath, [gen], { stdio: "inherit" }); }
+      catch { console.error("สร้าง seed ไม่สำเร็จ"); process.exit(1); }
+    }
     const r = await execFile(seed);
     console.log(`${r.ok ? "✓" : "✗"} seed ${rel(seed)} (${r.ms} ms)`);
     if (!r.ok) { console.error("    " + fmtErr(r.error)); process.exit(1); }

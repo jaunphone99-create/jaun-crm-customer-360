@@ -14,7 +14,8 @@
     "db:dictionary": "node tools/db/gen-data-dictionary.mjs",
     "check:prototype": "node tools/check-prototype.mjs",
     "check:canonical": "node tools/check-canonical.mjs",
-    "check": "npm run db:test && npm run check:prototype && npm run check:canonical"
+    "check": "npm run check:canonical && npm run check:prototype && npm run db:test",
+    "db:seed": "node tools/db/gen-seed.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.4.1"

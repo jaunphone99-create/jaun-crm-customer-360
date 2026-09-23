@@ -26,3 +26,6 @@ npm-debug.log*
 # Build output
 dist/
 build/
+
+# ข้อมูลตัวอย่างที่สร้างได้ (14 MB · deterministic) — สร้างด้วย npm run db:seed
+supabase/seed.sql
