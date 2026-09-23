@@ -28,11 +28,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   /* หน้าจอล็อกของเครื่อง counter อยู่นอก AppShell ตั้งใจ — เวลาล็อกต้องซ่อน .app ทั้งก้อน */
   const lock = (
-    <CounterLock idleMinutes={await sharedCounterIdleMinutes(access)} allowDevOverride={JCRM_ENV === "dev"} />
+    <CounterLock idleMinutes={await sharedCounterIdleMinutes()} allowDevOverride={JCRM_ENV === "dev"} />
   );
 
   if (gate.kind === "denied") {
-    const allowedRoles = gate.permission ? await rolesWithPermission(gate.permission) : undefined;
+    /* "ใครเข้าหน้านี้ได้" = ทุกบทบาทที่มีสิทธิ์ใดสิทธิ์หนึ่งของหน้านั้น (routes.ts อธิบายว่าทำไมมีได้หลายตัว) */
+    const allowedRoles = gate.permissions.length > 0 ? await rolesWithPermission(gate.permissions) : undefined;
     return (
       <>
         <AppShell access={access}>

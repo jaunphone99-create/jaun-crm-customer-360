@@ -1,6 +1,7 @@
 import { cache } from "react";
 import "server-only";
 
+import { displaySettings } from "@/features/session/config";
 import { getDb, rpc } from "@/lib/db";
 import type { Access } from "@/lib/access";
 
@@ -47,7 +48,7 @@ type RawCustomer = {
 
 type KpiResult = { clock: string; period: { start: string; end: string } };
 
-/** ขอบของช่วงเวลา · newSince = ขอบล่างของ "30 วันล่าสุด" ที่ใช้ตัดสินป้าย "ลูกค้าใหม่" */
+/** ขอบของช่วงเวลา · newSince = ขอบล่างของป้าย "ลูกค้าใหม่" (badge.new_customer_days · ข้อ 11.2) */
 export type Period = { start: string; end: string; newSince: string; clock: string };
 
 /* ขอบช่วงเวลาของ preset หนึ่ง ๆ — ถามครั้งเดียวต่อ request ต่อ preset
@@ -55,17 +56,19 @@ export type Period = { start: string; end: string; newSince: string; clock: stri
    (get_kpis คำนวณ KPI ทั้งชุด การเรียกซ้ำจึงแพงโดยไม่จำเป็น) */
 const periodOf = cache(async (preset: Preset): Promise<KpiResult> => rpc<KpiResult>("get_kpis", { p_preset: preset }));
 
-/** ถามขอบช่วงเวลาจากฐานข้อมูล — preset อื่นต้องถามซ้ำเพราะป้าย "ลูกค้าใหม่" ผูกกับ 30 วันเสมอ */
+/* ถามขอบช่วงเวลาจากฐานข้อมูล
+
+   ขอบของป้าย "ลูกค้าใหม่" ไม่ผูกกับ preset ที่ผู้ใช้เลือก — มันมาจากค่าตั้ง badge.new_customer_days
+   และฐานข้อมูลคิดขอบวันให้แล้ว (derived.new_customer_since) เพราะเป็นการนับวันตามขอบเที่ยงคืน
+   Asia/Bangkok (ข้อ 1.2) เดิมที่นี่ยืมขอบของ preset LAST_30_DAYS มาใช้ ซึ่งบังเอิญตรงกันที่ค่า 30
+   แต่แก้ค่าตั้งเป็นเลขอื่นแล้วป้ายจะไม่เปลี่ยนตาม */
 export async function loadPeriod(preset: Preset): Promise<Period> {
-  if (preset === "LAST_30_DAYS") {
-    const k = await periodOf("LAST_30_DAYS");
-    return { start: k.period.start, end: k.period.end, newSince: k.period.start, clock: k.clock };
-  }
-  const [selected, last30] = await Promise.all([periodOf(preset), periodOf("LAST_30_DAYS")]);
+  const [selected, settings] = await Promise.all([periodOf(preset), displaySettings()]);
   return {
     start: selected.period.start,
     end: selected.period.end,
-    newSince: last30.period.start,
+    /* อ่านค่าตั้งไม่ได้ก็ถอยไปใช้ขอบของ 30 วันล่าสุดแบบเดิม ดีกว่าไม่ติดป้ายให้ใครเลย */
+    newSince: settings.newCustomerSince ?? (await periodOf("LAST_30_DAYS")).period.start,
     clock: selected.clock,
   };
 }

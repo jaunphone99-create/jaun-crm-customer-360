@@ -2,9 +2,9 @@
 -- supabase/tests/api_03_admin.sql — RPC ผู้ใช้ สิทธิ์ ค่าตั้ง ส่งออก audit และ PDPA ของ migration 0011_api.sql
 --   api.get_my_access · api.can_assign_role · api.assign_role · api.revoke_role · api.request_role_grant
 --   api.decide_role_grant · api.list_role_grant_requests · api.activate_self · api.list_staff · api.update_staff
---   api.disable_staff · api.save_team · api.set_team_member · api.register_device · api.get_settings · api.update_setting
+--   api.disable_staff · api.save_team · api.set_team_member · api.register_device · api.get_settings · api.update_setting · api.get_display_settings
 --   api.request_export · api.decide_export · api.record_export_download · api.list_export_requests
---   api.search_audit · api.get_entity_history · api.search_security_log
+--   api.search_audit · api.search_access_log · api.get_entity_history · api.search_security_log
 --   api.create_dsr · api.list_dsr · api.update_dsr · api.build_dsr_package · api.anonymize_customer · api.set_legal_hold
 --   api.list_integration_logs · api.svc_*
 -- fixture อิสระจาก supabase/seed.sql (องค์กร TEST-API · staff ST-96xx · อีเมล @test.example.com)
@@ -334,6 +334,42 @@ SELECT test.assert_eq((SELECT count(*) FROM audit.audit_logs a WHERE a.organizat
     'ST06 เขียน SETTINGS_UPDATED ทุกครั้ง (ข้อ 9.5)');
 UPDATE app.settings SET value = '30' WHERE key = 'badge.new_customer_days';
 
+-- ST07–ST12 · "แก้ค่าตั้งแล้วระบบเปลี่ยนพฤติกรรมจริง" (D54 · ข้อ 20.14 เกณฑ์ข้อ 5)
+-- api.get_settings() ต้องมีสิทธิ์ผู้ดูแล พนักงานหน้าร้านจึงอ่านไม่ได้ (ST01)
+-- ถ้าไม่มีทางให้เขาอ่านค่า หน้าจอก็ต้องฝังตัวเลขไว้ในโค้ด = แก้ค่าตั้งแล้วไม่มีอะไรเปลี่ยน
+-- api.get_display_settings() ปิดช่องนี้: อ่านอย่างเดียว เฉพาะค่าที่ใช้แสดงผล
+SELECT test.login_as('api.a06@test.example.com', 'aal1');          -- STAFF · ไม่มีสิทธิ์ดูค่าตั้ง
+SELECT test.assert_eq((test.jcall($$SELECT api.get_display_settings()$$) ->> 'ok')::boolean, true,
+    'ST07 พนักงานหน้าร้าน (aal1) อ่านค่าตั้งสำหรับแสดงผลได้');
+SELECT test.assert_eq(test.jcall($$SELECT api.get_display_settings()$$) -> 'settings' ->> 'sla.visitor_waiting_min', '15',
+    'ST08 คืนเกณฑ์ "รอนาน" ของคิวหน้าร้าน');
+SELECT test.assert_true(NOT (test.jcall($$SELECT api.get_display_settings()$$) -> 'settings' ? 'security.reveal_per_hour'),
+    'ST09 ไม่คืนค่าที่ใช้ตัดสินสิทธิ์หรือเพดานอัตรา');
+SELECT test.api_denied($$SELECT api.update_setting('sla.visitor_waiting_min', '99'::jsonb)$$,
+    'ST10 พนักงานหน้าร้านอ่านได้แต่แก้ไม่ได้');
+
+-- ขอบวันของป้าย "ลูกค้าใหม่" ต้องคิดที่ฐานข้อมูล (ขอบเที่ยงคืน Asia/Bangkok · ข้อ 1.2)
+-- เก็บค่าที่พนักงานได้รับไว้ก่อน แล้วค่อยเทียบกับ app.kpi_period หลัง logout
+-- (app.* เป็นฟังก์ชันภายใน ไม่ได้ GRANT ให้ authenticated — ตั้งใจให้เป็นอย่างนั้น)
+CREATE TEMP TABLE st_since (label text PRIMARY KEY, ts timestamptz);
+INSERT INTO st_since VALUES ('days30',
+    (test.jcall($$SELECT api.get_display_settings()$$) -> 'derived' ->> 'new_customer_since')::timestamptz);
+SELECT test.login_as('api.a02@test.example.com', 'aal2');          -- BUSINESS_ADMIN
+SELECT test.jcall($$SELECT api.update_setting('badge.new_customer_days', '7'::jsonb)$$);
+SELECT test.login_as('api.a06@test.example.com', 'aal1');
+INSERT INTO st_since VALUES ('days7',
+    (test.jcall($$SELECT api.get_display_settings()$$) -> 'derived' ->> 'new_customer_since')::timestamptz);
+SELECT test.logout();
+-- ค่า 30 ต้องตรงกับ preset LAST_30_DAYS เป๊ะ ไม่งั้นป้ายบนหน้าจอจะเพี้ยนจากตัวเลขในรายงาน
+SELECT test.assert_eq((SELECT ts FROM st_since WHERE label = 'days30'),
+    (SELECT period_start FROM app.kpi_period('LAST_30_DAYS')),
+    'ST11 ค่า 30 → ขอบป้ายลูกค้าใหม่ตรงกับ preset LAST_30_DAYS');
+SELECT test.assert_eq((SELECT ts FROM st_since WHERE label = 'days7'),
+    app.bkk_ts(app.bangkok_date(app.clock()) - 6),
+    'ST12 แก้ค่าเป็น 7 → ขอบเลื่อนตามจริง ไม่ใช่แค่เก็บค่า');
+DROP TABLE st_since;
+UPDATE app.settings SET value = '30' WHERE key = 'badge.new_customer_days';
+
 -- =====================================================================================
 -- EX · การส่งออกข้อมูลลูกค้า (ข้อ 8.2 · PM ข้อ 7)
 -- =====================================================================================
@@ -493,6 +529,35 @@ SELECT test.assert_true(jsonb_array_length(test.jcall($$SELECT api.search_securi
 SELECT test.assert_eq((SELECT count(*) FROM jsonb_array_elements(test.jcall($$SELECT api.search_security_log('{}'::jsonb)$$)
                        -> 'audit_entries') e WHERE e ->> 'entity_type' IN ('CUSTOMER', 'crm.customers')), 0::bigint,
     'AU07 security log ไม่คืนรายการของลูกค้า (ข้อ 9.5)');
+-- AU09–AU13 · api.search_access_log (ข้อ 20.14 เกณฑ์ข้อ 3)
+-- "เปิดเผยช่องทางติดต่อ" และ "ผูกลูกค้าเข้าสาขา" ถูกบันทึกใน audit.access_logs เท่านั้น
+-- ไม่มีทางอ่านผ่าน api.search_audit (อ่าน audit_logs) หรือ api.search_security_log (ไม่คืน access_logs)
+-- ถ้าไม่มีฟังก์ชันนี้ สองในหกเหตุการณ์ที่ต้องย้อนดูได้จะไม่มีทางย้อนดูได้เลย
+--
+-- สร้างเหตุการณ์ด้วย RPC ตัวจริง ไม่ INSERT ลงตารางเอง
+-- เพราะข้อที่ต้องพิสูจน์คือ "เปิดเบอร์แล้วมีร่องรอยให้ตามได้" ไม่ใช่ "SELECT ตารางได้"
+SELECT test.login_as('api.a02@test.example.com', 'aal2');          -- BUSINESS_ADMIN มี customer.pii.reveal
+SELECT test.jcall($$SELECT api.reveal_contact('7b000000-0000-4000-8000-000000000c03', 'CALL')$$);
+SELECT test.assert_true(jsonb_array_length(test.jcall($$SELECT api.search_access_log(
+    jsonb_build_object('action', 'CONTACT_REVEALED'))$$) -> 'entries') >= 1,
+    'AU09 ย้อนดูการเปิดเผยช่องทางติดต่อได้');
+-- CUSTOMER_LINKED_TO_BRANCH ต้องมี visit ที่เปิดอยู่ + ผ่านการตรวจซ้ำภายใน 30 นาที
+-- ซึ่งชุดทดสอบนี้ไม่ได้จำลองหน้ารับลูกค้าไว้ จึงตรวจว่า "ตัวกรองนี้ใช้ได้และตอบเป็นรายการ"
+-- ส่วนการพิสูจน์ว่ามีแถวจริงทำใน Journey Test บนเบราว์เซอร์ (ข้อ 20.14)
+SELECT test.assert_true(jsonb_typeof(test.jcall($$SELECT api.search_access_log(
+    jsonb_build_object('action', 'CUSTOMER_LINKED_TO_BRANCH'))$$) -> 'entries') = 'array',
+    'AU10 ตัวกรองการผูกลูกค้าเข้าสาขาใช้งานได้');
+-- ห้ามส่ง sha256 ของคำค้นออกไปเด็ดขาด: ไม่มี salt และเบอร์มือถือไทยมีความเป็นไปได้จำกัด
+-- ถ้าหลุดออกไป ตาราง audit จะกลายเป็นแหล่ง PII เสียเอง
+SELECT test.assert_eq((SELECT count(*) FROM jsonb_array_elements(
+    test.jcall($$SELECT api.search_access_log('{}'::jsonb)$$) -> 'entries') e
+    WHERE e ? 'search_hashes'), 0::bigint,
+    'AU11 ไม่คืนค่าแฮชของคำค้นออกไปฝั่งเบราว์เซอร์');
+SELECT test.assert_true((SELECT bool_and(e ? 'search_term_count') FROM jsonb_array_elements(
+    test.jcall($$SELECT api.search_access_log('{}'::jsonb)$$) -> 'entries') e),
+    'AU12 คืนจำนวนคำค้นแทนตัวค่า เพื่อให้ยังตรวจสอบพฤติกรรมได้');
+SELECT test.login_as('api.a06@test.example.com', 'aal1');
+SELECT test.api_denied($$SELECT api.search_access_log('{}'::jsonb)$$, 'AU13 STAFF ไม่มี audit.read');
 SELECT test.logout();
 SELECT test.assert_true((SELECT (a.after -> 'value_raw' ->> 'masked') IS NOT NULL FROM audit.audit_logs a
                          WHERE a.organization_id = '7b000000-0000-4000-8000-000000000001' AND a.entity_type = 'crm.customer_contacts' LIMIT 1),

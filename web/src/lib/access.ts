@@ -105,7 +105,8 @@ export function defaultBranch(access: Access | null): AccessBranch | null {
 
 /** หน้าแรกหลังเข้าสู่ระบบ (architecture §6.1) */
 export function homePath(access: Access | null): Route {
-  /* SYSTEM_ADMIN ไม่มีสิทธิ์ข้อมูลลูกค้า หน้าแรกจึงเป็นหน้าตั้งค่าระบบ (architecture §6.1)
-     หน้า /settings อยู่ในชุดที่ 2 — ระหว่างนี้ส่งไปหน้าหลักซึ่งอธิบายสถานะให้ */
+  /* SYSTEM_ADMIN ไม่มีสิทธิ์ข้อมูลลูกค้าเลย การส่งไปหน้าหลักจึงได้แต่หน้าที่บอกว่าไม่มีอะไรให้ดู
+     หน้าแรกของบทบาทนี้คือหน้าตั้งค่าระบบ ซึ่งเป็นงานจริงของเขา (architecture §6.1) */
+  if (hasRole(access, "SYSTEM_ADMIN") && can(access, "settings.system")) return "/settings";
   return "/dashboard";
 }

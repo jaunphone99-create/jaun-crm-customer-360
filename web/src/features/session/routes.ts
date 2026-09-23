@@ -14,8 +14,12 @@ export const PATH_HEADER = "x-jcrm-path";
 export type AppRouteRule = {
   /** เส้นทางที่ประกาศ — คุมทั้งตัวมันเองและเส้นทางย่อยทั้งหมด (`/customers` คุม `/customers/CUS-…` ด้วย) */
   path: string;
-  /** สิทธิ์ที่ต้องมีและต้อง `effective_now` · null = เปิดให้ทุกคนที่เข้าสู่ระบบแล้ว */
-  permission: string | null;
+  /** สิทธิ์ที่ต้องมีและต้อง `effective_now` · null = เปิดให้ทุกคนที่เข้าสู่ระบบแล้ว
+      อาร์เรย์ = "มีอย่างใดอย่างหนึ่งก็พอ" — จำเป็นเพราะบางหน้ามีหลายแท็บที่คนละบทบาทเข้าถึงคนละส่วน
+      เช่น /audit: BUSINESS_ADMIN มี audit.read ส่วน SYSTEM_ADMIN มีแค่ security_log.read
+      ถ้าบังคับสิทธิ์เดียว ฝ่ายหนึ่งจะถูกปิดทั้งหน้าแทนที่จะเห็นเฉพาะแท็บของตัวเอง
+      (การกรองรายแท็บเป็นหน้าที่ของหน้านั้น และของ RLS เป็นด่านสุดท้ายเสมอ) */
+  permission: string | string[] | null;
   /** ชื่อหน้าไทย — ใช้เขียน log ฝั่งเซิร์ฟเวอร์ตอนปฏิเสธ ไม่ได้แสดงให้ผู้ใช้เห็น */
   label: string;
 };
@@ -31,7 +35,17 @@ export const APP_ROUTES: AppRouteRule[] = [
   { path: "/customers", permission: "customer.read", label: "ลูกค้า" },
   { path: "/customers/new", permission: "customer.create", label: "เพิ่มลูกค้า" },
   { path: "/users", permission: "user.read", label: "ผู้ใช้และสิทธิ์" },
+  { path: "/data-quality", permission: "data_quality.view", label: "ศูนย์คุณภาพข้อมูล" },
+  { path: "/audit", permission: ["audit.read", "security_log.read"], label: "ประวัติการใช้งาน" },
+  { path: "/privacy", permission: ["dsr.create", "dsr.manage"], label: "ความเป็นส่วนตัว (PDPA)" },
+  { path: "/settings", permission: ["settings.business", "settings.system"], label: "ตั้งค่าระบบ" },
 ];
+
+/** สิทธิ์ของกฎในรูปอาร์เรย์เสมอ — ผู้เรียกไม่ต้องแยกกรณี string กับ string[] เอง */
+export function permissionsOf(rule: AppRouteRule): string[] {
+  if (rule.permission == null) return [];
+  return Array.isArray(rule.permission) ? rule.permission : [rule.permission];
+}
 
 /** ตัดเครื่องหมาย / ท้ายทางออก เพื่อให้ `/customers/` กับ `/customers` เป็นเส้นทางเดียวกัน */
 function normalize(pathname: string): string {

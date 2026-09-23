@@ -2577,6 +2577,48 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION api.search_access_log(p jsonb DEFAULT '{}'::jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $BODY$
+DECLARE
+    v_me   uuid := app.require_permission('audit.read');
+    v_rows jsonb;
+BEGIN
+    -- audit.access_logs เก็บการ "เข้าถึงข้อมูลลูกค้า" ซึ่งแยกจาก audit.audit_logs ที่เก็บการ "แก้ข้อมูล"
+    -- สองเหตุการณ์ที่ต้องย้อนดูได้ตามข้อกำหนดอยู่เฉพาะที่นี่:
+    --   CONTACT_REVEALED         = เปิดค่าเต็มของช่องทางติดต่อ (api.reveal_contact)
+    --   CUSTOMER_LINKED_TO_BRANCH = ผูกลูกค้าเข้ากับสาขา (crm.customer_branches ไม่มี trigger audit)
+    -- ห้ามคืน search_hashes ออกไปเด็ดขาด: เป็น sha256 ที่ไม่มี salt ของเบอร์โทร/LINE/อีเมล
+    -- เบอร์มือถือไทยมีความเป็นไปได้จำกัด เดาย้อนกลับได้ในไม่กี่วินาที = ทำให้ audit กลายเป็นแหล่ง PII เสียเอง
+    -- คืนแค่ว่ามีคำค้นกี่ชุดและได้ผลกี่รายการ ซึ่งพอสำหรับการตรวจสอบพฤติกรรม
+    SELECT coalesce(jsonb_agg(jsonb_build_object(
+               'id', a.id, 'occurred_at', a.occurred_at, 'actor_staff_id', a.actor_staff_id,
+               'actor_staff_code', a.actor_staff_code, 'actor_roles', to_jsonb(a.actor_roles),
+               'aal', a.aal, 'action', a.action, 'customer_id', a.customer_id, 'contact_id', a.contact_id,
+               'visit_id', a.visit_id, 'branch_id', a.branch_id, 'purpose', a.purpose,
+               'search_term_count', coalesce(cardinality(a.search_hashes), 0),
+               'result_count', a.result_count, 'detail', a.detail,
+               'ip', a.ip, 'device_id', a.device_id) ORDER BY a.occurred_at DESC, a.id DESC), '[]'::jsonb)
+    INTO v_rows
+    FROM (
+        SELECT * FROM audit.access_logs a
+        WHERE a.organization_id = app.current_organization_id()
+          AND (p ->> 'action' IS NULL OR a.action = (p ->> 'action'))
+          AND (p ->> 'customer_id' IS NULL OR a.customer_id = (p ->> 'customer_id')::uuid)
+          AND (p ->> 'actor_staff_id' IS NULL OR a.actor_staff_id = (p ->> 'actor_staff_id')::uuid)
+          AND (p ->> 'branch_id' IS NULL OR a.branch_id = (p ->> 'branch_id')::uuid)
+          AND (p ->> 'from' IS NULL OR a.occurred_at >= (p ->> 'from')::timestamptz)
+          AND (p ->> 'to'   IS NULL OR a.occurred_at <  (p ->> 'to')::timestamptz)
+        ORDER BY a.occurred_at DESC, a.id DESC
+        LIMIT least(coalesce((p ->> 'limit')::integer, 200), 200)) a;
+    RETURN jsonb_build_object('ok', true, 'entries', v_rows);
+END;
+$BODY$;
+
 CREATE FUNCTION api.search_security_log(p jsonb DEFAULT '{}'::jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -3419,6 +3461,44 @@ $$;
 -- =====================================================================================
 -- บล็อก K — ค่าตั้งของระบบ (ข้อ 11.2)
 -- =====================================================================================
+
+-- ข้อ 11.2 — ค่าตั้งที่ "หน้าจอของทุกคน" ต้องใช้ เพื่อให้แก้ค่าแล้วพฤติกรรมเปลี่ยนจริง
+--
+-- api.get_settings() เปิดเฉพาะผู้มี settings.business/system ซึ่งพนักงานหน้าร้านไม่มี
+-- ถ้าไม่มีประตูนี้ หน้าจอจะต้องฝังตัวเลขไว้เอง แล้วการแก้ค่าในหน้าตั้งค่าก็จะไม่มีผลกับใครเลย
+-- คืนเฉพาะค่าที่ใช้ "แสดงผล" ไม่ใช่ค่าที่ใช้ตัดสินสิทธิ์ จึงเปิดให้พนักงานที่ ACTIVE ทุกคนอ่านได้
+CREATE FUNCTION api.get_display_settings()
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $BODY$
+DECLARE
+    v_me     uuid := app.require_staff();
+    v_rows   jsonb;
+    v_clock  timestamptz := app.clock();
+    v_days   integer;
+BEGIN
+    SELECT coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb) INTO v_rows
+    FROM app.settings s
+    WHERE s.key IN ('sla.visitor_waiting_min', 'sla.visit_in_service_min', 'badge.new_customer_days',
+                    'session.shared_counter_idle_min', 'pdpa.current_notice_version', 'quotation.valid_days');
+
+    -- ขอบล่างของป้าย "ลูกค้าใหม่" คิดที่นี่ ไม่ใช่ที่หน้าจอ
+    -- เพราะเป็นการนับวันตามขอบเที่ยงคืน Asia/Bangkok (ข้อ 1.2) ซึ่งเบราว์เซอร์ของผู้ใช้คิดเองไม่ได้
+    -- นับแบบรวมวันนี้ ให้ตรงกับ preset LAST_30_DAYS ของ app.kpi_period เมื่อค่าตั้งเป็น 30
+    v_days := greatest(coalesce((v_rows ->> 'badge.new_customer_days')::integer, 30), 1);
+
+    RETURN jsonb_build_object(
+        'ok',       true,
+        'clock',    v_clock,
+        'settings', v_rows,
+        'derived',  jsonb_build_object(
+            'new_customer_since', app.bkk_ts(app.bangkok_date(v_clock) - (v_days - 1))
+        ));
+END;
+$BODY$;
 
 CREATE FUNCTION api.get_settings()
 RETURNS jsonb
@@ -4279,6 +4359,10 @@ COMMENT ON FUNCTION api.svc_build_export_dataset(uuid) IS 'Edge Function generat
 COMMENT ON FUNCTION api.svc_mark_export_generated(uuid, text) IS 'Edge Function generate-export: APPROVED → GENERATED + file_path · แจ้ง EXPORT_READY';
 COMMENT ON FUNCTION api.svc_prepare_invite(jsonb) IS 'Edge Function invite-staff: สร้าง staff_profiles (INVITED) + staff_invitations + assignment ก่อนออกลิงก์ (19.3 ข้อ 6)';
 COMMENT ON FUNCTION api.svc_finalize_disable(jsonb) IS 'Edge Function disable-staff: ปิดคำเชิญที่ค้างและบันทึก STAFF_DISABLED หลัง ban ผู้ใช้';
+COMMENT ON FUNCTION api.search_access_log(jsonb) IS
+'ย้อนดู audit.access_logs (ข้อ 9.5) · ต้องมี audit.read · ปิดช่องที่ CONTACT_REVEALED และ CUSTOMER_LINKED_TO_BRANCH ไม่มีทางอ่านผ่าน API · ไม่คืน search_hashes (sha256 ไม่มี salt ของเบอร์โทรเดาย้อนกลับได้) คืนแค่จำนวนคำค้นและจำนวนผลลัพธ์';
+COMMENT ON FUNCTION api.get_display_settings() IS
+'ค่าตั้งที่หน้าจอของพนักงานทุกคนต้องใช้ (ข้อ 11.2) · อ่านอย่างเดียว · ไม่มีค่าที่ใช้ตัดสินสิทธิ์ · มีไว้เพื่อให้การแก้ค่าในหน้าตั้งค่ามีผลกับพฤติกรรมจริง ไม่ใช่แค่เก็บค่า · derived.new_customer_since = ขอบล่างของป้ายลูกค้าใหม่ คิดตามขอบเที่ยงคืน Asia/Bangkok ที่ฐานข้อมูล';
 COMMENT ON FUNCTION api.svc_record_login_event(jsonb) IS
 'Edge Function: บันทึก audit.login_events (ข้อ 9.5) · ตัวระบุที่ผู้ใช้กรอกเก็บเป็น sha256 เท่านั้น · ไม่มีทางอื่นเขียนตารางนี้ได้เลย';
 COMMENT ON FUNCTION api.svc_link_invited_user(jsonb) IS

@@ -4,7 +4,7 @@ import type { Route } from "next";
 import { headers } from "next/headers";
 import { cache } from "react";
 
-import { ruleFor, PATH_HEADER, type AppRouteRule } from "./routes";
+import { ruleFor, permissionsOf, PATH_HEADER, type AppRouteRule } from "./routes";
 
 import { can, type Access } from "@/lib/access";
 import { getDb } from "@/lib/db";
@@ -25,7 +25,7 @@ export { PATH_HEADER };
 export type Gate =
   | { kind: "ok" }
   | { kind: "redirect"; to: Route; reason: string }
-  | { kind: "denied"; rule: AppRouteRule | null; permission: string | null };
+  | { kind: "denied"; rule: AppRouteRule | null; permissions: string[] };
 
 /** เส้นทางที่ผู้ใช้กำลังขอ — มาจากหัวข้อที่ proxy.ts เขียนไว้ (Server Component อ่านเองไม่ได้) */
 export const currentPathname = cache(async (): Promise<string | null> => {
@@ -79,16 +79,18 @@ export async function gateFor(access: Access): Promise<Gate> {
   if (!pathname) {
     /* ไม่รู้ว่าอยู่หน้าไหน = ตัดสินไม่ได้ → ปฏิเสธไว้ก่อน (ปกติจะไม่เกิด เพราะ proxy เขียนหัวข้อนี้ให้ทุก request) */
     console.warn(`[session] ไม่พบหัวข้อ ${PATH_HEADER} — proxy.ts อาจไม่ได้ทำงานกับเส้นทางนี้`);
-    return { kind: "denied", rule: null, permission: null };
+    return { kind: "denied", rule: null, permissions: [] };
   }
 
   const rule = ruleFor(pathname);
   if (!rule) {
     console.warn(`[session] เส้นทาง ${pathname} ยังไม่ได้ประกาศใน features/session/routes.ts จึงถูกปฏิเสธ`);
-    return { kind: "denied", rule: null, permission: null };
+    return { kind: "denied", rule: null, permissions: [] };
   }
-  if (rule.permission && !can(access, rule.permission)) {
-    return { kind: "denied", rule, permission: rule.permission };
+  /* อาร์เรย์ = มีอย่างใดอย่างหนึ่งก็เข้าได้ (ดูเหตุผลใน routes.ts) */
+  const needed = permissionsOf(rule);
+  if (needed.length > 0 && !needed.some((code) => can(access, code))) {
+    return { kind: "denied", rule, permissions: needed };
   }
   return { kind: "ok" };
 }
@@ -96,11 +98,12 @@ export async function gateFor(access: Access): Promise<Gate> {
 /* บทบาทที่เปิดหน้านี้ได้ — อ่านจาก core.role_permissions ตัวจริง ไม่ใช่รายชื่อที่พิมพ์ไว้ในโค้ด
    (ถ้าพิมพ์ไว้เอง วันหนึ่งสิทธิ์เปลี่ยนแล้วการ์ดจะโกหกผู้ใช้)
    เรียกเฉพาะตอนปฏิเสธเท่านั้น · dev-api ไม่รองรับ select แบบฝังตาราง จึงอ่านแยกแล้วเรียงในโค้ด */
-export async function rolesWithPermission(permission: string): Promise<string[]> {
+export async function rolesWithPermission(permissions: string[]): Promise<string[]> {
+  if (permissions.length === 0) return [];
   try {
     const supabase = await getDb();
     const [grants, roles] = await Promise.all([
-      supabase.schema("core").from("role_permissions").select("role_code").eq("permission_code", permission),
+      supabase.schema("core").from("role_permissions").select("role_code").in("permission_code", permissions),
       supabase.schema("core").from("roles").select("code,sort_order"),
     ]);
     if (grants.error || !grants.data) return [];

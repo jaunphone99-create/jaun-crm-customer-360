@@ -12,6 +12,10 @@ const ICONS: Record<string, string[]> = {
   logout: ["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17l5-5-5-5", "M21 12H9"],
   plus: ["M12 5v14M5 12h14"],
   chart: ["M4 20V10M10 20V4M16 20v-7M22 20H2"],
+  shield: ["M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z", "M9 12l2 2 4-4"],
+  list: ["M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"],
+  lock: ["r:5,11,14,10,2", "M8 11V7a4 4 0 0 1 8 0v4"],
+  gear: ["c:12,12,3", "M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"],
 };
 
 export function Icon({ name, className }: { name: keyof typeof ICONS | string; className?: string }) {

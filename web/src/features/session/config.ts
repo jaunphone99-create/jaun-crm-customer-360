@@ -2,47 +2,94 @@ import "server-only";
 
 import { cache } from "react";
 
-import { can, type Access } from "@/lib/access";
 import { rpc } from "@/lib/db";
 
-/* ค่าตั้งของเซสชันที่หน้าจอต้องใช้ (CANONICAL ข้อ 11.2)
+/* ค่าตั้งที่หน้าจอต้องใช้จริง (CANONICAL ข้อ 11.2)
 
-   ข้อจำกัดที่ต้องรู้ก่อนแก้ไฟล์นี้:
-   `api.get_settings()` ต้องมีสิทธิ์ `settings.business` หรือ `settings.system`
-   (supabase/migrations/0011_api.sql) และ `app.settings` ไม่ได้ GRANT SELECT ให้ authenticated
-   → พนักงานหน้าเคาน์เตอร์ซึ่งเป็นคนใช้เครื่อง counter จริง **อ่านค่านี้จากฐานข้อมูลไม่ได้**
+   ทำไมไม่เรียก api.get_settings(): ฟังก์ชันนั้นต้องมีสิทธิ์ `settings.business` หรือ `settings.system`
+   ซึ่งพนักงานหน้าเคาน์เตอร์ — คนที่ใช้หน้ารับลูกค้าและเครื่อง counter จริง — ไม่มี
+   เดิมจึงต้องฝังตัวเลขไว้ในโค้ดหน้าจอ ผลคือ "แก้ค่าตั้งแล้วระบบไม่เปลี่ยนพฤติกรรม"
 
-   จึงทำสองทาง: ใครอ่านได้ก็อ่านของจริง ใครอ่านไม่ได้ใช้ค่าเริ่มต้นเดียวกับที่ฐานข้อมูลตั้งไว้
-   (supabase/migrations/0001_foundation.sql บรรทัด 264 · `session.shared_counter_idle_min` = '10')
-   ทางแก้ที่ถูกต้องระยะยาวคือให้ `api.get_my_access()` คืนค่านี้มาด้วย ซึ่งต้องแก้ migration
-   — อยู่นอกขอบเขตงานนี้ ถือเป็นการบ้านของชุดที่ 2 */
+   `api.get_display_settings()` จึงถูกเพิ่มเข้ามาเพื่อปิดช่องนี้: อ่านอย่างเดียว
+   คืนเฉพาะค่าที่ใช้ "แสดงผล" ไม่มีค่าที่ใช้ตัดสินสิทธิ์ จึงเปิดให้ทุกบัญชีที่ ACTIVE อ่านได้
+   ขอบวันของป้าย "ลูกค้าใหม่" คิดมาจากฐานข้อมูลด้วย (derived.new_customer_since)
+   เพราะเป็นการนับวันตามขอบเที่ยงคืน Asia/Bangkok ที่เบราว์เซอร์คิดเองไม่ได้ */
 
-/** ค่าเริ่มต้นเดียวกับฐานข้อมูล — ใช้เมื่อผู้ใช้ไม่มีสิทธิ์อ่าน app.settings */
-export const DEFAULT_SHARED_COUNTER_IDLE_MIN = 10;
+/** ค่าเริ่มต้นชุดเดียวกับที่ฐานข้อมูลตั้งไว้ (0001_foundation.sql) — ใช้เมื่ออ่านค่าจริงไม่ได้เท่านั้น */
+export const DEFAULTS = {
+  visitorWaitingMin: 15,
+  visitInServiceMin: 60,
+  newCustomerDays: 30,
+  sharedCounterIdleMin: 10,
+} as const;
 
-type SettingRow = { key: string; value: unknown };
-type SettingsResult = { ok: boolean; settings: SettingRow[] };
+export const DEFAULT_SHARED_COUNTER_IDLE_MIN = DEFAULTS.sharedCounterIdleMin;
 
-/** แปลงค่า jsonb ที่อาจเป็น 10 หรือ "10" ให้เป็นจำนวนนาทีที่ใช้ได้จริง */
-function toMinutes(value: unknown): number | null {
+export type DisplaySettings = {
+  /** นาทีที่ถือว่า "รอนาน" ในคิวหน้าร้าน */
+  visitorWaitingMin: number;
+  /** นาทีที่ถือว่ารับบริการนานเกินปกติ */
+  visitInServiceMin: number;
+  /** จำนวนวันที่ยังติดป้าย "ลูกค้าใหม่" */
+  newCustomerDays: number;
+  /** นาทีที่ปล่อยให้เครื่อง counter ว่างได้ก่อนล็อกหน้าจอ */
+  sharedCounterIdleMin: number;
+  /** ฉบับประกาศความเป็นส่วนตัวที่ใช้อยู่ */
+  pdpaNoticeVersion: string | null;
+  /** ขอบล่างของป้าย "ลูกค้าใหม่" — ฐานข้อมูลคิดให้ตามขอบเที่ยงคืน Asia/Bangkok */
+  newCustomerSince: string | null;
+  /** เวลาอ้างอิงของฐานข้อมูลขณะอ่านค่า */
+  clock: string | null;
+  /** อ่านค่าจริงได้หรือไม่ — false = กำลังใช้ค่าเริ่มต้น */
+  fromDatabase: boolean;
+};
+
+type Payload = {
+  ok: boolean;
+  clock?: string;
+  settings?: Record<string, unknown>;
+  derived?: { new_customer_since?: string };
+};
+
+/** แปลงค่า jsonb ที่อาจมาเป็น 10 หรือ "10" ให้เป็นจำนวนบวกที่ใช้ได้จริง */
+function positiveNumber(value: unknown, fallback: number): number {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+const FALLBACK: DisplaySettings = {
+  ...DEFAULTS,
+  pdpaNoticeVersion: null,
+  newCustomerSince: null,
+  clock: null,
+  fromDatabase: false,
+};
+
 /**
- * นาทีที่ปล่อยให้เครื่อง counter ว่างได้ก่อนล็อกหน้าจอ
- * อ่านจากฐานข้อมูลเมื่อผู้ใช้มีสิทธิ์ดูค่าตั้ง · ไม่มีสิทธิ์ก็ใช้ค่าเริ่มต้นของฐานข้อมูล
+ * ค่าตั้งสำหรับแสดงผล — ยิงฐานข้อมูลครั้งเดียวต่อ request ต่อให้หลายหน้าส่วนถามซ้ำ
+ * อ่านไม่ได้ก็ไม่ใช่เหตุให้หน้าพัง: ใช้ค่าเริ่มต้นชุดเดียวกับฐานข้อมูลแล้วทำงานต่อ
  */
-export const sharedCounterIdleMinutes = cache(async (access: Access): Promise<number> => {
-  if (!can(access, "settings.business") && !can(access, "settings.system")) {
-    return DEFAULT_SHARED_COUNTER_IDLE_MIN;
-  }
+export const displaySettings = cache(async (): Promise<DisplaySettings> => {
   try {
-    const data = await rpc<SettingsResult>("get_settings");
-    const row = data?.settings?.find((s) => s.key === "session.shared_counter_idle_min");
-    return toMinutes(row?.value) ?? DEFAULT_SHARED_COUNTER_IDLE_MIN;
+    const data = await rpc<Payload>("get_display_settings");
+    const s = data?.settings ?? {};
+    if (!data?.ok) return FALLBACK;
+    return {
+      visitorWaitingMin: positiveNumber(s["sla.visitor_waiting_min"], DEFAULTS.visitorWaitingMin),
+      visitInServiceMin: positiveNumber(s["sla.visit_in_service_min"], DEFAULTS.visitInServiceMin),
+      newCustomerDays: positiveNumber(s["badge.new_customer_days"], DEFAULTS.newCustomerDays),
+      sharedCounterIdleMin: positiveNumber(s["session.shared_counter_idle_min"], DEFAULTS.sharedCounterIdleMin),
+      pdpaNoticeVersion: typeof s["pdpa.current_notice_version"] === "string" ? s["pdpa.current_notice_version"] : null,
+      newCustomerSince: data.derived?.new_customer_since ?? null,
+      clock: data.clock ?? null,
+      fromDatabase: true,
+    };
   } catch {
-    /* อ่านไม่ได้ไม่ใช่เหตุให้เลิกล็อกหน้าจอ — ใช้ค่าเริ่มต้นแล้วล็อกต่อไป */
-    return DEFAULT_SHARED_COUNTER_IDLE_MIN;
+    return FALLBACK;
   }
 });
+
+/** นาทีที่ปล่อยให้เครื่อง counter ว่างได้ก่อนล็อกหน้าจอ */
+export async function sharedCounterIdleMinutes(): Promise<number> {
+  return (await displaySettings()).sharedCounterIdleMin;
+}

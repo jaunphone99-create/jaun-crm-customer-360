@@ -37,6 +37,7 @@ next-env.d.ts
 
 # ฐานข้อมูลทดลองในเครื่อง (tools/db/dev-api.mjs) — สร้างใหม่ได้ด้วย npm run dev:db:fresh
 .dev-db/
+.dev-db-verify/
 
 # CSS ที่คัดลอกมาจาก prototype ตอน build (web/scripts/sync-design.mjs)
 web/src/app/generated/

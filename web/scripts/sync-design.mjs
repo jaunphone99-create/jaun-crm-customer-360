@@ -25,6 +25,11 @@ const PAGES = [
   { html: "04-quick-capture.html", out: "page-quick-capture.css" },
   { html: "03-customers.html", out: "page-customers.css" },
   { html: "05-customer-360.html", out: "page-customer-360.css" },
+  { html: "02-dashboard.html", out: "page-dashboard.css" },
+  { html: "12-data-quality.html", out: "page-data-quality.css" },
+  { html: "16-audit.html", out: "page-audit.css" },
+  { html: "17-privacy.html", out: "page-privacy.css" },
+  { html: "18-settings.html", out: "page-settings.css" },
 ];
 
 mkdirSync(OUT, { recursive: true });

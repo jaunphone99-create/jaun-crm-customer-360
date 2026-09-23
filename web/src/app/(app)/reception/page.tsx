@@ -4,6 +4,7 @@ import { QueueList } from "@/features/reception/QueueList";
 import { ReceptionForm } from "@/features/reception/ReceptionForm";
 import { date as thaiDate, time as thaiTime } from "@/lib/format/date";
 import { DASH, int } from "@/lib/format/number";
+import { displaySettings } from "@/features/session/config";
 import { loadReception } from "@/features/reception/queries";
 import { NotAuthorized } from "@/features/shell/NotAuthorized";
 import { can, needsMfaFor, requireAccess } from "@/lib/access";
@@ -12,11 +13,6 @@ import "@/app/generated/page-reception.css";
 
 export const metadata: Metadata = { title: "รับลูกค้าเข้าร้าน" };
 export const dynamic = "force-dynamic";
-
-/* เกณฑ์ "รอนาน" ของคิวหน้าร้าน = sla.visitor_waiting_min (CANONICAL ข้อ 11.2)
-   ค่าอยู่ใน app.settings แต่ api.get_settings เปิดให้เฉพาะผู้ดูแล — หน้าร้านอ่านไม่ได้
-   จึงยึดค่าจาก CANONICAL ไว้ที่นี่ และเปลี่ยนเมื่อค่าตั้งเปลี่ยน */
-const WAITING_LONG_MIN = 15;
 
 export default async function ReceptionPage({
   searchParams,
@@ -51,7 +47,9 @@ export default async function ReceptionPage({
   }
 
   const { branch: branchParam, flash } = await searchParams;
-  const data = await loadReception(access, branchParam);
+  /* เกณฑ์ "รอนาน" มาจาก sla.visitor_waiting_min (ข้อ 11.2) ผ่าน api.get_display_settings()
+     ไม่ฝังตัวเลขไว้ที่นี่ ไม่งั้นแก้ค่าในหน้าตั้งค่าแล้วคิวหน้าร้านจะไม่เปลี่ยนตาม */
+  const [data, settings] = await Promise.all([loadReception(access, branchParam), displaySettings()]);
 
   const interestLabels = Object.fromEntries(data.interests.map((i) => [i.code, i.label_th]));
   const outcomeLabels = Object.fromEntries(data.outcomes.map((o) => [o.code, o.label_th]));
@@ -138,7 +136,7 @@ export default async function ReceptionPage({
           outcomeLabels={outcomeLabels}
           outcomes={data.outcomes}
           myStaffId={access.staff.staff_id}
-          waitingLongMinutes={WAITING_LONG_MIN}
+          waitingLongMinutes={settings.visitorWaitingMin}
         />
       </div>
     </>
