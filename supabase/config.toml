@@ -1,0 +1,241 @@
+# =====================================================================================
+# supabase/config.toml — JAUN CRM · Customer 360
+#
+# ไฟล์นี้คุมสองอย่างที่ต่างกัน อย่าสับสน:
+#   1. สแตกที่รันในเครื่องด้วย `supabase start` (พอร์ต · studio · inbucket)
+#   2. ค่าของ project จริงที่ `supabase config push` ส่งขึ้นไป (auth · api · functions)
+# ค่าที่ push ขึ้น project จริงได้ ทำเครื่องหมาย [PUSH] ไว้ทุกจุด
+# ค่าที่เหลือมีผลเฉพาะสแตกในเครื่อง — ตั้งบน dashboard ของ project ไม่ได้ผ่านไฟล์นี้
+#
+# ที่มาของทุกค่า: docs/08-delivery/deployment-backup-recovery.md §2 (รหัส A· D· B·)
+# และ CANONICAL ข้อ 9.2 (ตัวตน) · ข้อ 9.8 (Edge Functions) · ข้อ 1.1 (สิทธิ์ schema)
+#
+# ⚠️ ไฟล์นี้ถูกเขียนขึ้นโดย **ยังไม่มี Supabase CLI ในเครื่อง** จึงยังไม่ได้ผ่านการตรวจไวยากรณ์
+#    ของ CLI รุ่นที่จะใช้จริง · ก่อน deploy ต้องทำขั้น V1–V3 ของ
+#    docs/08-delivery/pilot-step1-runbook.md ซึ่งให้ CLI เป็นผู้ตรวจไฟล์นี้เอง
+#    **ห้ามข้ามขั้นนั้น** — คีย์ที่ CLI รุ่นนั้นไม่รู้จักจะทำให้ `config push` ล้มทั้งไฟล์
+#
+# ⚠️ ห้ามใส่ค่าลับใด ๆ ในไฟล์นี้ (ไฟล์นี้อยู่ใน git) · ใช้ env(...) เสมอ
+# =====================================================================================
+
+# project_id = ชื่อสแตกในเครื่อง ไม่ใช่ ref ของ project จริง
+# project จริงผูกด้วย `supabase link --project-ref <ref>` ซึ่งเก็บไว้นอก git
+project_id = "jaun-crm-customer-360"
+
+
+# ---------------------------------------------------------------------- Data API
+[api]
+enabled = true
+port = 54321
+
+# [PUSH] D1 · เปิดเฉพาะสี่ schema นี้ — **ห้ามมี `public`**
+# `app` `audit` `analytics` `restricted` ต้องเข้าไม่ถึงผ่าน HTTP โดยสิ้นเชิง
+# และ **ไม่ใส่ `graphql_public`** = ปิด GraphQL ไปในตัว (D4)
+# ถ้าวันหนึ่งมีคนเติม schema ลงแถวนี้ ข้อมูลที่ RLS ตั้งใจปิดจะเปิดออกทันที
+schemas = ["api", "crm", "core", "ref"]
+
+# extensions อยู่ใน search_path เพราะ pg_trgm ติดตั้งไว้ที่ schema นั้น (B2)
+extra_search_path = ["public", "extensions"]
+
+# [PUSH] D2 · เพดานแถวต่อคำขอ — กันการดูดข้อมูลทั้งตารางด้วยคำขอเดียว
+max_rows = 200
+
+
+# ---------------------------------------------------------------------- Database
+[db]
+port = 54322
+shadow_port = 54320
+# B1 · PostgreSQL 17
+major_version = 17
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+# seed.sql เป็นข้อมูลสมมติขนาด 14 MB สร้างด้วย tools/db/gen-seed.mjs และไม่อยู่ใน git
+# โหลดเฉพาะสแตกในเครื่อง — **ห้ามโหลดขึ้น staging/prod** (ข้อมูลจริงอยู่ที่นั่น)
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+
+# ---------------------------------------------------------------------- Auth
+[auth]
+enabled = true
+
+# [PUSH] A14 · โดเมนของแอปใน environment นั้น ๆ
+# ค่าจริงมาจากตัวแปรสภาพแวดล้อมเพราะแต่ละ environment ไม่เหมือนกัน และยังรอ C-5
+site_url = "env(SUPABASE_AUTH_SITE_URL)"
+additional_redirect_urls = ["env(SUPABASE_AUTH_REDIRECT_URL)"]
+
+# [PUSH] A1 · ปิดการสมัครใช้งานเอง — ผู้ใช้ใหม่เกิดจากคำเชิญเท่านั้น (ข้อ 7.1)
+# นี่คือด่านหลักที่กันคนนอกสร้างบัญชี ไม่ใช่ hook (ดูหัวข้อ auth.hook ด้านล่าง)
+enable_signup = false
+
+# [PUSH] A2 · ไม่มีผู้ใช้นิรนาม และไม่ให้ผูกบัญชีเองภายหลัง
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+
+# [PUSH] A6 · รหัสผ่านสั้นกว่านี้ตั้งไม่ได้
+minimum_password_length = 12
+
+# [PUSH] A10 · access token อายุ 15 นาที
+jwt_expiry = 900
+
+# [PUSH] A11 · หมุน refresh token และให้ใช้ตัวเก่าซ้ำได้ไม่เกิน 10 วินาที
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+# [PUSH] A12 · เซสชันไม่ถูกใช้ 2 ชม. ต่ออายุไม่ได้ · และอายุรวมไม่เกิน 12 ชม.
+[auth.sessions]
+timebox = "12h"
+inactivity_timeout = "2h"
+
+[auth.email]
+# ผู้ใช้ใหม่มาจากคำเชิญ ไม่ใช่การสมัคร
+enable_signup = false
+# [PUSH] A8 · เปลี่ยนรหัสผ่านต้องยืนยันตัวตนซ้ำ
+secure_password_change = true
+# เปลี่ยนอีเมลต้องยืนยันทั้งอีเมลเดิมและใหม่
+double_confirm_changes = true
+# [PUSH] A13 · อายุลิงก์อีเมลทุกชนิด 3600 วินาที
+# หมายเหตุ: อายุ **คำเชิญ** 24 ชม. เป็นคนละชั้น เก็บที่
+# core.staff_profiles.invite_expires_at และบังคับโดย api.activate_self()
+# ลิงก์หมดอายุใน 1 ชม. แต่ออกลิงก์ใหม่ได้จนครบ 24 ชม. (ข้อ 19.3)
+otp_expiry = 3600
+otp_length = 6
+
+# [PUSH] A9 · MFA TOTP — ลงทะเบียนและยืนยันผ่าน Server Action เท่านั้น (ข้อ 19.4)
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+# A17 · A18 · A19 · SSO ยังไม่เปิด — รอ Q5
+# ปิดไว้ทั้งคู่ และหน้าเข้าสู่ระบบซ่อนปุ่ม SSO อยู่แล้วเมื่อ allowed_sso_domains ว่าง
+[auth.external.google]
+enabled = false
+client_id = ""
+secret = ""
+
+[auth.external.azure]
+enabled = false
+client_id = ""
+secret = ""
+url = ""
+
+# -------------------------------------------------------------------------------
+# A3 · A4 · A5 — Auth hooks ทั้งสามตัว **ปิดไว้ก่อนสำหรับ Pilot**
+#
+# เหตุผลที่ปิด ไม่ใช่เพราะลืม:
+#   ฟังก์ชันที่ hook ต้องเรียก (app.before_user_created · app.custom_access_token ·
+#   app.password_verification_attempt) **ยังไม่มีอยู่ใน migration ใด ๆ**
+#   ถ้าเปิด hook โดยชี้ไปฟังก์ชันที่ไม่มี GoTrue จะปฏิเสธทุกการสร้างผู้ใช้และทุกการออก token
+#   = ไม่มีใครเข้าระบบได้เลย ซึ่งอันตรายกว่าการไม่มี hook มาก
+#
+# ความเสี่ยงที่เหลือหลังปิด hook และเหตุผลที่ยอมรับได้ในช่วง Pilot:
+#   A3 (อนุญาตเฉพาะอีเมลที่ถูกเชิญ) — ด่านหลักคือ enable_signup = false ซึ่งปิดการสมัครเองทั้งหมด
+#      และ SSO ก็ปิดอยู่ ช่องทางสร้างผู้ใช้จึงเหลือทางเดียวคือ service_role ผ่าน invite-staff
+#      ซึ่งตรวจสิทธิ์ผู้เชิญและขอบเขตสาขาที่ฐานข้อมูลอยู่แล้ว · hook จึงเป็นชั้นสำรอง ไม่ใช่ชั้นเดียว
+#   A4 (ตรวจโดเมน SSO · ไม่เพิ่ม claim บทบาท) — SSO ปิด และค่าเริ่มต้นของ GoTrue
+#      ไม่ใส่ claim บทบาทอยู่แล้ว การปิด hook จึงไม่ได้ลดการป้องกันลง
+#   A5 (นับรหัสผ่านผิด) — เป็นของ Team plan · แผน Pro นับใน staff-code-login
+#      ด้วย LOGIN_IP_PER_15MIN ซึ่งทำงานอยู่แล้ว
+#
+# **ต้องเปิดก่อน rollout หลายสาขา** พร้อมเขียนฟังก์ชันทั้งสาม — บันทึกเป็น Backlog แล้ว
+# -------------------------------------------------------------------------------
+[auth.hook.before_user_created]
+enabled = false
+uri = ""
+
+[auth.hook.custom_access_token]
+enabled = false
+uri = ""
+
+[auth.hook.password_verification_attempt]
+enabled = false
+uri = ""
+
+# [PUSH] A20 · เพดานอัตราของ Auth
+# ตั้งให้ "สูงพอไม่บล็อกวันเปิดสาขา" ตามที่ §2.1 A20 เตือนไว้
+# ตัวเลขเป็น **[ข้อเสนอผู้เขียน · รอยืนยัน C-9]** — ประเมินจากการเชิญพนักงาน JP1 ทั้งสาขาในวันเดียว
+[auth.rate_limit]
+# อีเมลที่ส่งได้ต่อชั่วโมง — ช่วง Pilot ใช้วิธีคัดลอกลิงก์ (C-6) จึงยังไม่กดดันค่านี้
+email_sent = 30
+# จำนวนครั้งที่ขอ token ใหม่ต่อ 5 นาทีต่อ IP
+token_refresh = 150
+# จำนวนครั้งที่พยายามเข้าสู่ระบบต่อ 5 นาทีต่อ IP
+sign_in_sign_ups = 30
+# จำนวนครั้งที่ยืนยัน OTP/ลิงก์ต่อ 5 นาทีต่อ IP
+token_verifications = 30
+anonymous_users = 0
+
+
+# ---------------------------------------------------------------------- Storage
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+# ไฟล์ส่งออกข้อมูลลูกค้า — private เสมอ เข้าถึงด้วย signed URL อายุสั้นเท่านั้น (ข้อ 8.2)
+# ไม่มี policy ให้ authenticated บน storage.objects โดยตั้งใจ (0010_security.sql)
+[storage.buckets.exports]
+public = false
+file_size_limit = "50MiB"
+allowed_mime_types = ["text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+
+
+# ---------------------------------------------------------------------- Edge Functions
+# ข้อ 9.8 · verify_jwt คือด่านแรก ตั้งผิดแล้วเสียหายจริงทั้งสองทาง:
+#   ตั้ง true กับฟังก์ชันที่ผู้ใช้ยังไม่ล็อกอินต้องเรียก → เข้าสู่ระบบไม่ได้เลย
+#   ตั้ง false กับฟังก์ชันที่ต้องรู้ว่าใครกด → ใครก็เรียกได้
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+
+# เชิญพนักงาน — ต้องรู้ว่าใครเป็นผู้เชิญ เพื่อตรวจสิทธิ์และขอบเขตสาขา
+[functions.invite-staff]
+enabled = true
+verify_jwt = true
+
+# ปิดใช้งานบัญชี — ต้องรู้ว่าใครกด และตรวจว่าปิดบัญชีที่สูงกว่าตัวเองไม่ได้
+[functions.disable-staff]
+enabled = true
+verify_jwt = true
+
+# รีเซ็ต MFA — ต้องรู้ว่าใครกด (ข้อ 7.3)
+[functions.reset-mfa]
+enabled = true
+verify_jwt = true
+
+# เข้าสู่ระบบด้วย ST-NNNN — **ผู้เรียกยังไม่ล็อกอิน** จึงต้องเป็น false
+# ด่านของฟังก์ชันนี้คือ api.svc_resolve_staff_code (คืนเฉพาะบัญชี ACTIVE)
+# บวกเพดานต่อ IP และข้อความผิดพลาดที่เหมือนกันทุกกรณี
+[functions.staff-code-login]
+enabled = true
+verify_jwt = false
+
+# ขอลิงก์ตั้งรหัสผ่านใหม่ — **ผู้เรียกยังไม่ล็อกอิน** จึงต้องเป็น false
+# ฟังก์ชันตอบ ok:true เสมอ เพื่อไม่ให้ใช้ตรวจว่าบัญชีใดมีอยู่จริง
+[functions.password-reset]
+enabled = true
+verify_jwt = false
+
+
+# ---------------------------------------------------------------------- ที่เหลือ
+# Studio และกล่องอีเมลทดสอบ มีผลเฉพาะสแตกในเครื่อง
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+# ไม่ใช้ Realtime — แอปอ่านผ่าน RPC/PostgREST ทั้งหมด การเปิดไว้คือช่องทางเข้าที่ไม่ได้ใช้
+[realtime]
+enabled = false
+
+[analytics]
+enabled = false

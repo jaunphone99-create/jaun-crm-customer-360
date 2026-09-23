@@ -227,7 +227,8 @@ check("18 · ไฟล์เอกสารทุกชุดที่อ้า�
 check("18 · เครื่องมือใน tools/ ที่อ้างถึงมีอยู่จริง", () => {
   const want = ["tools/db/run.mjs", "tools/db/supabase-shim.sql", "tools/db/gen-seed.mjs",
     "tools/db/gen-data-dictionary.mjs", "tools/db/dev-api.mjs", "tools/check-prototype.mjs",
-    "tools/check-canonical.mjs", "tools/serve-prototype.mjs", "tools/smoke-test.py"];
+    "tools/check-canonical.mjs", "tools/serve-prototype.mjs", "tools/smoke-test.py",
+    "tools/check-secrets.mjs"];
   const missing = want.filter((f) => !existsSync(join(ROOT, f)));
   if (missing.length) return `ไม่มี: ${missing.join(" · ")}`;
 

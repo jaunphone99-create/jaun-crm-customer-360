@@ -42,3 +42,29 @@ next-env.d.ts
 # CSS ที่คัดลอกมาจาก prototype ตอน build (web/scripts/sync-design.mjs)
 web/src/app/generated/
 web/public/fonts/
+
+# ---------------------------------------------------------------------------
+# ความลับ — ห้าม commit เด็ดขาด (Direction 23 ก.ย. 2569 · CANONICAL ข้อ 20.20)
+# ใช้ Environment/Secret Store เท่านั้น
+# ---------------------------------------------------------------------------
+# ไฟล์ตั้งค่าของ Smoke Test บน environment จริง — มี cookie/JWT ของบัญชีพนักงานจริง
+# ใครได้ไฟล์นี้ไป = สวมสิทธิ์คนนั้นได้ทันทีจนกว่าเซสชันจะหมดอายุ
+*.smoke.json
+pilot.json
+staging.json
+prod.json
+
+# สถานะการ link ของ Supabase CLI — มี project ref และ token ของเครื่องนั้น
+supabase/.temp/
+supabase/.branches/
+
+# ไฟล์ .env ทุกแบบ (นอกเหนือจากที่ประกาศไว้ข้างบน)
+.env.*
+!.env.example
+
+# คีย์และใบรับรอง
+*.pem
+*.key
+*.p12
+*.pfx
+service-account*.json

@@ -78,10 +78,14 @@
 | # | สิ่งที่ต้องทำ | ผู้รับผิดชอบ | คำสั่ง/หน้าจอที่ใช้ | รู้ได้อย่างไรว่าผ่าน | ☐ |
 |---|---|---|---|---|:--:|
 | 1.3 | สร้าง **3 project แยก** ชื่อชัดเจน (`jaun-crm-dev` · `jaun-crm-staging` · `jaun-crm-prod`) · รหัสผ่าน `postgres` สุ่มยาว เก็บใน secret manager ของ CI และ runner ของ dump เท่านั้น | IT | Supabase Dashboard → New project | เห็นทั้งสาม project · รหัสผ่านไม่ได้อยู่ในเครื่องใคร (`deployment-backup-recovery.md` §2.3 B8) | ☐ |
-| 1.4 | `supabase init` สร้าง **`supabase/config.toml`** ที่ยังไม่มีในโครงการ | ทีม Dev | `supabase init` (รันที่รากโครงการ) | มีไฟล์ `supabase/config.toml` · commit เข้า repo แล้ว | ☐ |
+| 1.4 | **ห้ามรัน `supabase init`** — `supabase/config.toml` เขียนไว้แล้วและ commit อยู่ใน repo · `init` จะเขียนทับจนค่าที่ตั้งไว้หายหมด | ทีม Dev | `pilot-step1-runbook.md` §2 ขั้น **V1–V3** | ไฟล์ผ่านการตรวจด้วย CLI รุ่นที่จะใช้จริงแล้ว (`supabase start` ขึ้นได้ หรือ `config push --dry-run` ผ่าน) · จดเวอร์ชัน CLI ไว้ | ☐ |
 | 1.5 | ล็อกอิน CLI และผูก project ทีละ environment | IT · ทีม Dev | `supabase login`<br>`supabase link --project-ref <ref>` | `supabase link` สำเร็จ · `ref` มาจาก Dashboard → Project Settings → General (`environment-setup.md` §4.3) | ☐ |
 
 > **หมายเหตุที่ต้องระวัง:** `config.toml` เก็บค่าตั้งของ Auth บางส่วน (เช่น `[auth] enable_signup = false`) — สิ่งที่ใส่ในไฟล์นี้ต้อง **ตรงกับ** ค่าที่ตั้งในคอนโซลตาม `deployment-backup-recovery.md` §2.1 ไม่ใช่ตั้งสองที่แล้วขัดกัน
+>
+> ค่าที่ `config push` ส่งขึ้นไปได้ ทำเครื่องหมาย `[PUSH]` ไว้ในไฟล์แล้ว · ที่เหลือ (A7 · A15 · A16 · B6 · B7 · B10 · B11) ต้องตั้งในคอนโซลเอง — รายการอยู่ใน `pilot-step1-runbook.md` §4
+>
+> **Auth hook A3 · A4 · A5 ปิดไว้ก่อนสำหรับ Pilot** เพราะฟังก์ชันที่ hook ต้องเรียกยังไม่มีใน migration ใด ๆ — เปิดโดยชี้ไปฟังก์ชันที่ไม่มีจะทำให้ไม่มีใครเข้าระบบได้เลย · เหตุผลเต็มและความเสี่ยงที่เหลืออยู่ในคอมเมนต์ของ `supabase/config.toml` (Backlog ข้อ 20.20)
 
 ### 3.3 รัน migration
 

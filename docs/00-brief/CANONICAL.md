@@ -1863,7 +1863,9 @@ JAUN CRM หน้าร้าน/
 │   └── 08-delivery/     roadmap.md · data-migration-plan.md · test-cases-uat.md · deployment-backup-recovery.md
 │                        phase1-plan.md · environment-setup.md
 │                        pilot-deployment-checklist.md · pilot-uat-checklist.md · training-flow.md (เตรียม Pilot · ข้อ 20.19)
+│                        pilot-step1-runbook.md (ลำดับคำสั่งตั้ง environment · ข้อ 20.20)
 ├── supabase/
+│   ├── config.toml      ค่าตั้งของ project และสแตกในเครื่อง (ข้อ 20.20 · ห้ามมีค่าลับ)
 │   ├── migrations/      0001_… ถึง 00NN_… (.sql) · *_cron.sql (Supabase เท่านั้น)
 │   ├── functions/       Edge Functions + _shared/ (ข้อ 9.8)
 │   ├── seed.sql
@@ -1878,7 +1880,7 @@ JAUN CRM หน้าร้าน/
 └── tools/
     ├── db/              run.mjs · supabase-shim.sql · gen-seed.mjs · gen-data-dictionary.mjs
     │                    dev-api.mjs (ฐานข้อมูลทดลองในเครื่อง · พูดภาษา PostgREST · ใช้ตอนพัฒนาเท่านั้น)
-    └── check-prototype.mjs · check-canonical.mjs · serve-prototype.mjs · smoke-test.py
+    └── check-prototype.mjs · check-canonical.mjs · check-secrets.mjs · serve-prototype.mjs · smoke-test.py
 ```
 
 > `tools/db/anonymize.sql` (ข้อ 9.7) **ยังไม่มี** — เป็นช่องว่าง G2 ของ `test-cases-uat.md` §6
@@ -2310,4 +2312,58 @@ SUPERVISOR/STAFF ไม่เห็นกราฟทั้งสาม · SYSTE
 ซึ่งพิสูจน์ไปในตัวว่าการเข้าสู่ระบบจริงใช้งานได้ก่อนจะทดสอบอย่างอื่น
 **เกณฑ์ผ่านคือผ่านทุกข้อและไม่มีข้อที่ถูกข้าม** — สคริปต์รายงานจำนวนข้อที่ข้ามแยกจากข้อที่ผ่าน
 เพราะการข้ามเงียบ ๆ อ่านแล้วนึกว่าทดสอบครบ
+
+### 20.20 Direction ขั้นที่ 1 — ตั้ง Pilot Environment (23 ก.ย. 2569)
+
+เจ้าของโครงการอนุมัติให้เริ่มขั้นที่ 1 ได้ทันที โดยไม่ต้องรอ C-1 · C-5 · C-6 · C-13
+ในส่วนที่ไม่จำเป็นต่อการเตรียมโครงสร้าง
+
+**D57 · คำเชิญช่วง Pilot ใช้วิธีคัดลอกลิงก์ได้ชั่วคราว**
+> "ในช่วง Pilot อนุญาตให้ใช้วิธี Copy Invite Link ส่งให้พนักงานเองเป็นการชั่วคราวได้
+> ไม่ต้องให้ SMTP เป็นตัวบล็อกการเปิด Pilot แต่ต้องคง Audit, Expiration และข้อจำกัดสิทธิ์เดิมทั้งหมดไว้
+> ก่อน Rollout หลายสาขาค่อยเปลี่ยนเป็น Email อัตโนมัติ"
+
+สิ่งที่ **ห้ามผ่อน** แม้ใช้วิธีคัดลอกลิงก์:
+
+| สิ่งที่ต้องคงไว้ | บังคับที่ไหน |
+|---|---|
+| อายุคำเชิญ 24 ชม. | `core.staff_profiles.invite_expires_at` · `api.activate_self()` ปฏิเสธเมื่อเลยกำหนด |
+| อายุลิงก์อีเมล 3600 วินาที | `[auth.email] otp_expiry` ใน `supabase/config.toml` (A13) |
+| ผู้เชิญต้องมีสิทธิ์และอยู่ในขอบเขตสาขาของตน | `api.svc_prepare_invite` ตรวจที่ฐานข้อมูล ไม่ใช่ที่หน้าจอ |
+| เชิญบทบาทสูงกว่าตัวเองไม่ได้ | `app.assign_role_denial` |
+| บันทึก audit ทุกครั้ง | `STAFF_INVITED` · `STAFF_INVITATION_CREATED` — ย้อนดูได้ที่หน้า 16 |
+| ลิงก์ใช้ได้ครั้งเดียว | GoTrue · หน้าเชิญพนักงานเขียนกำกับไว้แล้ว |
+
+**Backlog ก่อน rollout หลายสาขา:** ตั้ง Custom SMTP (A15) และ Email templates ภาษาไทย (A16)
+แล้วตัดสินว่าจะยังแสดงลิงก์บนหน้าจอต่อไปหรือไม่ (C-8)
+
+**D58 · Auth hooks A3 · A4 · A5 ปิดไว้สำหรับ Pilot**
+ฟังก์ชันที่ hook ต้องเรียก (`app.before_user_created` · `app.custom_access_token` ·
+`app.password_verification_attempt`) **ยังไม่มีอยู่ใน migration ใด ๆ**
+เปิด hook โดยชี้ไปฟังก์ชันที่ไม่มี = GoTrue ปฏิเสธการสร้างผู้ใช้และการออก token ทั้งหมด
+ซึ่งอันตรายกว่าการไม่มี hook มาก · ความเสี่ยงที่เหลือรับได้เพราะ
+`enable_signup = false` ปิดการสมัครเองทั้งหมด และ SSO ยังไม่เปิด (Q5)
+ช่องทางสร้างผู้ใช้จึงเหลือทางเดียวคือ `service_role` ผ่าน `invite-staff` ซึ่งตรวจสิทธิ์ที่ฐานข้อมูลอยู่แล้ว
+**ต้องเขียนฟังก์ชันทั้งสามและเปิด hook ก่อน rollout หลายสาขา**
+
+**เงื่อนไขที่ตรึงเพิ่ม**
+
+| # | เงื่อนไข |
+|---|---|
+| 1 | **Feature Freeze คงเดิม** — ไม่เพิ่ม Feature Phase 2/3 ระหว่างเตรียม Pilot |
+| 2 | **Full Gate จาก local ไม่ถือเป็นหลักฐานแทน environment จริง** — หลัง deploy ต้องรัน `npm run smoke -- --env pilot.json` บน environment ของ Pilot และต้อง **PASS ทุกข้อ · SKIP = 0** |
+| 3 | **Secret/Token ทุกชนิดห้าม commit ลง repo** ใช้ Environment/Secret Store เท่านั้น |
+| 4 | ร่าง `config.toml` และ Runbook ขั้นที่ 1 เสร็จแล้ว **ส่ง review ก่อน deploy จริง** |
+
+**สิ่งที่ทำไปแล้วตามข้อนี้**
+
+| สิ่งที่ทำ | ไฟล์ |
+|---|---|
+| `config.toml` ครบทุกค่าของ §2.1–§2.5 พร้อมเหตุผลกำกับทุกจุดที่ตั้งต่างจากค่าเริ่มต้น | `supabase/config.toml` |
+| Runbook ขั้นที่ 1 แบบพิมพ์ตามได้ พร้อมขั้น V1–V3 ให้ CLI ตรวจ `config.toml` เอง | `docs/08-delivery/pilot-step1-runbook.md` |
+| ด่านบังคับเรื่องความลับ (เงื่อนไข 3) | `tools/check-secrets.mjs` · `npm run check:secrets` เป็นขั้นแรกของ `npm run check` |
+| `.gitignore` ครอบไฟล์ตั้งค่าของ Smoke Test · `supabase/.temp/` · คีย์และใบรับรอง | `.gitignore` |
+
+> **`config.toml` ยังไม่เคยผ่าน Supabase CLI** เพราะเครื่องที่เขียนไม่มี CLI ติดตั้ง
+> ขั้น V1–V3 ของ Runbook จึงเป็นขั้นบังคับ ไม่ใช่ขั้นแนะนำ
 
