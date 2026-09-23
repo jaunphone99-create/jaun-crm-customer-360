@@ -1,7 +1,7 @@
 import { addDays, asOf, date, dayKey, minutesOfDay, rangeInclusive, time } from "@/lib/format/date";
 
 import { PRESET_LABEL } from "./labels";
-import type { KpiResult, Preset } from "./types";
+import type { KpiPeriod, KpiResult, Preset } from "./types";
 
 /* ข้อความบอก "ตัวเลขชุดนี้คือช่วงไหน เทียบกับอะไร ณ เวลาใด"
 
@@ -22,8 +22,12 @@ function spanText(start: string, end: string): string {
   return rangeInclusive(start, end);
 }
 
-/** "30 วันล่าสุด · 13 ส.ค. – 11 ก.ย. 2569" */
-export function periodText(result: KpiResult): string {
+/* "30 วันล่าสุด · 13 ส.ค. – 11 ก.ย. 2569"
+
+   รับแค่ preset กับ period ไม่รับ KpiResult ทั้งก้อน เพราะ api.get_dashboard_charts
+   คืนสองฟิลด์นี้มาด้วยรูปเดียวกัน — บรรทัดช่วงเวลาใต้หัวกราฟจึงต้องเป็นข้อความเดียวกับการ์ด
+   ถ้าเขียนข้อความช่วงเวลาขึ้นใหม่ที่หน้ากราฟ วันสุดท้ายของช่วงจะคลาดกันหนึ่งวันได้ง่าย ๆ */
+export function periodText(result: { preset: string; period: KpiPeriod }): string {
   const label = PRESET_LABEL[result.preset as Preset] ?? result.preset;
   return `${label} · ${spanText(result.period.start, result.period.end)}`;
 }

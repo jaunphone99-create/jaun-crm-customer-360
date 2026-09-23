@@ -6,10 +6,15 @@ import "@/app/generated/page-dashboard.css";
 import { BranchTable } from "@/features/dashboard/BranchTable";
 import { DataQualityCards, OrgCards, StaffCards, TeamCards } from "@/features/dashboard/KpiCards";
 import { Filters } from "@/features/dashboard/Filters";
+import { FunnelChart } from "@/features/dashboard/FunnelChart";
 import { SCOPE_ALL, SCOPE_MINE, SCOPE_TEAM } from "@/features/dashboard/labels";
+import { LostReasonsChart } from "@/features/dashboard/LostReasonsChart";
+import { periodText } from "@/features/dashboard/period";
+import { RecentActivity } from "@/features/dashboard/RecentActivity";
 import { SourceBar } from "@/features/dashboard/SourceBar";
+import { SourceDonut } from "@/features/dashboard/SourceDonut";
 import { KpiSkeleton, WidgetError, WidgetSkeleton } from "@/features/dashboard/States";
-import { effectiveScope, layoutFor, loadKpis } from "@/features/dashboard/queries";
+import { effectiveScope, layoutFor, loadCharts, loadKpis, loadRecentActivity } from "@/features/dashboard/queries";
 import { PRESETS, type DashboardFilters, type DashboardLayout, type Preset } from "@/features/dashboard/types";
 import { NotAuthorized } from "@/features/shell/NotAuthorized";
 import { rolesWithPermission } from "@/features/session/guard";
@@ -29,8 +34,12 @@ import { can, hasRole, needsMfaFor, requireAccess, type Access } from "@/lib/acc
    (features/session/routes.ts ตั้ง permission = null ไว้ตั้งใจ) — จึงต้องได้การ์ด "ไม่มีสิทธิ์"
    ไม่ใช่หน้าพังหรือข้อความ error ของฐานข้อมูล
 
-   ยังไม่ได้ทำในชุดนี้: Funnel · โดนัทแหล่งที่มา · แท่งเหตุผลที่ไม่สำเร็จ · กิจกรรมล่าสุด ·
-   งานวันนี้ · ผลงานรายพนักงาน — ดูเหตุผลในรายงานส่งมอบ (ต้องการ api.get_report และหน้า Phase 2) */
+   กราฟสามตัว (Funnel · โดนัทแหล่งที่มา · เหตุผลที่ไม่สำเร็จ) มาจาก api.get_dashboard_charts
+   ซึ่งคืนทั้งตัวเลข ข้อความร้อยละที่ปัดแล้ว และสัดส่วน 0–1 สำหรับวาดความยาวแท่ง
+   หน้านี้และคอมโพเนนต์กราฟจึงไม่มีการหาร ปัด หรือรวมค่าใด ๆ เลย (ข้อ 20.15)
+
+   ยังไม่ได้ทำในชุดนี้: งานวันนี้ · ผลงานรายพนักงาน (ข้อ 13.6 — BRANCH_MANAGER ยังเห็นตารางสาขา
+   แทนตารางพนักงาน) — ดูเหตุผลในรายงานส่งมอบ (ต้องการ api.get_report และหน้า Phase 2) */
 
 export const metadata: Metadata = { title: "หน้าหลัก" };
 export const dynamic = "force-dynamic";
@@ -77,6 +86,9 @@ function scopeLabel(access: Access, filters: DashboardFilters, layout: Dashboard
    ส่วนของหน้า — แต่ละส่วนยิง RPC เองและจับ error เอง
    sitemap ข้อ 5.7 กำหนดว่า "ผิดพลาดเฉพาะวิดเจ็ต · ส่วนอื่นยังแสดง"
    --------------------------------------------------------------------------------- */
+
+/** สิ่งที่ทุกส่วนต้องรู้เหมือนกัน — ตัวเลือกของผู้ใช้ และมีฟอร์มตัวกรองให้กด "ลองอีกครั้ง" หรือไม่ */
+type SectionProps = { filters: DashboardFilters; branchKey: string; hasFilterForm: boolean };
 
 async function CardsSection({
   layout,
@@ -164,10 +176,22 @@ async function DataQualitySection({
 
 /* กล่องวิดเจ็ต — ใช้ชื่อคลาสเดิมของ prototype (card · dash-card)
    ระยะห่างมาจาก .dash-row ใน @/app/generated/page-dashboard.css (คัดจาก prototype/02-dashboard.html)
-   จึงไม่ต้องใส่ margin เองซ้ำ — ใส่ซ้ำแล้วระยะจะไม่ตรงกับหน้าที่อนุมัติไว้ */
-function Widget({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+   จึงไม่ต้องใส่ margin เองซ้ำ — ใส่ซ้ำแล้วระยะจะไม่ตรงกับหน้าที่อนุมัติไว้
+
+   className มีไว้รับ hide-tablet เท่านั้น (ข้อ 14.4) ไม่ใช่ช่องให้แต่งหน้าตารายวิดเจ็ต */
+function Widget({
+  title,
+  subtitle,
+  className,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="card dash-card" aria-label={title}>
+    <section className={`card dash-card${className ? ` ${className}` : ""}`} aria-label={title}>
       <div className="card__header">
         <div className="grow">
           <h2 className="card__title">{title}</h2>
@@ -177,6 +201,69 @@ function Widget({ title, subtitle, children }: { title: string; subtitle?: strin
       {children}
     </section>
   );
+}
+
+/* ป้ายหัวกราฟทั้งสามใบ — ข้อความคัดจาก prototype/02-dashboard.html (ข้อ 14.7)
+   เก็บไว้ที่เดียวเพราะทั้งตอนกำลังโหลด ตอนสำเร็จ และตอนพังต้องใช้ชื่อเดียวกัน
+   ไม่งั้นหัวการ์ดจะกระโดดเปลี่ยนชื่อระหว่างโหลด */
+const CHART_TITLES = {
+  funnel: "Funnel ลูกค้า",
+  donut: "แหล่งที่มาลูกค้า",
+  lost: "เหตุผลที่ไม่สำเร็จ",
+} as const;
+
+/* กราฟสามใบของชุดองค์กร (ข้อ 14.7)
+
+   ทั้งสามใบมาจาก RPC ตัวเดียว จึงอยู่ในส่วนเดียวกัน — พังพร้อมกันเสมอโดยธรรมชาติ
+   แต่แยกจากการ์ด KPI อย่างเด็ดขาดตาม sitemap ข้อ 5.7
+
+   โดนัทกับแท่งเหตุผลใส่ hide-tablet เพราะแท็บเล็ตแสดงแค่การ์ด KPI + Funnel (ข้อ 14.4)
+   ส่วนสถานะ "ข้อมูลไม่พอแสดง" ของโดนัทเมื่อขอบเขตเป็นทีม/ของตัวเอง (channels.total = null)
+   เป็นหน้าที่ของ SourceDonut เอง ไม่ใช่ให้หน้านี้ซ่อนวิดเจ็ตทิ้ง */
+async function ChartsSection({ filters, branchKey, hasFilterForm }: SectionProps) {
+  let charts;
+  try {
+    charts = await loadCharts(filters.preset, branchKey);
+  } catch (e) {
+    return (
+      <div className="dash-row">
+        <Widget title="กราฟภาพรวม">
+          <WidgetError error={e} title="โหลดกราฟไม่สำเร็จ" hasFilterForm={hasFilterForm} />
+        </Widget>
+      </div>
+    );
+  }
+
+  const sub = periodText(charts);
+  return (
+    <div className="dash-row dash-row--3">
+      <Widget title={CHART_TITLES.funnel} subtitle={sub}>
+        <FunnelChart stages={charts.funnel} />
+      </Widget>
+      <Widget title={CHART_TITLES.donut} subtitle={sub} className="hide-tablet">
+        <SourceDonut channels={charts.channels} />
+      </Widget>
+      <Widget title={CHART_TITLES.lost} subtitle={`${sub} · 5 อันดับ + อื่น ๆ`} className="hide-tablet">
+        <LostReasonsChart reasons={charts.lost_reasons} />
+      </Widget>
+    </div>
+  );
+}
+
+/* กิจกรรมล่าสุด (ข้อ 13.5 · 14.7)
+
+   เวลาอ้างอิงที่ใช้ตัดสินว่า "วันนี้" มาจาก app.clock() ของ api.get_kpis ชุดเดียวกับการ์ด
+   loadKpis ถูก cache() ไว้ จึงเป็นผลเดิมที่การ์ดโหลดไปแล้ว ไม่ได้ยิงคำสั่งเพิ่ม */
+async function RecentActivitySection({ filters, branchKey, hasFilterForm }: SectionProps) {
+  try {
+    const [rows, kpis] = await Promise.all([
+      loadRecentActivity(branchKey),
+      loadKpis(filters.preset, branchKey),
+    ]);
+    return <RecentActivity rows={rows} clock={kpis.clock} />;
+  } catch (e) {
+    return <WidgetError error={e} title="โหลดกิจกรรมล่าสุดไม่สำเร็จ" hasFilterForm={hasFilterForm} />;
+  }
 }
 
 /* ---------------------------------------------------------------------------------
@@ -222,6 +309,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
      เช็ก data_quality.view ด้วย เพราะการ์ดเหล่านี้ชี้ไปที่งานในหน้า 12 */
   const showDataQuality = hasRole(access, "BUSINESS_ADMIN") && can(access, "data_quality.view");
 
+  /* กราฟสามใบเป็นของชุด "องค์กร/สาขา" เท่านั้น (ข้อ 14.7: SUPERVISOR · STAFF ไม่มี Funnel/โดนัท/เหตุผล)
+     ตัดสินจาก layout ซึ่งมาจากขอบเขตของสิทธิ์ dashboard.view ไม่ใช่ชื่อบทบาท — กลไกเดียวกับการ์ด */
+  const showCharts = layout === "org";
+
+  /* กิจกรรมล่าสุดเป็นรายชื่อลูกค้า ไม่ใช่ตัวเลขรวม จึงต้องมีสิทธิ์อ่านลูกค้าจริง ๆ
+     นี่คือเหตุผลที่ข้อ 14.7 เขียนว่า "ซ่อนสำหรับ MARKETING": MARKETING มี dashboard.view
+     และ report.view แต่ไม่มี customer.read (RLS คืน 0 แถวให้อยู่แล้ว)
+     ผูกกับสิทธิ์แทนชื่อบทบาท เพราะถ้าวันหนึ่งองค์กรให้ customer.read กับ MARKETING
+     วิดเจ็ตควรโผล่มาเอง ไม่ใช่ต้องตามแก้เงื่อนไขในโค้ด */
+  const showRecentActivity = layout === "org" && can(access, "customer.read");
+
+  const sectionProps = { filters, branchKey, hasFilterForm };
+
+  /* ยิง RPC ของการ์ดกับของกราฟออกไปพร้อมกันตั้งแต่ก่อนเริ่มวาด แต่ไม่ await รวมกันที่นี่
+     เพราะสองส่วนนี้ต้อง "ล้มแยกกัน" ตาม sitemap ข้อ 5.7 — กราฟล่มแล้วการ์ด KPI ต้องยังอยู่
+     ทั้งคู่ถูก cache() ไว้ ส่วนที่เป็นเจ้าของจึงได้ promise ตัวเดียวกันนี้ไป await แล้วจับ error เอง
+     .catch ที่ต่อท้ายไม่ได้กลืน error ของใคร มีหน้าที่เดียวคือกัน Node ขึ้น unhandledRejection
+     ระหว่างรอให้ Suspense เดินมาถึงส่วนนั้น */
+  void Promise.all([
+    loadKpis(filters.preset, branchKey).catch(() => null),
+    showCharts ? loadCharts(filters.preset, branchKey).catch(() => null) : null,
+  ]);
+
   return (
     <>
       <header className="page-header">
@@ -244,18 +354,52 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         />
       </Suspense>
 
-      {showBranchTable ? (
-        <div className="dash-row">
-          <Widget title="ผลงานรายสาขา" subtitle="เปลี่ยน = ยอดขายเทียบช่วงก่อนหน้า">
-            <Suspense key={`branch:${filters.preset}`} fallback={<WidgetSkeleton />}>
-              <BranchSection filters={filters} branchKey={branchKey} hasFilterForm={hasFilterForm} />
-            </Suspense>
-          </Widget>
+      {showCharts ? (
+        <Suspense
+          key={`charts:${filters.preset}:${branchKey}`}
+          fallback={
+            <div className="dash-row dash-row--3">
+              <Widget title={CHART_TITLES.funnel}>
+                <WidgetSkeleton />
+              </Widget>
+              <Widget title={CHART_TITLES.donut} className="hide-tablet">
+                <WidgetSkeleton />
+              </Widget>
+              <Widget title={CHART_TITLES.lost} className="hide-tablet">
+                <WidgetSkeleton />
+              </Widget>
+            </div>
+          }
+        >
+          <ChartsSection {...sectionProps} />
+        </Suspense>
+      ) : null}
+
+      {/* ตารางสาขา + กิจกรรมล่าสุด อยู่แถวเดียวกันตาม prototype · ทั้งแถวซ่อนบนแท็บเล็ต (ข้อ 14.4)
+          มีทั้งคู่จึงใช้ dash-row--main-side (ตารางกว้าง · รายการ 360px) เหลือใบเดียวก็เต็มแถวไปเลย */}
+      {showBranchTable || showRecentActivity ? (
+        <div className={`dash-row hide-tablet${showBranchTable && showRecentActivity ? " dash-row--main-side" : ""}`}>
+          {showBranchTable ? (
+            <Widget title="ผลงานรายสาขา" subtitle="เปลี่ยน = ยอดขายเทียบช่วงก่อนหน้า">
+              <Suspense key={`branch:${filters.preset}`} fallback={<WidgetSkeleton />}>
+                <BranchSection filters={filters} branchKey={branchKey} hasFilterForm={hasFilterForm} />
+              </Suspense>
+            </Widget>
+          ) : null}
+          {showRecentActivity ? (
+            <Widget title="กิจกรรมล่าสุด" subtitle="เรียงตามเวลาติดต่อล่าสุด">
+              <Suspense key={`activity:${filters.preset}:${branchKey}`} fallback={<WidgetSkeleton height="260px" />}>
+                <RecentActivitySection {...sectionProps} />
+              </Suspense>
+            </Widget>
+          ) : null}
         </div>
       ) : null}
 
+      {/* แท็บเล็ตแสดงเฉพาะการ์ด KPI + Funnel (ข้อ 14.4) แถวคุณภาพข้อมูลจึงต้องซ่อนด้วย
+          เหมือนที่ prototype ห่อไว้ใน .hide-tablet — ไม่ใช่แค่กราฟสองใบขวามือ */}
       {showDataQuality ? (
-        <div className="dash-row">
+        <div className="dash-row hide-tablet">
           <Widget title="คุณภาพข้อมูล" subtitle="เทียบเป้าหมายตามข้อ 12.3 — ฐานข้อมูลเป็นผู้ตัดสินว่าผ่านหรือไม่">
             <Suspense key={`dq:${filters.preset}:${branchKey}`} fallback={<KpiSkeleton cards={5} />}>
               <DataQualitySection filters={filters} branchKey={branchKey} hasFilterForm={hasFilterForm} />

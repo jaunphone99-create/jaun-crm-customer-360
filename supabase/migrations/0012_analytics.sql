@@ -1251,12 +1251,16 @@ SECURITY DEFINER
 SET search_path = ''
 AS $BODY$
 DECLARE
-    -- ขั้นของ funnel ตามข้อ 13.1 · ป้ายใช้ชุดเดียวกับการ์ด KPI (ข้อ 12.1) และสีตามข้อ 15
+    -- ขั้นของ funnel ตามข้อ 13.1 · ป้ายและสีตรงกับ prototype (D.funnelStages + D.kpiLabels)
+    --
+    -- สีของขั้นสุดท้ายเป็น --chart-6 ไม่ใช่ --chart-4 โดยตั้งใจ:
+    -- --chart-4 คือสีของ Instagram ในโดนัท "แหล่งที่มาลูกค้า" ซึ่งอยู่แถวเดียวกันบนหน้าจอ
+    -- ถ้าใช้ซ้ำ สีเดียวกันจะมีสองความหมายในสายตาเดียว (ข้อ 15 ห้ามสื่อด้วยสีอย่างเดียว)
     c_stages constant text[][] := ARRAY[
-        ['VISITS',        'ลูกค้าเข้าร้าน',  '--chart-1'],
-        ['LEADS',         'Leads',           '--chart-2'],
-        ['OPPORTUNITIES', 'Opportunities',   '--chart-3'],
-        ['SALES',         'ปิดการขาย',       '--chart-4']];
+        ['VISITS',        'ผู้มาติดต่อ (Visitor)', '--chart-1'],
+        ['LEADS',         'Leads',                 '--chart-2'],
+        ['OPPORTUNITIES', 'Opportunities',         '--chart-3'],
+        ['SALES',         'ปิดการขาย (Sales)',     '--chart-6']];
     v_rows  jsonb;
     v_first numeric;
     v_out   jsonb := '[]'::jsonb;

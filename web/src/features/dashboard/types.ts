@@ -77,3 +77,23 @@ export type DashboardFilters = {
   /** null = ทุกสาขาในสิทธิ์ · มีค่า = รหัสสาขาเดียวที่ผู้ใช้เลือก */
   branchCode: string | null;
 };
+
+/* แถวของวิดเจ็ต "กิจกรรมล่าสุด" (W5 · ข้อ 13.5 · 14.7)
+
+   วิดเจ็ตนี้ไม่มี RPC ของตัวเอง — อ่าน crm.customers ตรงผ่าน PostgREST แล้วให้ RLS
+   เป็นผู้ตัดสินว่าใครเห็นแถวไหน (เหตุผลเต็มอยู่ใน queries.ts · loadRecentActivity)
+
+   จงใจไม่มีช่องทางติดต่อ (เบอร์ · อีเมล · LINE ID) แม้แต่ฟิลด์เดียว:
+   หน้าหลักเป็นหน้าที่เปิดค้างไว้บนจอหน้าร้าน การมีเบอร์ลูกค้าอยู่บนนั้นคือการเปิดเผย
+   โดยไม่มีใครกดดู ซึ่งขัดหลัก "เห็นค่าเต็มต้องผ่าน api.reveal_contact และถูกบันทึก" (D33)
+   ชื่อลูกค้ายังต้องมี เพราะเป็นสิ่งเดียวที่ทำให้คนอ่านรู้ว่าแถวนี้คือใคร */
+export type RecentActivityRow = {
+  id: string;
+  customer_no: string;
+  display_name: string | null;
+  /** ป้ายไทยของช่องทางล่าสุด — แปลจาก ref.channels แล้ว · null = ยังไม่มีช่องทาง */
+  channel_label: string | null;
+  /** ชื่อสาขาของกิจกรรมล่าสุด (last_branch_id) ไม่ใช่สาขาที่ลูกค้าผูกอยู่ (ข้อ 14.9) */
+  branch_name: string | null;
+  last_activity_at: string | null;
+};

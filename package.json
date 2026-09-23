@@ -21,7 +21,8 @@
     "dev:web": "npm --prefix web run dev",
     "web:build": "npm --prefix web run build",
     "web:typecheck": "npm --prefix web run typecheck",
-    "check:web": "npm --prefix web run check"
+    "check:web": "npm --prefix web run check",
+    "smoke": "python3 tools/smoke-test.py"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.4.1"
