@@ -144,9 +144,6 @@ export const CATALOG: SettingSpec[] = [
     effect: "เกณฑ์เดียวที่ตัดสินว่าคิวไหน “รอนาน” — ทั้งการแจ้งเตือนหน้าร้าน และป้ายสีบนหน้ารับลูกค้า (07)",
     enforcedAt: "app.job_notifications (0013_jobs.sql) · หน้ารับลูกค้า (07) อ่านผ่าน api.get_display_settings()",
     live: "live",
-    gap:
-      "ฐานข้อมูลทดลองในเครื่องยังไม่มี api.get_display_settings() จนกว่าจะรัน migration ใหม่ " +
-      "ระหว่างนั้นหน้ารับลูกค้าจะถอยไปใช้ค่าเริ่มต้น 15 นาที",
   },
   {
     key: "sla.visit_in_service_min",
@@ -395,9 +392,6 @@ export const CATALOG: SettingSpec[] = [
     effect: "เครื่อง counter ที่ใช้ร่วมกันจะล็อกหน้าจอเมื่อไม่มีการแตะครบเวลานี้ และต้องยืนยันตัวตนใหม่",
     enforcedAt: "api.get_display_settings() → CounterLock ของทุกหน้า (มีผลเมื่อผู้ใช้โหลดหน้าใหม่)",
     live: "live",
-    gap:
-      "ฐานข้อมูลทดลองในเครื่องยังไม่มี api.get_display_settings() จนกว่าจะรัน migration ใหม่ " +
-      "ระหว่างนั้นเครื่อง counter จะถอยไปใช้ค่าเริ่มต้น 10 นาที",
   },
 
   /* ----------------------------------------------------------------- PDPA */
