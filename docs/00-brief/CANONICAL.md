@@ -1859,24 +1859,31 @@ JAUN CRM หน้าร้าน/
 │   ├── 04-security/     permission-matrix.md · rls-spec.md · security-design.md (รวม Audit Spec) · pdpa.md
 │   ├── 05-analytics/    kpi-definitions.md · notification-rules.md
 │   ├── 06-ux/           design-system.md · sitemap-screen-specs.md
-│   ├── 07-api/          api-spec.md
 │   ├── 07-api/          api-spec.md · core-flow-contract.md (สัญญาสำหรับเขียน Core Flow)
-│   └── 08-delivery/     roadmap.md · data-migration-plan.md · test-cases-uat.md · deployment-backup-recovery.md · phase1-plan.md · environment-setup.md
+│   └── 08-delivery/     roadmap.md · data-migration-plan.md · test-cases-uat.md · deployment-backup-recovery.md
+│                        phase1-plan.md · environment-setup.md
+│                        pilot-deployment-checklist.md · pilot-uat-checklist.md · training-flow.md (เตรียม Pilot · ข้อ 20.19)
 ├── supabase/
 │   ├── migrations/      0001_… ถึง 00NN_… (.sql) · *_cron.sql (Supabase เท่านั้น)
+│   ├── functions/       Edge Functions + _shared/ (ข้อ 9.8)
 │   ├── seed.sql
-│   └── tests/           00_harness.sql · rls_*.sql · acceptance.sql
+│   └── tests/           00_harness.sql · rls_*.sql · acceptance.sql · api_*.sql · analytics_*.sql · identity_acceptance.sql
 ├── prototype/           index.html · 01-login.html … 19-quotations.html · assets/
-├── web/                 แอป Next.js 16 (Phase 1 · เริ่มจาก Core Flow) — โครงไฟล์ตาม architecture §6.1
-│   ├── src/app/         (auth)/login · (app)/dashboard · (app)/reception · (app)/customers/new
-│   ├── src/features/    auth · shell · reception · capture
-│   ├── src/lib/         db/ (ทางเข้าฐานข้อมูลทางเดียว) · access.ts · env.ts · session.ts · labels.ts · format/
+├── web/                 แอป Next.js 16 (Phase 1 ครบทุกหน้าแล้ว) — โครงไฟล์ตาม architecture §6.1
+│   ├── src/app/         (auth)/login · (app)/ dashboard · reception · customers · users · data-quality · audit · privacy · settings
+│   ├── src/features/    auth · shell · session · reception · capture · customers · customer360
+│   │                    dashboard · data-quality · audit · privacy · settings · users
+│   ├── src/lib/         db/ (ทางเข้าฐานข้อมูลทางเดียว) · access.ts · env.ts · session.ts · labels.ts · errors.ts · format/
 │   └── scripts/         sync-design.mjs (คัดลอก CSS + ฟอนต์จาก prototype ตอน build)
 └── tools/
-    ├── db/              run.mjs · supabase-shim.sql · gen-seed.mjs · gen-data-dictionary.mjs · anonymize.sql
+    ├── db/              run.mjs · supabase-shim.sql · gen-seed.mjs · gen-data-dictionary.mjs
     │                    dev-api.mjs (ฐานข้อมูลทดลองในเครื่อง · พูดภาษา PostgREST · ใช้ตอนพัฒนาเท่านั้น)
-    └── check-prototype.mjs · check-canonical.mjs · serve-prototype.mjs
+    └── check-prototype.mjs · check-canonical.mjs · serve-prototype.mjs · smoke-test.py
 ```
+
+> `tools/db/anonymize.sql` (ข้อ 9.7) **ยังไม่มี** — เป็นช่องว่าง G2 ของ `test-cases-uat.md` §6
+> ต้องสร้างก่อนใช้สำเนา prod ทำ staging · ผังด้านบนจึงไม่ได้ลงไว้ เพราะผังนี้ต้องบอกของที่มีจริง
+> (`tools/check-canonical.mjs` บังคับข้อนี้ — ผังที่อ้างเครื่องมือซึ่งยังไม่มีจะทำให้ `npm run check` ไม่ผ่าน)
 
 เอกสาร 20 ชุดตาม A45 ↔ ไฟล์: 01 PRD · 02 BRD → `requirement-review.md` · 03 → `permission-matrix.md` · 04 → `user-flows.md` · 05 · 06 → `sitemap-screen-specs.md` · 07 → `data-dictionary.md` · 08 → `er-diagram.md` · 09 → `supabase/migrations/` + `schema-notes.md` · 10 → `api-spec.md` · 11 → `rls-spec.md` · 12 → `security-design.md` · 13 → `pdpa.md` · 14 → `kpi-definitions.md` · 15 → `notification-rules.md` · 16 → `data-migration-plan.md` · 17 · 18 → `test-cases-uat.md` · 19 · 20 → `deployment-backup-recovery.md`
 
@@ -2268,4 +2275,39 @@ SUPERVISOR/STAFF ไม่เห็นกราฟทั้งสาม · SYSTE
 การดึงเข้ามาในรอบ Hardening จึงเป็นการเพิ่มงาน Phase 3 ก่อนเปิด Pilot — ไม่ทำ
 `api.get_kpis(p_group_by='STAFF')` พร้อมใช้แล้วเมื่อถึง Phase 3 (ยืนยันแล้วว่า BM เรียกได้จริง)
 ระหว่างนี้ BRANCH_MANAGER เห็น การ์ด KPI + กราฟสามใบของสาขาตน + กิจกรรมล่าสุด ครบใช้งานได้
+
+### 20.19 Phase 1 Development Complete — Ready for Pilot Deployment (23 ก.ย. 2569)
+
+เจ้าของโครงการรับรองรอบ Hardening และประกาศสถานะนี้เอง พร้อมเปลี่ยนโฟกัสจาก Development ไปที่ Pilot Preparation
+
+**Feature Freeze**
+> Feature ใหม่ที่อยู่นอก Phase 1 **ให้หยุดไว้ก่อน** จนกว่าจะได้ Feedback จาก Pilot
+
+มีผลกับทุกอย่างที่เคยจดไว้ว่าเป็น Phase 2–3 รวมถึง:
+`ผลงานรายพนักงาน` (W4 ของชุดสาขา · Phase 3) · หน้างาน (08) · Lead (11) · Pipeline (06) ·
+ใบเสนอราคา (19) · รายงาน (09) · ส่งออก (15) · Master Data (14)
+การแก้ข้อบกพร่องของ Phase 1 และงานเตรียม Pilot **ไม่นับเป็น Feature ใหม่** ทำได้ตามปกติ
+
+**ลำดับงานเตรียม Pilot ที่สั่งไว้ 8 ขั้น**
+
+| ขั้น | งาน | เอกสารที่ใช้ |
+|---|---|---|
+| 1 | เตรียม Supabase/Environment | `pilot-deployment-checklist.md` ขั้น 1 · `deployment-backup-recovery.md` §2 |
+| 2 | Configure Master Data และ JAUNPHONE 1 | `pilot-deployment-checklist.md` ขั้น 2 · ข้อ 5 · ข้อ 11.2 |
+| 3 | เตรียมบัญชี Manager/Staff | `pilot-deployment-checklist.md` ขั้น 3 · `deployment-backup-recovery.md` §4.2 |
+| 4 | Email Invite/Reset | `pilot-deployment-checklist.md` ขั้น 4 |
+| 5 | นำเข้าข้อมูลเดิมตามแผน | `data-migration-plan.md` §9 · เกณฑ์รับ §10 |
+| 6 | UAT บน Environment จริง | `pilot-uat-checklist.md` |
+| 7 | Training | `training-flow.md` |
+| 8 | เปิด Pilot | `pilot-deployment-checklist.md` Go/No-Go |
+
+**เงื่อนไขที่เจ้าของโครงการตรึงไว้**
+> ก่อนเปิดให้พนักงานจริง ขอ Full Smoke Test บน Environment ที่จะใช้ Pilot อีกครั้ง
+> **ไม่ใช้ผลจาก local dev แทน**
+
+`tools/smoke-test.py` รองรับ `--env <ไฟล์.json>` แล้ว เพื่อชี้ไป environment จริง
+บน environment จริงต้องแนบ cookie/JWT ของบัญชีจริงแต่ละบทบาท — ปลอมตัวตนไม่ได้และไม่ควรได้
+ซึ่งพิสูจน์ไปในตัวว่าการเข้าสู่ระบบจริงใช้งานได้ก่อนจะทดสอบอย่างอื่น
+**เกณฑ์ผ่านคือผ่านทุกข้อและไม่มีข้อที่ถูกข้าม** — สคริปต์รายงานจำนวนข้อที่ข้ามแยกจากข้อที่ผ่าน
+เพราะการข้ามเงียบ ๆ อ่านแล้วนึกว่าทดสอบครบ
 

@@ -203,12 +203,17 @@ check("18 · ไฟล์เอกสารทุกชุดที่อ้า�
   const sec = section("## 18. ");
   const dirs = { "00-brief": [], "01-requirement": [], "02-architecture": [], "03-data": [],
     "04-security": [], "05-analytics": [], "06-ux": [], "07-api": [], "08-delivery": [] };
+  /* เดินทีละบรรทัดโดยจำ "โฟลเดอร์ล่าสุดที่เห็น" ไว้
+     เพราะผังขึ้นบรรทัดใหม่ได้เมื่อรายชื่อยาว และบรรทัดต่อเนื่องไม่มี ├── นำหน้า
+     เวอร์ชันก่อนหน้าอ่านเฉพาะบรรทัดที่มี ├── จึงมองข้ามไฟล์ในบรรทัดต่อเนื่องทั้งหมด
+     (จับได้ตอนเพิ่มเอกสารเตรียม Pilot แล้วผังบอกว่ามี ทั้งที่ไฟล์ยังไม่ถูกสร้าง) */
+  let current = null;
   for (const line of sec.split("\n")) {
-    const m = line.match(/│\s+├──|│\s+└──/) ? line : null;
-    if (!m) continue;
+    if (!line.includes("│")) { current = null; continue; }
     const dir = Object.keys(dirs).find((d) => line.includes(`${d}/`));
-    if (!dir) continue;
-    for (const f of line.matchAll(/([\w-]+\.md)/g)) dirs[dir].push(f[1]);
+    if (dir) current = dir;
+    if (!current) continue;
+    for (const f of line.matchAll(/([\w-]+\.md)/g)) dirs[current].push(f[1]);
   }
   const missing = [];
   for (const [dir, files] of Object.entries(dirs))
@@ -221,9 +226,20 @@ check("18 · ไฟล์เอกสารทุกชุดที่อ้า�
 
 check("18 · เครื่องมือใน tools/ ที่อ้างถึงมีอยู่จริง", () => {
   const want = ["tools/db/run.mjs", "tools/db/supabase-shim.sql", "tools/db/gen-seed.mjs",
-    "tools/db/gen-data-dictionary.mjs", "tools/check-prototype.mjs", "tools/check-canonical.mjs"];
+    "tools/db/gen-data-dictionary.mjs", "tools/db/dev-api.mjs", "tools/check-prototype.mjs",
+    "tools/check-canonical.mjs", "tools/serve-prototype.mjs", "tools/smoke-test.py"];
   const missing = want.filter((f) => !existsSync(join(ROOT, f)));
-  return missing.length ? `ไม่มี: ${missing.join(" · ")}` : true;
+  if (missing.length) return `ไม่มี: ${missing.join(" · ")}`;
+
+  /* ผังต้องไม่โฆษณาเครื่องมือที่ยังไม่มี — ผังที่บอกว่ามีของที่ยังไม่มี
+     ทำให้คนอ่านวางแผนโดยคิดว่ามีเครื่องมือนั้นอยู่แล้ว */
+  const sec = section("## 18. ");
+  const treeStart = sec.indexOf("└── tools/");
+  const tree = treeStart < 0 ? "" : sec.slice(treeStart, sec.indexOf("```", treeStart));
+  const ghosts = [...tree.matchAll(/([\w-]+\.(?:mjs|py|sql))/g)]
+    .map((m) => m[1])
+    .filter((f) => !existsSync(join(ROOT, "tools", f)) && !existsSync(join(ROOT, "tools/db", f)));
+  return ghosts.length ? `ผังอ้างเครื่องมือที่ยังไม่มี: ${[...new Set(ghosts)].join(" · ")}` : true;
 });
 
 /* ---- 6. Direction ข้อ 20 ต้องอ้างหน้าจอที่มีจริง ------------------------------ */
