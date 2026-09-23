@@ -33,6 +33,11 @@ const STATUS_TONE: Record<VisitStatus, string> = {
 /** ผลที่พนักงานเลือกเองได้ — LEFT_BEFORE_SERVICE กับ UNRECORDED ระบบเป็นผู้ใส่ (ข้อ 4.2) */
 const SELECTABLE_OUTCOMES = ["PURCHASED", "FOLLOW_UP", "NOT_YET", "NOT_INTERESTED", "SERVICE_DONE"];
 
+/* "นัดติดตาม" ต้องมี lead หรือโอกาสขายที่เปิดอยู่พร้อมงานถัดไป (api.close_visit · ข้อ 4.2)
+   Phase 1 ไม่สร้าง Lead แล้ว (ข้อ 20.12 · D52) ผลนี้จึงยังใช้ไม่ได้จนกว่าจะถึง Phase 2
+   แสดงไว้แต่กดไม่ได้ ดีกว่าซ่อนหาย — พนักงานจะได้รู้ว่ามีและกำลังจะมา */
+const PHASE2_OUTCOMES = new Set(["FOLLOW_UP"]);
+
 function ClaimButton({ visitId, disabled }: { visitId: string; disabled: boolean }) {
   const [state, action, pending] = useActionState(claimVisit, initial);
   return (
@@ -64,8 +69,8 @@ function RecordOutcome({ visitId, outcomes }: { visitId: string; outcomes: RefIt
               เลือกผล
             </option>
             {choices.map((o) => (
-              <option key={o.code} value={o.code}>
-                {o.label_th}
+              <option key={o.code} value={o.code} disabled={PHASE2_OUTCOMES.has(o.code)}>
+                {PHASE2_OUTCOMES.has(o.code) ? `${o.label_th} (เปิดใช้ใน Phase 2)` : o.label_th}
               </option>
             ))}
           </select>

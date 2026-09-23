@@ -200,46 +200,11 @@ export async function captureAction(prev: CaptureState, formData: FormData): Pro
     }
   }
 
-  /* ---- รับลูกค้าโดยยังไม่ระบุตัวตน — เปิด visit เปล่า ------------------- */
+  /* "บันทึกแบบไม่ระบุตัวตน" ถูกตัดออกจากหน้านี้แล้ว (CANONICAL ข้อ 20.12 · D52)
+     หลักคือ Anonymous = Visit/Visitor · Customer สร้างต่อเมื่อมีข้อมูลระบุตัวตนขั้นต่ำ
+     กรณียังไม่รู้ว่าลูกค้าเป็นใคร ให้ใช้ปุ่ม "รับลูกค้าด่วน" ในหน้ารับลูกค้าเข้าร้าน (07) */
   if (intent === "anon") {
-    if (!wantsVisit) {
-      return fail(prev, "รับลูกค้าแบบไม่ระบุตัวตนทำได้เฉพาะตอนรับลูกค้าเข้าร้าน (ต้องมีสิทธิ์เปิด visit)");
-    }
-    const errors: Record<string, string> = {};
-    if (!v.branchId) errors.branch_id = "เลือกสาขา";
-    if (!v.channelCode) errors.channel_code = "เลือกช่องทางที่ติดต่อมา";
-    if (!v.interestCode) errors.interest_code = "เลือกความสนใจ";
-    if (Object.keys(errors).length > 0) {
-      return { ...base(prev), fieldErrors: errors, formError: "กรุณาแก้ไขช่องที่ทำเครื่องหมายไว้" };
-    }
-
-    let opened: OpenVisitResult;
-    try {
-      opened = await rpc<OpenVisitResult>("open_visit", {
-        p: {
-          branch_id: v.branchId,
-          channel_code: v.channelCode,
-          interest_code: v.interestCode,
-          source_code: v.sourceCode || null,
-        },
-      });
-    } catch (error) {
-      return fail(prev, captureErrorMessage(error));
-    }
-
-    const message = `รับลูกค้าแล้วโดยยังไม่ระบุตัวตน · ${opened.visit_no ?? ""}`.trim();
-    if (backToReception) redirect(receptionUrl(`${message} · ระบุชื่อและเบอร์ภายหลังได้จากคิวนี้`));
-    return {
-      ...base(prev),
-      dup: EMPTY_DUP,
-      success: {
-        message,
-        customerNo: null,
-        visitNo: opened.visit_no,
-        queueNo: opened.queue_no,
-        leadNo: null,
-      },
-    };
+    return fail(prev, "ปุ่มนี้ถูกยกเลิกแล้ว — ถ้ายังไม่รู้ว่าลูกค้าเป็นใคร ให้ใช้ \"รับลูกค้าด่วน\" ในหน้ารับลูกค้าเข้าร้าน");
   }
 
   /* ---- ใช้ลูกค้าเดิม ---------------------------------------------------- */
@@ -341,6 +306,10 @@ export async function captureAction(prev: CaptureState, formData: FormData): Pro
     privacy_notice_ack: true,
     open_visit: wantsVisit,
     visit_mode: intent === "queue" ? "QUEUE" : "SERVICE",
+    /* Phase 1 ไม่สร้าง Lead อัตโนมัติ (CANONICAL ข้อ 20.12 · D52)
+       เหตุผล: Lead ที่เกิดเองจะสร้างงานติดตามตามมาด้วย แต่หน้าจองานติดตามอยู่ Phase 2
+       พนักงานจึงมีงานค้างที่มองไม่เห็นและปิดไม่ได้ · Phase 2 จะกำหนดกติกา promote เอง */
+    create_lead: false,
   };
   if (v.visitId) payload.visit_id = v.visitId;
   if (v.marketing) {
@@ -373,7 +342,6 @@ export async function captureAction(prev: CaptureState, formData: FormData): Pro
         : "บันทึกลูกค้าแล้ว",
     created.customer_no,
   ];
-  if (created.lead_no) parts.push(`ระบบสร้าง Lead ${created.lead_no} ให้อัตโนมัติ`);
   const message = parts.filter(Boolean).join(" · ");
 
   if (wantsVisit && backToReception) redirect(receptionUrl(message));

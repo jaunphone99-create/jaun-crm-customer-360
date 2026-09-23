@@ -1019,18 +1019,9 @@ export function QuickCaptureForm({ ctx, refs }: { ctx: CaptureContext; refs: Cap
           )}
           <span className="spacer" />
 
-          {ctx.mode === "visit" && !ctx.visit ? (
-            <button
-              type="button"
-              className="btn btn--outline"
-              disabled={pending}
-              title="เปิดการรับลูกค้าโดยยังไม่ระบุตัวตน · ระบุชื่อและเบอร์ภายหลังได้จากหน้ารับลูกค้าเข้าร้าน"
-              onClick={() => run("anon")}
-            >
-              <span className="qc-label-long">บันทึกแบบไม่ระบุตัวตน</span>
-              <span className="qc-label-short">ไม่ระบุตัวตน</span>
-            </button>
-          ) : null}
+          {/* ปุ่ม "บันทึกแบบไม่ระบุตัวตน" ถูกตัดออกตาม CANONICAL ข้อ 20.12 (D52)
+              หลัก: Anonymous = Visit/Visitor · Customer สร้างต่อเมื่อมีข้อมูลระบุตัวตนขั้นต่ำ
+              กรณียังไม่รู้ว่าลูกค้าเป็นใคร ใช้ "รับลูกค้าด่วน" ในหน้ารับลูกค้าเข้าร้าน (07) แทน */}
 
           {ctx.mode === "customer"
             ? saveButton("บันทึก", "บันทึกลูกค้า", "accent", "save")

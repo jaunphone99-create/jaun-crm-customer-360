@@ -777,9 +777,11 @@ BEGIN
     END IF;
 
     -- ---- 9. lead อัตโนมัติ (ข้อ 6.2 ข้อ 3 · สถานะตามข้อ 4.3) ----
+    -- create_lead = false ปิดการสร้าง lead ของคำขอนั้น (ข้อ 20.12 · D52)
+    -- ใช้ปิดได้อย่างเดียว เปิดไม่ได้ — ความสนใจที่ creates_lead = false ยังไม่สร้าง lead เหมือนเดิม
     SELECT it.creates_lead INTO v_creates FROM ref.interest_types it WHERE it.code = v_interest;
     SELECT ch.is_live INTO v_is_live FROM ref.channels ch WHERE ch.code = v_channel;
-    IF coalesce(v_creates, false) THEN
+    IF coalesce(v_creates, false) AND coalesce((p ->> 'create_lead')::boolean, true) THEN
         INSERT INTO crm.leads (lead_no, customer_id, branch_id, owner_staff_id, channel_code, source_code, visit_id,
                                interest_code, product_type_code, product_model, status, priority_code,
                                next_action, next_action_type_code, next_action_at)
@@ -4110,6 +4112,7 @@ END $$;
 COMMENT ON FUNCTION api.quick_capture(jsonb) IS
 'สร้างลูกค้า (ทางเดียวตามข้อ 6.2) ในทรานแซกชันเดียว: customer + contacts + consent PRIVACY_NOTICE (+ MARKETING) '
 '+ visit/interaction ต้นทาง + lead อัตโนมัติตาม ref.interest_types.creates_lead (สถานะตามข้อ 4.3) + โน้ตแรก · '
+'ส่ง create_lead = false เพื่อไม่สร้าง lead ของคำขอนั้น (Phase 1 · ข้อ 20.12 · D52 — ปิดได้อย่างเดียว เปิดไม่ได้) · '
 'คำนวณผู้สมัครซ้ำใหม่ฝั่ง server (19.3 ข้อ 2) และบังคับเหตุผล override เมื่อมีคะแนน ≥ 70 (ข้อ 6.5) · ต้องมี customer.create ในสาขา';
 COMMENT ON FUNCTION api.find_customer_candidates(uuid, text, text, text, text, text) IS
 'ตรวจซ้ำก่อนสร้างลูกค้า (ข้อ 6.5) · ต้องมี customer.create และตัวระบุเต็มอย่างน้อย 1 · การ์ดย่อสำหรับลูกค้านอกขอบเขต · '

@@ -207,6 +207,20 @@ SELECT test.assert_eq((SELECT cs.captured_via::text FROM crm.customer_consents c
                        WHERE cs.customer_id = test.get('qc2')::uuid AND cs.purpose_code = 'PRIVACY_NOTICE'), 'LINK_SENT',
     'Q20 ช่องทางออนไลน์บันทึกประกาศแบบ LINK_SENT (ข้อ 10.2)');
 
+-- Phase 1 ปิดการสร้าง lead อัตโนมัติด้วย create_lead = false (ข้อ 20.12 · D52)
+SELECT test.login_as('api.a06@test.example.com', 'aal1');
+SELECT test.put('qc3', (test.jcall($$SELECT api.quick_capture(jsonb_build_object(
+    'branch_id', '7b000000-0000-4000-8000-000000000011', 'channel_code', 'WALK_IN', 'interest_code', 'BUY',
+    'first_name', 'ไม่สร้างลีด', 'phone', '092-777-8888', 'privacy_notice_ack', true,
+    'create_lead', false))$$)) ->> 'customer_id');
+SELECT test.logout();
+SELECT test.assert_eq((SELECT count(*) FROM crm.leads l WHERE l.customer_id = test.get('qc3')::uuid), 0::bigint,
+    'Q20a create_lead = false ไม่สร้าง lead แม้ความสนใจจะ creates_lead = true');
+SELECT test.assert_eq((SELECT count(*) FROM crm.tasks t WHERE t.customer_id = test.get('qc3')::uuid), 0::bigint,
+    'Q20b ไม่มี lead จึงไม่มีงานติดตามค้างที่ไม่มีหน้าจอให้ปิดใน Phase 1');
+SELECT test.assert_eq((SELECT count(*) FROM crm.customer_contacts ct WHERE ct.customer_id = test.get('qc3')::uuid), 1::bigint,
+    'Q20c ลูกค้าและช่องทางติดต่อยังถูกสร้างตามปกติ');
+
 -- ลูกค้าซ้ำ: เบอร์เดียวกับ CUS-1996-000001
 SELECT test.login_as('api.a06@test.example.com', 'aal1');
 SELECT test.api_invalid($$SELECT api.quick_capture(jsonb_build_object(
