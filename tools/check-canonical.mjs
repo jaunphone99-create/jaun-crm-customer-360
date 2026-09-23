@@ -270,9 +270,11 @@ check("20.8 ↔ 20.9 ↔ phase1-plan.md · จำนวนหน้า Phase 1 �
   return problems.length ? `ควรเป็น ${n} หน้า — ${problems.join(" · ")}` : true;
 });
 
-check("20 · หัวข้อ Direction ครบ 20.1–20.10 และอยู่ท้ายไฟล์", () => {
+check("20 · หัวข้อ Direction เรียงต่อเนื่องจาก 20.1 และอยู่ท้ายไฟล์", () => {
+  /* ข้อ 20 โตได้เรื่อย ๆ (20.11 = สถานะการพัฒนา) — ตรวจแค่ว่าเลขต่อเนื่องไม่ข้าม */
   const heads = [...SRC.matchAll(/^### 20\.(\d+)/gm)].map((m) => Number(m[1]));
-  const want = Array.from({ length: 10 }, (_, i) => i + 1);
+  if (heads.length < 10) return `มีแค่ ${heads.length} หัวข้อ (ต้องมีอย่างน้อย 20.1–20.10)`;
+  const want = Array.from({ length: heads.length }, (_, i) => i + 1);
   return heads.join(",") === want.join(",") ? true : `พบ 20.${heads.join(" 20.")}`;
 });
 
