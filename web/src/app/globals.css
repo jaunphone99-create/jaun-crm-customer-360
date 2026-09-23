@@ -1,0 +1,25 @@
+/* ระบบดีไซน์ทั้งหมดมาจาก prototype ที่อนุมัติแล้ว
+   ไฟล์ใน generated/ ถูกคัดลอกตอน build โดย scripts/sync-design.mjs — ห้ามแก้ที่นั่น */
+@import "./generated/app.css";
+@import "./generated/premium.css";
+
+/* ป้ายบอกว่ากำลังใช้สภาพแวดล้อมไหน — กันสับสนระหว่าง dev / staging / prod */
+.env-badge {
+  position: fixed;
+  inset-block-end: var(--space-3);
+  inset-inline-start: var(--space-3);
+  z-index: 60;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--warning-solid);
+  color: var(--on-warning-solid);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.12em;
+  box-shadow: var(--shadow-md, 0 2px 8px rgb(0 0 0 / 0.18));
+  pointer-events: none;
+}
+
+@media print {
+  .env-badge { display: none; }
+}

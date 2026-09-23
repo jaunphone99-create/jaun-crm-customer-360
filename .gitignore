@@ -29,3 +29,15 @@ build/
 
 # ข้อมูลตัวอย่างที่สร้างได้ (14 MB · deterministic) — สร้างด้วย npm run db:seed
 supabase/seed.sql
+
+# Next.js (โฟลเดอร์ web/)
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# ฐานข้อมูลทดลองในเครื่อง (tools/db/dev-api.mjs) — สร้างใหม่ได้ด้วย npm run dev:db:fresh
+.dev-db/
+
+# CSS ที่คัดลอกมาจาก prototype ตอน build (web/scripts/sync-design.mjs)
+web/src/app/generated/
+web/public/fonts/

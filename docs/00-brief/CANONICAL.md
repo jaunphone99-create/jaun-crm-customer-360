@@ -1854,15 +1854,22 @@ JAUN CRM หน้าร้าน/
 │   ├── 05-analytics/    kpi-definitions.md · notification-rules.md
 │   ├── 06-ux/           design-system.md · sitemap-screen-specs.md
 │   ├── 07-api/          api-spec.md
-│   └── 08-delivery/     roadmap.md · data-migration-plan.md · test-cases-uat.md · deployment-backup-recovery.md · phase1-plan.md
+│   ├── 07-api/          api-spec.md · core-flow-contract.md (สัญญาสำหรับเขียน Core Flow)
+│   └── 08-delivery/     roadmap.md · data-migration-plan.md · test-cases-uat.md · deployment-backup-recovery.md · phase1-plan.md · environment-setup.md
 ├── supabase/
 │   ├── migrations/      0001_… ถึง 00NN_… (.sql) · *_cron.sql (Supabase เท่านั้น)
 │   ├── seed.sql
 │   └── tests/           00_harness.sql · rls_*.sql · acceptance.sql
 ├── prototype/           index.html · 01-login.html … 19-quotations.html · assets/
+├── web/                 แอป Next.js 16 (Phase 1 · เริ่มจาก Core Flow) — โครงไฟล์ตาม architecture §6.1
+│   ├── src/app/         (auth)/login · (app)/dashboard · (app)/reception · (app)/customers/new
+│   ├── src/features/    auth · shell · reception · capture
+│   ├── src/lib/         db/ (ทางเข้าฐานข้อมูลทางเดียว) · access.ts · env.ts · session.ts · labels.ts · format/
+│   └── scripts/         sync-design.mjs (คัดลอก CSS + ฟอนต์จาก prototype ตอน build)
 └── tools/
-    ├── db/              run.mjs · supabase-shim.sql · gen-seed.mjs (ถ้าใช้) · gen-data-dictionary.mjs · anonymize.sql
-    └── check-prototype.mjs · check-canonical.mjs
+    ├── db/              run.mjs · supabase-shim.sql · gen-seed.mjs · gen-data-dictionary.mjs · anonymize.sql
+    │                    dev-api.mjs (ฐานข้อมูลทดลองในเครื่อง · พูดภาษา PostgREST · ใช้ตอนพัฒนาเท่านั้น)
+    └── check-prototype.mjs · check-canonical.mjs · serve-prototype.mjs
 ```
 
 เอกสาร 20 ชุดตาม A45 ↔ ไฟล์: 01 PRD · 02 BRD → `requirement-review.md` · 03 → `permission-matrix.md` · 04 → `user-flows.md` · 05 · 06 → `sitemap-screen-specs.md` · 07 → `data-dictionary.md` · 08 → `er-diagram.md` · 09 → `supabase/migrations/` + `schema-notes.md` · 10 → `api-spec.md` · 11 → `rls-spec.md` · 12 → `security-design.md` · 13 → `pdpa.md` · 14 → `kpi-definitions.md` · 15 → `notification-rules.md` · 16 → `data-migration-plan.md` · 17 · 18 → `test-cases-uat.md` · 19 · 20 → `deployment-backup-recovery.md`

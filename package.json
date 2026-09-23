@@ -14,8 +14,14 @@
     "db:dictionary": "node tools/db/gen-data-dictionary.mjs",
     "check:prototype": "node tools/check-prototype.mjs",
     "check:canonical": "node tools/check-canonical.mjs",
-    "check": "npm run check:canonical && npm run check:prototype && npm run db:test",
-    "db:seed": "node tools/db/gen-seed.mjs"
+    "check": "npm run check:canonical && npm run check:prototype && npm run check:web && npm run db:test",
+    "db:seed": "node tools/db/gen-seed.mjs",
+    "dev:db": "node tools/db/dev-api.mjs",
+    "dev:db:fresh": "node tools/db/dev-api.mjs --fresh",
+    "dev:web": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "web:typecheck": "npm --prefix web run typecheck",
+    "check:web": "npm --prefix web run check"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.4.1"

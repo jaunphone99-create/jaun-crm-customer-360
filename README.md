@@ -13,9 +13,25 @@
 ## เริ่มต้นใช้งาน
 
 ```bash
+npm install                               # ครั้งแรกครั้งเดียว (รากโครงการ)
 npm run check                             # ตรวจทั้งชุด: CANONICAL + prototype + ฐานข้อมูล
-npm run db:test                           # รัน migration + seed + ชุดทดสอบ (ไม่ต้องติดตั้ง Postgres)
-node tools/serve-prototype.mjs            # เปิด prototype ที่ http://localhost:8788
+```
+
+รันแอปจริงในเครื่อง (สองหน้าต่าง)
+
+```bash
+npm run dev:db                            # ฐานข้อมูลทดลอง PostgreSQL 17 ในเครื่อง (ไม่ต้องมี Docker)
+```
+
+```bash
+npm --prefix web install                  # ครั้งแรกครั้งเดียว
+npm run dev:web                           # เปิดแอปที่ http://localhost:3000
+```
+
+ดู prototype (หน้าจอที่อนุมัติแล้ว ไม่ต้องต่อฐานข้อมูล)
+
+```bash
+node tools/serve-prototype.mjs            # http://localhost:8788
 ```
 
 `supabase/seed.sql` (14 MB) ไม่เก็บใน git เพราะสร้างซ้ำได้เหมือนเดิมทุกไบต์ — คำสั่งข้างบนสร้างให้อัตโนมัติ หรือสั่งเองด้วย `npm run db:seed`
@@ -41,6 +57,7 @@ node tools/serve-prototype.mjs            # เปิด prototype ที่ htt
 | `supabase/migrations/` | โครงฐานข้อมูลทั้งหมด (schema · RLS · RPC · analytics · jobs) |
 | `supabase/tests/` | ชุดทดสอบ: schema · สิทธิ์รายบทบาท · RPC · acceptance |
 | `prototype/` | ต้นแบบคลิกได้ 19 หน้า (คอม · แท็บเล็ต · มือถือ) ไม่ต้องต่อเน็ต |
+| `web/` | แอป Next.js 16 ของจริง (Phase 1) — ตอนนี้มี เข้าสู่ระบบ · รับลูกค้าเข้าร้าน · เพิ่มลูกค้า |
 | `tools/` | ตัวรันฐานข้อมูล · ตัวสร้าง seed/data dictionary · ตัวตรวจ prototype · ตัวตรวจ CANONICAL · เซิร์ฟเวอร์ดู prototype |
 
 ---

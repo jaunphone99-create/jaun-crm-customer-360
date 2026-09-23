@@ -27,8 +27,8 @@ DO $$
 DECLARE
     v_job text;
 BEGIN
-    FOREACH v_job IN ARRAY ARRAY['jaun_close_stale_visits', 'jaun_expire_quotations',
-                                 'jaun_retention', 'jaun_expire_exports', 'jaun_notifications'] LOOP
+    FOREACH v_job IN ARRAY ARRAY['job_close_stale_visits', 'job_expire_quotations',
+                                 'job_retention', 'job_expire_exports', 'job_notifications'] LOOP
         IF EXISTS (SELECT 1 FROM cron.job j WHERE j.jobname = v_job) THEN
             PERFORM cron.unschedule(v_job);
         END IF;
@@ -37,21 +37,21 @@ END;
 $$;
 
 -- 00:05 Asia/Bangkok — ปิด visit ค้างของวันธุรกิจก่อนหน้า + สรุป VISIT_OUTCOME_MISSING ให้ผู้จัดการสาขา (ข้อ 4.1)
-SELECT cron.schedule('jaun_close_stale_visits', '5 17 * * *',
-                     $$SELECT app.job_close_stale_visits();$$);
+SELECT cron.schedule('job_close_stale_visits', '5 17 * * *',
+                     $$SELECT app.job_close_stale_visits(app.clock());$$);
 
 -- 00:10 Asia/Bangkok — ใบเสนอราคาที่พ้น valid_until → EXPIRED (ข้อ 4.6)
-SELECT cron.schedule('jaun_expire_quotations', '10 17 * * *',
-                     $$SELECT app.job_expire_quotations();$$);
+SELECT cron.schedule('job_expire_quotations', '10 17 * * *',
+                     $$SELECT app.job_expire_quotations(app.clock());$$);
 
 -- 02:00 Asia/Bangkok — ระยะเก็บข้อมูล: แจ้งล่วงหน้า · anonymize · ลบ log (ข้อ 10.3 · 19.4 ข้อ 1)
-SELECT cron.schedule('jaun_retention', '0 19 * * *',
-                     $$SELECT app.job_retention();$$);
+SELECT cron.schedule('job_retention', '0 19 * * *',
+                     $$SELECT app.job_retention(app.clock());$$);
 
 -- ทุกชั่วโมง นาทีที่ 15 — คำขอส่งออกที่ไฟล์เกินอายุ → EXPIRED (ข้อ 8.2)
-SELECT cron.schedule('jaun_expire_exports', '15 * * * *',
-                     $$SELECT app.job_expire_exports();$$);
+SELECT cron.schedule('job_expire_exports', '15 * * * *',
+                     $$SELECT app.job_expire_exports(app.clock());$$);
 
 -- ทุก 5 นาที — การแจ้งเตือนที่เป็นงานตามเวลา (ข้อ 11.1)
-SELECT cron.schedule('jaun_notifications', '*/5 * * * *',
-                     $$SELECT app.job_notifications();$$);
+SELECT cron.schedule('job_notifications', '*/5 * * * *',
+                     $$SELECT app.job_notifications(app.clock());$$);

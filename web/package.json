@@ -1,0 +1,34 @@
+{
+  "name": "jaun-crm-web",
+  "version": "0.1.0-phase1",
+  "private": true,
+  "description": "JAUN CRM · Customer 360 — แอป Next.js (Phase 1 · Core Flow)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "predev": "node scripts/sync-design.mjs",
+    "dev": "next dev",
+    "prebuild": "node scripts/sync-design.mjs",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "node scripts/sync-design.mjs && tsc --noEmit",
+    "sync:design": "node scripts/sync-design.mjs",
+    "check:format": "node scripts/check-format.mjs",
+    "check": "npm run typecheck && npm run check:format"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.0",
+    "next": "^16.3.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "~5.9.0"
+  }
+}

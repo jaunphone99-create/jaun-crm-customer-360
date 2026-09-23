@@ -191,7 +191,7 @@ flowchart LR
 
 | # | การตั้งค่า | ค่า | dev | stg | prod |
 |---|---|---|:--:|:--:|:--:|
-| H1 | env ที่อนุญาต | `NEXT_PUBLIC_SUPABASE_URL` · `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable key) · ชื่อ environment | ✓ | ✓ | ✓ |
+| H1 | env ที่อนุญาต | `NEXT_PUBLIC_SUPABASE_URL` · `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` · `JCRM_ENV` · `JCRM_DB_DRIVER=supabase` (ดู `web/.env.example`) | ✓ | ✓ | ✓ |
 | H2 | env ที่ห้าม | service_role key · connection string ฐานข้อมูล · secret ของ Edge Functions | ✓ | ✓ | ✓ |
 | H3 | Security headers | CSP แบบ strict (nonce) · `Cache-Control: no-store` บน route ที่ต้องล็อกอินและ response ข้อมูลลูกค้า · HSTS · `X-Content-Type-Options: nosniff` · `Referrer-Policy` | ✓ | ✓ | ✓ |
 | H4 | Cookie | HttpOnly · Secure · SameSite=Lax · ทุกการเรียก Supabase ที่ใช้เซสชัน (รวม MFA enroll/challenge/verify และ `functions.invoke`) อยู่ฝั่ง server (ข้อ 19.4) · ตรวจ: bundle ฝั่ง client ไม่สร้าง Supabase client ที่ถือเซสชัน | ✓ | ✓ | ✓ |
