@@ -1159,6 +1159,212 @@ COMMENT ON FUNCTION app.kpi_compute(text, text, date, date, uuid[], text) IS
 -- ส่วนที่ 7 — RPC ของหน้าจอ (schema api · SECURITY DEFINER · CANONICAL ข้อ 9.4.1 · 9.6)
 -- =====================================================================================
 
+-- =====================================================================================
+-- วิดเจ็ตกราฟของหน้าหลัก (02) — CANONICAL ข้อ 14.7 · 20.15
+--
+-- ทำไมต้องมีฟังก์ชันชุดนี้แยกจาก api.get_report:
+--   หน้าหลักเปิดด้วยสิทธิ์ `dashboard.view` ส่วน api.get_report ต้องมี `report.view`
+--   และ STAFF มี dashboard.view (scope OWN) แต่ **ไม่มี** report.view
+--   ถ้าให้หน้าหลักเรียก get_report จะกลายเป็นว่าพนักงานเปิดหน้าหลักแล้วโดนปฏิเสธ
+--
+-- หลักที่เจ้าของโครงการตรึงไว้ (ข้อ 20.15): **ห้ามคำนวณ KPI หรือร้อยละซ้ำที่ Frontend**
+--   ทุกฟังก์ชันในส่วนนี้จึงคืน "ค่าที่จัดรูปแบบแล้ว" มาพร้อมเสมอ (display · pct_display)
+--   และคืน `share` เป็นสัดส่วน 0–1 ให้ใช้กำหนดความกว้างแท่ง/ส่วนโค้งโดยหน้าจอไม่ต้องหารเอง
+-- =====================================================================================
+
+CREATE FUNCTION app.lost_reason_breakdown(p_permission text, p_preset text, p_start date,
+                                          p_end date, p_branch_ids uuid[])
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $BODY$
+DECLARE
+    v_me  uuid := app.current_staff_id();
+    v_p   record;
+    v_sc  record;
+    v_out jsonb;
+BEGIN
+    SELECT * INTO v_p  FROM app.kpi_period(p_preset, p_start, p_end);
+    SELECT * INTO v_sc FROM app.kpi_scope(p_permission, p_branch_ids);
+
+    -- 5 อันดับแรก + "อื่น ๆ" เรียงมากไปน้อย · เท่ากันเรียง ref.lost_reasons.sort_order (ข้อ 5.5 · 13.4)
+    SELECT coalesce(jsonb_agg(jsonb_build_object(
+               'code',        z.bucket,
+               'label_th',    z.label_th,
+               'value',       z.n,
+               'lead_value',  z.lead_n,
+               'lead_display', app.fmt_int(z.lead_n),
+               'display',     app.fmt_int(z.n),
+               'pct',         app.kpi_rate(z.n, z.total),
+               'pct_display', app.fmt_rate(app.kpi_rate(z.n, z.total))) ORDER BY z.ord), '[]'::jsonb)
+      INTO v_out
+      FROM (
+        SELECT b.bucket,
+               CASE WHEN b.bucket = '_OTHERS' THEN 'อื่น ๆ' ELSE min(b.label_th) END AS label_th,
+               sum(b.n)::numeric      AS n,
+               sum(b.lead_n)::numeric AS lead_n,
+               min(b.rk)              AS ord,
+               min(b.total)::numeric  AS total
+        FROM (
+          SELECT a.code, a.label_th, a.n, a.lead_n,
+                 row_number() OVER (ORDER BY a.n DESC, a.sort_order) AS rk,
+                 sum(a.n) OVER ()                                    AS total,
+                 CASE WHEN row_number() OVER (ORDER BY a.n DESC, a.sort_order) <= 5
+                      THEN a.code ELSE '_OTHERS' END                 AS bucket
+          FROM (
+            SELECT r.code, r.label_th, r.sort_order,
+                   count(*)                                  AS n,
+                   count(*) FILTER (WHERE lost.src = 'LEAD') AS lead_n
+            FROM (
+                SELECT o.lost_reason_code AS code, 'OPPORTUNITY'::text AS src
+                  FROM crm.opportunities o
+                 WHERE o.stage = 'LOST'
+                   AND o.closed_at >= v_p.period_start AND o.closed_at < v_p.period_end
+                   AND app.kpi_in_scope(o.branch_id, o.owner_staff_id, v_sc.full_ids, v_sc.team_ids,
+                                        v_sc.own_ids, v_sc.pair_keys, v_me)
+                UNION ALL
+                SELECT l.lost_reason_code, 'LEAD'::text
+                  FROM crm.leads l
+                 WHERE l.status = 'LOST'
+                   AND l.closed_at >= v_p.period_start AND l.closed_at < v_p.period_end
+                   AND app.kpi_in_scope(l.branch_id, l.owner_staff_id, v_sc.full_ids, v_sc.team_ids,
+                                        v_sc.own_ids, v_sc.pair_keys, v_me)
+            ) lost
+            JOIN ref.lost_reasons r ON r.code = lost.code
+            GROUP BY r.code, r.label_th, r.sort_order
+          ) a
+        ) b
+        GROUP BY b.bucket
+      ) z;
+    RETURN v_out;
+END;
+$BODY$;
+
+CREATE FUNCTION app.dashboard_funnel(p_permission text, p_preset text, p_start date,
+                                     p_end date, p_branch_ids uuid[])
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $BODY$
+DECLARE
+    -- ขั้นของ funnel ตามข้อ 13.1 · ป้ายใช้ชุดเดียวกับการ์ด KPI (ข้อ 12.1) และสีตามข้อ 15
+    c_stages constant text[][] := ARRAY[
+        ['VISITS',        'ลูกค้าเข้าร้าน',  '--chart-1'],
+        ['LEADS',         'Leads',           '--chart-2'],
+        ['OPPORTUNITIES', 'Opportunities',   '--chart-3'],
+        ['SALES',         'ปิดการขาย',       '--chart-4']];
+    v_rows  jsonb;
+    v_first numeric;
+    v_out   jsonb := '[]'::jsonb;
+    v_val   numeric;
+    i       integer;
+BEGIN
+    -- ดึงจาก app.kpi_compute ตัวเดียวกับที่การ์ด KPI ใช้ **โดยตั้งใจ**
+    -- ถ้าเขียน query นับเองที่นี่ วันหนึ่งสองที่จะให้ตัวเลขไม่ตรงกัน แล้วไม่มีใครรู้ว่าอันไหนถูก
+    v_rows := app.kpi_compute(p_permission, p_preset, p_start, p_end, p_branch_ids, 'NONE') -> 'rows';
+
+    SELECT (x ->> 'value')::numeric INTO v_first
+      FROM jsonb_array_elements(v_rows) x WHERE x ->> 'code' = c_stages[1][1];
+
+    FOR i IN 1 .. array_length(c_stages, 1) LOOP
+        SELECT (x ->> 'value')::numeric INTO v_val
+          FROM jsonb_array_elements(v_rows) x WHERE x ->> 'code' = c_stages[i][1];
+
+        v_out := v_out || jsonb_build_object(
+            'code',        c_stages[i][1],
+            'label_th',    c_stages[i][2],
+            'chart_token', c_stages[i][3],
+            'value',       v_val,
+            'display',     app.fmt_int(v_val),
+            -- ร้อยละเทียบ "ขั้นแรก" ไม่ใช่ขั้นก่อนหน้า (ตาม prototype chart.funnel)
+            -- คืน share ให้หน้าจอใช้กำหนดความกว้างแท่งด้วย จะได้ไม่ต้องหารเอง
+            'share',         app.kpi_rate(v_val, v_first),
+            'share_display', app.fmt_rate(app.kpi_rate(v_val, v_first)));
+    END LOOP;
+    RETURN v_out;
+END;
+$BODY$;
+
+CREATE FUNCTION app.dashboard_channels(p_permission text, p_preset text, p_start date,
+                                       p_end date, p_branch_ids uuid[])
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $BODY$
+DECLARE
+    v_rows  jsonb;
+    v_total numeric;
+    v_out   jsonb;
+BEGIN
+    -- ลูกค้าไม่ซ้ำแยกตามช่องทาง — ใช้ kpi_compute กลุ่ม CHANNEL ตัวเดียวกับรายงานช่องทาง
+    -- ผลรวมของทุกส่วนจึงเท่ากับการ์ด "ลูกค้าไม่ซ้ำ" เสมอ ซึ่งเป็นเลขกลางวงโดนัท (ข้อ 14.7)
+    v_rows := app.kpi_compute(p_permission, p_preset, p_start, p_end, p_branch_ids, 'CHANNEL') -> 'rows';
+
+    SELECT sum((x ->> 'value')::numeric) INTO v_total
+      FROM jsonb_array_elements(v_rows) x
+     WHERE x ->> 'code' = 'UNIQUE_CUSTOMERS' AND x ->> 'value' IS NOT NULL;
+
+    SELECT coalesce(jsonb_agg(jsonb_build_object(
+               'code',          s.code,
+               'label_th',      s.label_th,
+               'chart_token',   s.chart_token,
+               'value',         s.n,
+               'display',       app.fmt_int(s.n),
+               'pct',           app.kpi_rate(s.n, v_total),
+               'pct_display',   app.fmt_rate(app.kpi_rate(s.n, v_total)))
+               ORDER BY s.sort_order, s.code), '[]'::jsonb)
+      INTO v_out
+      FROM (SELECT x ->> 'group_key'                            AS code,
+                   coalesce(ch.label_th, x ->> 'group_label')   AS label_th,
+                   coalesce(ch.chart_token, '--chart-6')        AS chart_token,
+                   coalesce(ch.sort_order, 999)                 AS sort_order,
+                   (x ->> 'value')::numeric                     AS n
+              FROM jsonb_array_elements(v_rows) x
+              LEFT JOIN ref.channels ch ON ch.code = x ->> 'group_key'
+             WHERE x ->> 'code' = 'UNIQUE_CUSTOMERS'
+               AND (x ->> 'value')::numeric > 0) s;             -- แสดงเฉพาะส่วนที่ > 0 (ข้อ 13.3 · D3)
+
+    RETURN jsonb_build_object('total', v_total, 'total_display', app.fmt_int(v_total), 'segments', v_out);
+END;
+$BODY$;
+
+CREATE FUNCTION api.get_dashboard_charts(p_preset     text   DEFAULT 'LAST_30_DAYS',
+                                         p_start      date   DEFAULT NULL,
+                                         p_end        date   DEFAULT NULL,
+                                         p_branch_ids uuid[] DEFAULT NULL)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $BODY$
+DECLARE
+    v_kpi jsonb;
+BEGIN
+    PERFORM app.require_permission('dashboard.view');
+    -- เรียก kpi_compute หนึ่งครั้งเพื่อเอา clock/period/scope ชุดเดียวกับการ์ด KPI
+    -- หน้าจอจึงเขียน "ข้อมูล ณ …" ได้ค่าเดียวกันทั้งหน้า ไม่ใช่คนละเวลา
+    v_kpi := app.kpi_compute('dashboard.view', p_preset, p_start, p_end, p_branch_ids, 'NONE');
+
+    RETURN jsonb_build_object(
+        'ok',           true,
+        'preset',       p_preset,
+        'clock',        v_kpi -> 'clock',
+        'period',       v_kpi -> 'period',
+        'scope',        v_kpi -> 'scope',
+        'branch_ids',   v_kpi -> 'branch_ids',
+        'funnel',       app.dashboard_funnel('dashboard.view', p_preset, p_start, p_end, p_branch_ids),
+        'channels',     app.dashboard_channels('dashboard.view', p_preset, p_start, p_end, p_branch_ids),
+        'lost_reasons', app.lost_reason_breakdown('dashboard.view', p_preset, p_start, p_end, p_branch_ids));
+END;
+$BODY$;
+
 CREATE FUNCTION api.get_kpis(p_preset      text    DEFAULT 'LAST_30_DAYS',
                              p_start       date    DEFAULT NULL,
                              p_end         date    DEFAULT NULL,
@@ -1258,55 +1464,10 @@ BEGIN
 
     -- ------------------------------------------------------------------ ส่วนเสริมรายรหัส
     IF p_code IN ('SALES', 'LOST_REASONS') THEN
-        -- เหตุผลที่ไม่สำเร็จ 5 อันดับแรก + "อื่น ๆ" เรียงมากไปน้อย · เท่ากันเรียง sort_order (ข้อ 5.5 · 13.4)
-        SELECT coalesce(jsonb_agg(jsonb_build_object(
-                   'code',        z.bucket,
-                   'label_th',    z.label_th,
-                   'value',       z.n,
-                   'lead_value',  z.lead_n,
-                   'display',     app.fmt_int(z.n),
-                   'pct',         app.kpi_rate(z.n, z.total),
-                   'pct_display', app.fmt_rate(app.kpi_rate(z.n, z.total))) ORDER BY z.ord), '[]'::jsonb)
-          INTO v_extra
-          FROM (
-            SELECT b.bucket,
-                   CASE WHEN b.bucket = '_OTHERS' THEN 'อื่น ๆ' ELSE min(b.label_th) END AS label_th,
-                   sum(b.n)::numeric      AS n,
-                   sum(b.lead_n)::numeric AS lead_n,
-                   min(b.rk)              AS ord,
-                   min(b.total)::numeric  AS total
-            FROM (
-              SELECT a.code, a.label_th, a.n, a.lead_n,
-                     row_number() OVER (ORDER BY a.n DESC, a.sort_order) AS rk,
-                     sum(a.n) OVER ()                                    AS total,
-                     CASE WHEN row_number() OVER (ORDER BY a.n DESC, a.sort_order) <= 5
-                          THEN a.code ELSE '_OTHERS' END                 AS bucket
-              FROM (
-                SELECT r.code, r.label_th, r.sort_order,
-                       count(*)                                     AS n,
-                       count(*) FILTER (WHERE lost.src = 'LEAD')    AS lead_n
-                FROM (
-                    SELECT o.lost_reason_code AS code, 'OPPORTUNITY'::text AS src
-                      FROM crm.opportunities o
-                     WHERE o.stage = 'LOST'
-                       AND o.closed_at >= v_p.period_start AND o.closed_at < v_p.period_end
-                       AND app.kpi_in_scope(o.branch_id, o.owner_staff_id, v_sc.full_ids, v_sc.team_ids,
-                                            v_sc.own_ids, v_sc.pair_keys, v_me)
-                    UNION ALL
-                    SELECT l.lost_reason_code, 'LEAD'::text
-                      FROM crm.leads l
-                     WHERE l.status = 'LOST'
-                       AND l.closed_at >= v_p.period_start AND l.closed_at < v_p.period_end
-                       AND app.kpi_in_scope(l.branch_id, l.owner_staff_id, v_sc.full_ids, v_sc.team_ids,
-                                            v_sc.own_ids, v_sc.pair_keys, v_me)
-                ) lost
-                JOIN ref.lost_reasons r ON r.code = lost.code
-                GROUP BY r.code, r.label_th, r.sort_order
-              ) a
-            ) b
-            GROUP BY b.bucket
-          ) z;
-        v_extra := jsonb_build_object('lost_reasons', v_extra);
+        -- ตรรกะอยู่ใน app.lost_reason_breakdown ที่เดียว เพราะหน้าหลัก (02) ใช้ชุดเดียวกัน
+        -- แต่เข้าด้วยสิทธิ์ dashboard.view ถ้าเขียน query ซ้ำสองที่ วันหนึ่งจะให้คำตอบไม่ตรงกัน
+        v_extra := jsonb_build_object('lost_reasons',
+            app.lost_reason_breakdown('report.view', p_preset, p_start, p_end, p_branch_ids));
 
     ELSIF p_code = 'CHANNELS' THEN
         -- ลูกค้าไม่ซ้ำ × สาขา × ช่องทางแรก (ข้อ 13.3) · ไม่มีการผูกพนักงาน → ต้องเป็นสาขา B/G ทั้งหมด
@@ -1464,6 +1625,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION
     api.get_kpis(text, date, date, uuid[], text),
+    api.get_dashboard_charts(text, date, date, uuid[]),
     api.get_report(text, text, date, date, uuid[], jsonb),
     api.list_data_quality_issues(text, uuid[]),
     api.record_report_export(text, jsonb)
@@ -1523,13 +1685,27 @@ p_params รับ {"group_by": "..."} เพื่อเปลี่ยนม�
 รูปผลลัพธ์ (jsonb): {"ok", "code", "preset", "group_by", "clock", "period", "branch_ids", "scope", "rows", "extra"}
   rows   แถวเดียวกับ api.get_kpis (กรองเฉพาะ KPI ของรายงานนั้น · STAFF และ BRANCHES คืนทุก KPI)
   extra  ส่วนเสริมรายรหัส
-         SALES · LOST_REASONS → {"lost_reasons": [{"code","label_th","value","lead_value","display","pct","pct_display"}]}
+         SALES · LOST_REASONS → {"lost_reasons": [{"code","label_th","value","lead_value","lead_display","display","pct","pct_display"}]}
                                 5 อันดับแรก + "_OTHERS" (ป้าย "อื่น ๆ") เรียงมากไปน้อย · เท่ากันเรียง ref.lost_reasons.sort_order (ข้อ 5.5)
                                 lead_value = จำนวนที่มาจาก crm.leads (คอลัมน์ "ในนั้นเป็น Lead" ของข้อ 13.4)
          CHANNELS             → {"channel_matrix": [{"branch_id","branch_code","branch_label","channel_code","value","display"}]}
                                 ลูกค้าไม่ซ้ำ × สาขา × customers.first_channel_code (ข้อ 13.3) · NULL เมื่อขอบเขตมีสาขา TEAM/OWN
          DATA_QUALITY         → {"issues": [{"issue_code","branch_id","branch_code","value","display"}]}
          OVERVIEW             → {"walkin_by_branch": [แถว WALKIN_VISITS จัดกลุ่ม BRANCH]}$doc$;
+
+COMMENT ON FUNCTION api.get_dashboard_charts(text, date, date, uuid[]) IS
+$doc$วิดเจ็ตกราฟของหน้าหลัก 02 (CANONICAL ข้อ 14.7 · 20.15) · ต้องมี dashboard.view
+**แยกจาก api.get_report เพราะ STAFF มี dashboard.view แต่ไม่มี report.view** ถ้าใช้ตัวเดียวกันพนักงานจะเปิดหน้าหลักไม่ได้
+
+ทุกค่าที่คืนมาจัดรูปแบบมาแล้ว เพื่อไม่ให้หน้าจอคำนวณหรือปัดเศษเอง (ข้อ 20.15):
+  funnel       [{"code","label_th","chart_token","value","display","share","share_display"}]
+               ขั้นตามข้อ 13.1 (VISITS → LEADS → OPPORTUNITIES → SALES)
+               share/share_display = เทียบ **ขั้นแรก** ไม่ใช่ขั้นก่อนหน้า · share เป็นสัดส่วน 0–1 ใช้กำหนดความกว้างแท่งได้เลย
+  channels     {"total","total_display","segments":[{"code","label_th","chart_token","value","display","pct","pct_display"}]}
+               ลูกค้าไม่ซ้ำแยกช่องทาง · total = เลขกลางวงโดนัท · แสดงเฉพาะส่วนที่ > 0 (ข้อ 13.3 · D3)
+  lost_reasons เหมือน api.get_report('LOST_REASONS').extra.lost_reasons (ใช้ app.lost_reason_breakdown ตัวเดียวกัน)
+
+clock/period/scope มาจาก app.kpi_compute ชุดเดียวกับ api.get_kpis ทั้งหน้าจึงอ้างเวลาเดียวกัน$doc$;
 
 COMMENT ON FUNCTION api.list_data_quality_issues(text, uuid[]) IS
 $doc$รายการศูนย์คุณภาพข้อมูล (CANONICAL ข้อ 9.6 · 12.3) · ต้องมี data_quality.view · กรองตามขอบเขตของสิทธิ์นี้

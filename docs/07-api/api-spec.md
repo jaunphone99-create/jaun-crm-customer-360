@@ -320,9 +320,10 @@ RPC ใช้ `app.api_denied(msg)` → `42501` และ `app.api_invalid(msg[,
 | `convert_lead(...)` | V | `lead.update` **และ** `opportunity.create` บน lead | 11 · 05 | 3.4.4 |
 | `assign_owner(...)` | V | `*.assign` / `customer.assign` / `visit.update` | 03 · 05 · 06 · 08 · 11 | 3.4.5 |
 | `get_kpis(...)` | S | `dashboard.view` (+`report.staff_performance` เมื่อ `group_by='STAFF'`) | 02 · 09 | 3.5.1 |
-| `get_report(...)` | S | `report.view` (+`report.staff_performance`) | 09 · 12 | 3.5.2 |
-| `list_data_quality_issues(...)` | S | `data_quality.view` | 12 | 3.5.3 |
-| `record_report_export(...)` | V | `report.export` | 09 | 3.5.4 |
+| `get_dashboard_charts(...)` | S | `dashboard.view` | 02 | 3.5.2 |
+| `get_report(...)` | S | `report.view` (+`report.staff_performance`) | 09 · 12 | 3.5.3 |
+| `list_data_quality_issues(...)` | S | `data_quality.view` | 12 | 3.5.4 |
+| `record_report_export(...)` | V | `report.export` | 09 | 3.5.5 |
 | `request_export(p)` | V | `customer.export` 🔐 ในบทบาทที่ยื่น | 03 · 15 | 3.6.1 |
 | `decide_export(...)` | V | `export.approve` 🔐 | 15 | 3.6.2 |
 | `record_export_download(...)` | V | ผู้ขอ · aal2 | 15 | 3.6.3 |
@@ -1149,7 +1150,47 @@ DEFINER · **STABLE** (CANONICAL ข้อ 9.4.1 · 9.6) · สิทธิ์ *
 
 > หมายเหตุ: ช่วง `[13 ส.ค. 2569, 12 ก.ย. 2569)` Asia/Bangkok = `[2026-08-12T17:00Z, 2026-09-11T17:00Z)` ตามที่ `app.bkk_ts` คืน
 
-#### 3.5.2 `api.get_report(p_code text, p_preset text DEFAULT 'LAST_30_DAYS', p_start date DEFAULT NULL, p_end date DEFAULT NULL, p_branch_ids uuid[] DEFAULT NULL, p_params jsonb DEFAULT '{}') → jsonb`
+#### 3.5.2 `api.get_dashboard_charts(p_preset text DEFAULT 'LAST_30_DAYS', p_start date DEFAULT NULL, p_end date DEFAULT NULL, p_branch_ids uuid[] DEFAULT NULL) → jsonb`
+
+DEFINER · STABLE · สิทธิ์ **`dashboard.view`** — ข้อมูลของวิดเจ็ตกราฟบนหน้าหลัก (02)
+
+**ทำไมไม่ใช้ `api.get_report`:** `get_report` ต้องมี `report.view` ซึ่ง **STAFF ไม่มี** (มีแต่ `dashboard.view` scope OWN)
+และต่อให้ผู้ใช้มีทั้งสองสิทธิ์ ขอบเขตของสองสิทธิ์อาจไม่เท่ากัน เช่น `dashboard.view` = BRANCH แต่ `report.view` = TEAM
+ผลคือการ์ด KPI กับกราฟบนหน้าจอเดียวกันจะคิดจากคนละขอบเขตโดยไม่มีใครรู้ · ฟังก์ชันนี้จึงใช้สิทธิ์เดียวกับการ์ดเสมอ
+
+รับพารามิเตอร์ชุดเดียวกับ `api.get_kpis` (ยกเว้น `p_group_by`) และคืน `clock` · `period` · `scope` · `branch_ids`
+จาก `app.kpi_compute` ชุดเดียวกัน ทั้งหน้าจึงอ้างเวลาและขอบเขตเดียวกัน
+
+ค่าทุกตัว **จัดรูปแบบมาพร้อมแสดง** เพื่อไม่ให้หน้าจอคำนวณหรือปัดเศษซ้ำ (CANONICAL ข้อ 20.15)
+
+| คีย์ | รูปร่าง | หมายเหตุ |
+|---|---|---|
+| `funnel` | `[{code, label_th, chart_token, value, display, share, share_display}]` | 4 ขั้นตามข้อ 13.1 (`VISITS` → `LEADS` → `OPPORTUNITIES` → `SALES`) · `share` เป็นสัดส่วน 0–1 เทียบ **ขั้นแรก** (ไม่ใช่ขั้นก่อนหน้า) ใช้กำหนดความกว้างแท่งได้เลย |
+| `channels` | `{total, total_display, segments: [{code, label_th, chart_token, value, display, pct, pct_display}]}` | ลูกค้าไม่ซ้ำแยกช่องทาง · `total` = เลขกลางวงโดนัท = การ์ด `UNIQUE_CUSTOMERS` เป๊ะ · แสดงเฉพาะส่วนที่ > 0 (ข้อ 13.3 · D3) · เรียงตาม `ref.channels.sort_order` |
+| `lost_reasons` | `[{code, label_th, value, display, lead_value, lead_display, pct, pct_display}]` | ชุดเดียวกับ `api.get_report('LOST_REASONS').extra.lost_reasons` (ใช้ `app.lost_reason_breakdown` ตัวเดียวกัน ไม่ได้เขียน query ซ้ำ) |
+
+**`channels.total` เป็น `null` และ `segments` ว่าง** เมื่อขอบเขตของผู้เรียกมีสาขาระดับ TEAM/OWN (`scope.partial = true`)
+เพราะ `UNIQUE_CUSTOMERS` ไม่ผูกกับพนักงาน จึงตัดขอบเขตรายทีม/รายคนไม่ได้ (ข้อ 12.4) — หน้าจอต้องขึ้นสถานะ "ข้อมูลไม่พอแสดง"
+
+ตัวอย่างจริง (EXECUTIVE · `LAST_30_DAYS`):
+
+```json
+{ "ok": true, "clock": "2026-09-11T03:24:00+00:00",
+  "funnel": [
+    { "code": "VISITS",        "display": "3,125", "share": 1,       "share_display": "100.0%" },
+    { "code": "LEADS",         "display": "892",   "share": 0.28544, "share_display": "28.5%" },
+    { "code": "OPPORTUNITIES", "display": "368",   "share": 0.11776, "share_display": "11.8%" },
+    { "code": "SALES",         "display": "215",   "share": 0.0688,  "share_display": "6.9%" } ],
+  "channels": { "total": 1284, "total_display": "1,284", "segments": [
+    { "code": "WALK_IN", "label_th": "Walk-in (หน้าร้าน)", "display": "462", "pct_display": "36.0%" } ] },
+  "lost_reasons": [
+    { "code": "PRICE", "label_th": "ราคาสูงไป", "display": "83", "pct_display": "28.0%", "lead_display": "38" } ] }
+```
+
+> `OPPORTUNITIES / VISITS` = 11.8% **ไม่มีในรหัส KPI ใด** — `OPPORTUNITY_RATE` หารด้วย `LEADS` (41.3%) ไม่ใช่ `VISITS`
+> ขั้นนี้จึงคิดใน `app.dashboard_funnel` ที่ฐานข้อมูล ไม่ใช่ที่หน้าจอ
+
+#### 3.5.3 `api.get_report(p_code text, p_preset text DEFAULT 'LAST_30_DAYS', p_start date DEFAULT NULL, p_end date DEFAULT NULL, p_branch_ids uuid[] DEFAULT NULL, p_params jsonb DEFAULT '{}') → jsonb`
 
 DEFINER · STABLE · สิทธิ์ **`report.view`** (+ `report.staff_performance` เมื่อ `p_code = 'STAFF'` หรือ `p_params->>'group_by' = 'STAFF'`)
 
@@ -1203,7 +1244,7 @@ DEFINER · STABLE · สิทธิ์ **`report.view`** (+ `report.staff_perfo
         "display": "47", "pct_display": "15.9%" } ] } }
 ```
 
-#### 3.5.3 `api.list_data_quality_issues(p_issue_code text DEFAULT NULL, p_branch_ids uuid[] DEFAULT NULL) → jsonb`
+#### 3.5.4 `api.list_data_quality_issues(p_issue_code text DEFAULT NULL, p_branch_ids uuid[] DEFAULT NULL) → jsonb`
 
 DEFINER · STABLE · สิทธิ์ **`data_quality.view`** (scope O = รายการที่ตนเป็น owner · T = สมาชิกทีมที่ตนเป็นหัวหน้า · B/G = ทั้งสาขา/องค์กร)
 
@@ -1225,7 +1266,7 @@ DEFINER · STABLE · สิทธิ์ **`data_quality.view`** (scope O = ร�
 - ตัวเลขตัวอย่างของ JP1 ตาม CANONICAL ข้อ 13.12: `DUPLICATE_SUSPECTED` 5 · `MISSING_PHONE` 7 · `INVALID_PHONE` 2 · `LEAD_WITHOUT_OWNER` 2 · `LEAD_WITHOUT_OUTCOME` 6 · `OVERDUE_FOLLOWUP` 6 · `INCOMPLETE_CUSTOMER` 13 · `WON_WITHOUT_TRANSACTION` 4 · `VISIT_UNRECORDED` 9
 - **ข้อผิดพลาด:** `22023 p_issue_code ไม่ถูกต้อง (ข้อ 12.3)` · `42501 ไม่มีสาขาที่คุณมีสิทธิ์ data_quality.view ในรายการที่ขอ (ข้อ 8.1)`
 
-#### 3.5.4 `api.record_report_export(p_code text, p_params jsonb DEFAULT '{}') → jsonb`
+#### 3.5.5 `api.record_report_export(p_code text, p_params jsonb DEFAULT '{}') → jsonb`
 
 DEFINER · VOLATILE · สิทธิ์ **`report.export`** · `p_code` ชุดเดียวกับ `api.get_report`
 
