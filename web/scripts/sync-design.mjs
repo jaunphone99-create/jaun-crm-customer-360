@@ -23,6 +23,8 @@ const PAGES = [
   { html: "01-login.html", out: "page-login.css" },
   { html: "07-reception.html", out: "page-reception.css" },
   { html: "04-quick-capture.html", out: "page-quick-capture.css" },
+  { html: "03-customers.html", out: "page-customers.css" },
+  { html: "05-customer-360.html", out: "page-customer-360.css" },
 ];
 
 mkdirSync(OUT, { recursive: true });

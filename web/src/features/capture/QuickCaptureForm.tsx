@@ -1,5 +1,7 @@
 "use client";
 
+import type { Route } from "next";
+
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useActionState, startTransition } from "react";
 
@@ -255,11 +257,13 @@ export function QuickCaptureForm({ ctx, refs }: { ctx: CaptureContext; refs: Cap
             ) : null}
           </div>
         </div>
-        <p className="t-sm t-muted">
-          หน้าข้อมูลลูกค้า (Customer 360) และหน้ารายการลูกค้ายังไม่เปิดใช้งานในรุ่นนี้ จึงยังเปิดดูรายละเอียดต่อไม่ได้
-        </p>
         <div className="btn-group">
-          <Link className="btn btn--accent" href="/customers/new">
+          {s.customerNo ? (
+            <Link className="btn btn--accent" href={`/customers/${s.customerNo}` as Route}>
+              เปิดข้อมูลลูกค้า
+            </Link>
+          ) : null}
+          <Link className="btn btn--secondary" href="/customers/new">
             เพิ่มลูกค้าอีกคน
           </Link>
           {ctx.canReception ? (
@@ -267,8 +271,8 @@ export function QuickCaptureForm({ ctx, refs }: { ctx: CaptureContext; refs: Cap
               ไปหน้ารับลูกค้าเข้าร้าน
             </Link>
           ) : null}
-          <Link className="btn btn--ghost" href="/dashboard">
-            กลับหน้าหลัก
+          <Link className="btn btn--ghost" href="/customers">
+            ไปรายการลูกค้า
           </Link>
         </div>
       </div>
@@ -282,7 +286,7 @@ export function QuickCaptureForm({ ctx, refs }: { ctx: CaptureContext; refs: Cap
     const useDisabledReason =
       ctx.mode !== "visit"
         ? c.in_scope
-          ? "หน้าข้อมูลลูกค้า (Customer 360) ยังไม่เปิดใช้งานในรุ่นนี้"
+          ? "ลูกค้ารายนี้มีอยู่แล้ว — เปิดดูได้จากรายการลูกค้า"
           : "ผูกลูกค้าจากสาขาอื่นได้เฉพาะตอนรับลูกค้า"
         : null;
 
@@ -306,7 +310,13 @@ export function QuickCaptureForm({ ctx, refs }: { ctx: CaptureContext; refs: Cap
           <p className="t-xs t-muted">ลูกค้านอกขอบเขตของคุณ · ไม่แสดงสถานะ สาขา และวันที่ติดต่อ</p>
         )}
         <div className="qc-cand__actions">
-          {useDisabledReason ? (
+          {/* โหมด "เพิ่มลูกค้า" ไม่มี visit ให้ผูก — สิ่งที่พนักงานต้องการจริงคือ
+              ไม่สร้างซ้ำ แล้วไปดูประวัติของคนเดิม จึงพาไปหน้าข้อมูลลูกค้าเลย */}
+          {ctx.mode !== "visit" && c.in_scope ? (
+            <Link className="btn btn--primary btn--sm" href={`/customers/${c.customer_no}` as Route}>
+              เปิดข้อมูลลูกค้าเดิม
+            </Link>
+          ) : useDisabledReason ? (
             <button type="button" className="btn btn--primary btn--sm" aria-disabled="true" data-tooltip={useDisabledReason}>
               ใช้ลูกค้าเดิม
             </button>
