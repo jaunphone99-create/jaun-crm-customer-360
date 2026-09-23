@@ -1863,7 +1863,7 @@ JAUN CRM หน้าร้าน/
 │   └── 08-delivery/     roadmap.md · data-migration-plan.md · test-cases-uat.md · deployment-backup-recovery.md
 │                        phase1-plan.md · environment-setup.md
 │                        pilot-deployment-checklist.md · pilot-uat-checklist.md · training-flow.md (เตรียม Pilot · ข้อ 20.19)
-│                        pilot-step1-runbook.md (ลำดับคำสั่งตั้ง environment · ข้อ 20.20)
+│                        pilot-step1-runbook.md · pilot-step2-runbook.md (ลำดับคำสั่ง · ข้อ 20.20–20.21)
 ├── supabase/
 │   ├── config.toml      ค่าตั้งของ project และสแตกในเครื่อง (ข้อ 20.20 · ห้ามมีค่าลับ)
 │   ├── migrations/      0001_… ถึง 00NN_… (.sql) · *_cron.sql (Supabase เท่านั้น)
@@ -1878,7 +1878,7 @@ JAUN CRM หน้าร้าน/
 │   ├── src/lib/         db/ (ทางเข้าฐานข้อมูลทางเดียว) · access.ts · env.ts · session.ts · labels.ts · errors.ts · format/
 │   └── scripts/         sync-design.mjs (คัดลอก CSS + ฟอนต์จาก prototype ตอน build)
 └── tools/
-    ├── db/              run.mjs · supabase-shim.sql · gen-seed.mjs · gen-data-dictionary.mjs
+    ├── db/              run.mjs · supabase-shim.sql · gen-seed.mjs · gen-data-dictionary.mjs · bootstrap-pilot.sql
     │                    dev-api.mjs (ฐานข้อมูลทดลองในเครื่อง · พูดภาษา PostgREST · ใช้ตอนพัฒนาเท่านั้น)
     └── check-prototype.mjs · check-canonical.mjs · check-secrets.mjs · serve-prototype.mjs · smoke-test.py
 ```
@@ -2366,4 +2366,54 @@ SUPERVISOR/STAFF ไม่เห็นกราฟทั้งสาม · SYSTE
 
 > **`config.toml` ยังไม่เคยผ่าน Supabase CLI** เพราะเครื่องที่เขียนไม่มี CLI ติดตั้ง
 > ขั้น V1–V3 ของ Runbook จึงเป็นขั้นบังคับ ไม่ใช่ขั้นแนะนำ
+
+### 20.21 ผล Review ขั้นที่ 1 และ Direction ขั้นที่ 2 (23 ก.ย. 2569)
+
+**D58 อนุมัติแล้ว — Auth hooks ปิดไว้ใน Pilot**
+เจ้าของโครงการอนุมัติให้ปิด `before_user_created` · `custom_access_token` ·
+`password_verification_attempt` ไว้ก่อน และ **ไม่ต้องสร้างทั้งสามฟังก์ชันเพื่อบล็อกการเปิด Pilot**
+เหตุผลที่รับได้: Public Signup ปิดอยู่ · การสร้างผู้ใช้ผ่าน Invite Flow ที่ตรวจสิทธิ์และสาขาที่ฐานข้อมูล ·
+และ Authorization จริงยังบังคับด้วย RLS อยู่แล้ว
+
+**Pre-Multi-Branch Hardening Gate — ทั้งสาม hook ต้องปิดให้ครบก่อนเปิดหลายสาขา**
+
+ลำดับที่ตรึงไว้ ห้ามสลับ:
+
+| ขั้น | ทำอะไร |
+|---|---|
+| 1 | **implement** — เขียนฟังก์ชันทั้งสามใน schema `app` |
+| 2 | **migration** — ขึ้น migration ใหม่ (ห้ามแก้ไฟล์ที่ apply ไปแล้ว · กติกา M2) |
+| 3 | **test** — เพิ่มชุดทดสอบใน `supabase/tests/` ให้ครอบทั้งทางผ่านและทางปฏิเสธ |
+| 4 | **เปิดทีละ hook** แล้วพิสูจน์ว่า **Create User · Login · Refresh Token · MFA · Invite** ยังทำงานครบ |
+
+> **ห้ามเปิด config ก่อนฟังก์ชันพร้อม** — `config.toml` ที่ชี้ไปฟังก์ชันซึ่งยังไม่มี
+> ทำให้ GoTrue ปฏิเสธการสร้างผู้ใช้และการออก token ทั้งหมด = ไม่มีใครเข้าระบบได้
+> เปิดทีละตัวเพื่อให้รู้ว่าถ้าพังเป็นเพราะ hook ตัวไหน
+
+**C-9 ยืนยันแล้ว — เพดานอัตราของ Auth ช่วง Pilot**
+
+| คีย์ | ค่า Pilot | หมายเหตุ |
+|---|---:|---|
+| `sign_in_sign_ups` | 30 | ยืนยันแล้ว |
+| `token_refresh` | 150 | ยืนยันแล้ว |
+| `token_verifications` | 30 | ยืนยันแล้ว |
+| `email_sent` | 30 | **เป็น Target เมื่อ Custom SMTP พร้อมเท่านั้น** |
+
+> **`email_sent = 30` ไม่ได้แปลว่าส่งอีเมลได้ 30 ฉบับ** — ถ้า Pilot ยังใช้อีเมลในตัวของ Supabase
+> ให้ยึด**ข้อจำกัดจริงของผู้ให้บริการ** ซึ่งต่ำกว่านี้มากและมีไว้สำหรับทดสอบเท่านั้น
+> ค่าที่เขียนใน config **ต้องไม่ทำให้ทีมเข้าใจว่า Email capacity พร้อมแล้ว**
+> ช่วง Pilot ใช้วิธีคัดลอกลิงก์คำเชิญตาม D57 อยู่แล้ว จึงยังไม่กดดันค่านี้
+
+**การเฝ้าระวังที่ต้องทำระหว่าง Pilot**
+เก็บ **429 และ Auth failure แยกตาม endpoint** · ถ้าพบการชนเพดานจากการใช้งานจริง
+จึงค่อยปรับค่า — **ไม่เพิ่มเพดานล่วงหน้า** เพราะเพดานที่สูงเกินจำเป็นคือช่องให้เดารหัสผ่าน
+
+**ขั้นที่ 2 เดินต่อได้ทันที** — สองเรื่องข้างบนไม่บล็อก Master Data และ JAUNPHONE 1
+
+**สิ่งที่ทำไปแล้วสำหรับขั้นที่ 2**
+
+| สิ่งที่พบ | สิ่งที่ทำ |
+|---|---|
+| migration สร้างแต่โครงตาราง · `core.organizations` · `core.business_units` · `core.branches` **ไม่มีแถวใดเลย** (มีเฉพาะใน `seed.sql` ซึ่งห้ามใช้บน prod) → หลัง `db push` ยังไม่มีสาขาให้ผูกพนักงาน ขั้นที่ 3 จึงเริ่มไม่ได้ | เขียน `tools/db/bootstrap-pilot.sql` — สร้างองค์กร · หน่วยธุรกิจ · สาขา · ตั้ง `env` และนาฬิกา · รันซ้ำได้ · เขียน audit เป็น `SYSTEM` ป้าย `bootstrap-pilot` |
+| `ref.*` ทั้ง 16 ตาราง migration `0003_ref.sql` ใส่ข้อมูลมาให้ครบแล้ว | ขั้นที่ 2 จึงเป็นการ **ตรวจและปรับ** ไม่ใช่การสร้างใหม่ |
 
