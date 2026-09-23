@@ -8,6 +8,16 @@
 -- =====================================================================================
 
 -- ===== P0: helper =====
+CREATE FUNCTION test.dstage(p jsonb, p_code text, p_field text) RETURNS text
+LANGUAGE sql STABLE AS $$
+    SELECT x ->> p_field FROM jsonb_array_elements(p -> 'funnel') x
+    WHERE x ->> 'code' = p_code LIMIT 1
+$$;
+CREATE FUNCTION test.dseg(p jsonb, p_code text, p_field text) RETURNS text
+LANGUAGE sql STABLE AS $$
+    SELECT x ->> p_field FROM jsonb_array_elements(p -> 'channels' -> 'segments') x
+    WHERE x ->> 'code' = p_code LIMIT 1
+$$;
 CREATE FUNCTION test.rrow(p jsonb, p_code text, p_field text, p_gk text DEFAULT NULL) RETURNS text
 LANGUAGE sql STABLE AS $$
     SELECT x ->> p_field
@@ -33,6 +43,7 @@ $$;
 CREATE TABLE test.rep (k text PRIMARY KEY, v jsonb);
 CREATE FUNCTION test.g(p_k text) RETURNS jsonb LANGUAGE sql STABLE AS $$ SELECT v FROM test.rep WHERE k = p_k $$;
 GRANT EXECUTE ON FUNCTION test.rrow(jsonb, text, text, text), test.lost(jsonb, text, text),
+    test.dstage(jsonb, text, text), test.dseg(jsonb, text, text),
                           test.denied3(text, text), test.invalid3(text, text), test.g(text)
 TO anon, authenticated, service_role;
 GRANT SELECT, INSERT ON test.rep TO authenticated, service_role;
@@ -249,3 +260,88 @@ SELECT test.assert_eq((SELECT a.after ->> 'preset' FROM audit.audit_logs a
 SELECT test.assert_eq((SELECT a.actor_staff_code FROM audit.audit_logs a
                         WHERE a.action = 'REPORT_EXPORTED' AND a.entity_id = 'BRANCHES'),
                       'ST-9201', 'K05 actor ของ audit คือผู้เรียก');
+
+-- =====================================================================================
+-- L. api.get_dashboard_charts — วิดเจ็ตกราฟหน้าหลัก (D56 · ข้อ 14.7 · 20.15)
+--
+-- ข้อที่ต้องกันไว้ให้ได้: ฐานข้อมูลต้องคืน "ค่าที่แสดงได้เลย" ครบทุกตัว
+-- ถ้าวันหนึ่งมีใครถอด display/share_display/pct_display ออก หน้าจอจะถูกบีบให้คำนวณเอง
+-- ซึ่งผิดข้อ 20.15 — ชุดทดสอบนี้จึงตรวจ "มีคีย์และค่าตรง" ไม่ใช่แค่ "เรียกได้"
+-- =====================================================================================
+SELECT test.login_as('rpt.u04@test.example.com', 'aal1');          -- STAFF: มี dashboard.view แต่ไม่มี report.view
+SELECT test.assert_eq(api.get_dashboard_charts() ->> 'ok', 'true',
+                      'L01 STAFF เปิดกราฟหน้าหลักได้ทั้งที่ไม่มี report.view (เหตุผลที่ต้องแยกจาก get_report)');
+SELECT test.denied3($$SELECT api.get_report('LOST_REASONS')$$, 'L02 คนเดียวกันเรียก get_report ไม่ได้ ยืนยันว่าสองสิทธิ์ต่างกันจริง');
+
+SELECT test.login_as('rpt.u01@test.example.com', 'aal2');          -- EXECUTIVE scope G
+INSERT INTO test.rep (k, v) VALUES ('dash', api.get_dashboard_charts());
+
+-- ขั้นของ funnel ครบสี่ขั้นตามข้อ 13.1 และเรียงถูก
+SELECT test.assert_eq((SELECT count(*) FROM jsonb_array_elements(test.g('dash') -> 'funnel')), 4::bigint,
+                      'L03 funnel มีสี่ขั้น');
+SELECT test.assert_eq((SELECT string_agg(x ->> 'code', ',') FROM jsonb_array_elements(test.g('dash') -> 'funnel') x),
+                      'VISITS,LEADS,OPPORTUNITIES,SALES', 'L04 เรียงขั้นตามลำดับของ funnel');
+
+-- ตัวเลขของ funnel ต้องเท่ากับ KPI ตัวเดียวกันเป๊ะ ไม่ใช่นับใหม่คนละทาง
+INSERT INTO test.rep (k, v) VALUES ('dkpi', api.get_kpis());
+SELECT test.assert_eq(test.dstage(test.g('dash'), 'VISITS', 'value'), test.rrow(test.g('dkpi'), 'VISITS', 'value'),
+                      'L05 ขั้นแรกของ funnel = การ์ด VISITS');
+SELECT test.assert_eq(test.dstage(test.g('dash'), 'SALES', 'display'), test.rrow(test.g('dkpi'), 'SALES', 'display'),
+                      'L06 ขั้นสุดท้ายของ funnel = การ์ด SALES (ข้อความเดียวกัน)');
+
+-- ขั้นแรกต้องเป็น 100.0% เสมอ และ share เป็นสัดส่วน 0–1 ให้หน้าจอใช้วาดแท่งได้โดยไม่ต้องหาร
+SELECT test.assert_eq(test.dstage(test.g('dash'), 'VISITS', 'share_display'), '100.0%', 'L07 ขั้นแรก = 100.0%');
+SELECT test.assert_eq(test.dstage(test.g('dash'), 'VISITS', 'share')::numeric, 1::numeric,
+                      'L08 share ของขั้นแรกเป็น 1 (สัดส่วน ไม่ใช่ร้อยละ)');
+
+-- ขั้น Opportunity ต้องเทียบ VISITS ไม่ใช่ LEADS — จุดที่ไม่มีรหัส KPI ใดรองรับ (เหตุผลที่ต้องเพิ่ม D56)
+-- หารในชุดทดสอบได้ (กติกาห้ามคิดเลขเองใช้กับ "หน้าจอ" ไม่ใช่กับการพิสูจน์)
+-- app.kpi_rate เป็น helper ภายใน ไม่ได้ GRANT ให้ authenticated จึงเรียกที่นี่ไม่ได้ — ตั้งใจให้เป็นอย่างนั้น
+SELECT test.assert_eq(round(test.dstage(test.g('dash'), 'OPPORTUNITIES', 'share')::numeric, 10),
+                      round(test.rrow(test.g('dkpi'), 'OPPORTUNITIES', 'value')::numeric
+                            / test.rrow(test.g('dkpi'), 'VISITS', 'value')::numeric, 10),
+                      'L09 ขั้น Opportunity เทียบ VISITS ไม่ใช่ LEADS');
+SELECT test.assert_true(test.dstage(test.g('dash'), 'OPPORTUNITIES', 'share')::numeric
+                        <> test.rrow(test.g('dkpi'), 'OPPORTUNITY_RATE', 'value')::numeric,
+                        'L10 และต่างจาก OPPORTUNITY_RATE จริง (กันการหยิบตัวผิดมาใช้)');
+
+-- ทุกขั้นต้องมีค่าที่แสดงได้เลยครบ ไม่มีขั้นไหนบังคับให้หน้าจอจัดรูปแบบเอง
+SELECT test.assert_eq((SELECT count(*) FROM jsonb_array_elements(test.g('dash') -> 'funnel') x
+                        WHERE x ->> 'display' IS NULL OR x ->> 'share_display' IS NULL
+                           OR x ->> 'label_th' IS NULL OR x ->> 'chart_token' IS NULL), 0::bigint,
+                      'L11 ทุกขั้นมี display · share_display · label_th · chart_token ครบ');
+
+-- โดนัท: ผลรวมของทุกส่วนต้องเท่าเลขกลางวง และเท่าการ์ดลูกค้าไม่ซ้ำ
+SELECT test.assert_eq((SELECT sum((x ->> 'value')::numeric) FROM jsonb_array_elements(test.g('dash') -> 'channels' -> 'segments') x),
+                      (test.g('dash') -> 'channels' ->> 'total')::numeric,
+                      'L12 ผลรวมส่วนโดนัท = เลขกลางวง');
+SELECT test.assert_eq(test.g('dash') -> 'channels' ->> 'total_display', test.rrow(test.g('dkpi'), 'UNIQUE_CUSTOMERS', 'display'),
+                      'L13 เลขกลางวง = การ์ดลูกค้าไม่ซ้ำ (ข้อความเดียวกัน)');
+SELECT test.assert_eq((SELECT count(*) FROM jsonb_array_elements(test.g('dash') -> 'channels' -> 'segments') x
+                        WHERE (x ->> 'value')::numeric <= 0), 0::bigint,
+                      'L14 ไม่คืนส่วนที่เป็นศูนย์ (ข้อ 13.3 · D3)');
+SELECT test.assert_eq((SELECT count(*) FROM jsonb_array_elements(test.g('dash') -> 'channels' -> 'segments') x
+                        WHERE x ->> 'pct_display' IS NULL OR x ->> 'label_th' IS NULL OR x ->> 'chart_token' IS NULL), 0::bigint,
+                      'L15 ทุกส่วนมีร้อยละและป้ายไทยพร้อมแสดง');
+
+-- เหตุผลที่ไม่สำเร็จต้องเป็นชุดเดียวกับรายงาน เพราะใช้ app.lost_reason_breakdown ตัวเดียวกัน
+INSERT INTO test.rep (k, v) VALUES ('drep', api.get_report('LOST_REASONS'));
+SELECT test.assert_eq(test.g('dash') -> 'lost_reasons', test.g('drep') -> 'extra' -> 'lost_reasons',
+                      'L16 lost_reasons ของหน้าหลักตรงกับของรายงานทุกช่อง (ไม่ได้เขียน query ซ้ำ)');
+
+-- clock/period ต้องมาจากชุดเดียวกับการ์ด ไม่งั้นหน้าจอจะอ้างสองเวลาบนหน้าเดียว
+SELECT test.assert_eq(test.g('dash') ->> 'clock', test.g('dkpi') ->> 'clock', 'L17 clock เดียวกับ api.get_kpis');
+SELECT test.assert_eq(test.g('dash') -> 'period', test.g('dkpi') -> 'period', 'L18 ช่วงเวลาเดียวกับ api.get_kpis');
+
+-- ช่วงที่ไม่มีข้อมูลเลยต้องไม่พังและต้องไม่โกหกว่าเป็น 0.0%
+INSERT INTO test.rep (k, v) VALUES ('dempty', api.get_dashboard_charts('CUSTOM', DATE '2025-01-01', DATE '2025-01-08'));
+SELECT test.assert_eq(test.dstage(test.g('dempty'), 'VISITS', 'display'), '0', 'L19 ช่วงที่ไม่มีข้อมูล คืน 0 ไม่ใช่ error');
+SELECT test.assert_eq(test.dstage(test.g('dempty'), 'LEADS', 'share_display'), U&'\2013',
+                      'L20 หารศูนย์ไม่ได้ → แสดง – ไม่ใช่ 0.0% ที่ทำให้เข้าใจผิด');
+
+SELECT test.login_as('rpt.u02@test.example.com', 'aal2');          -- ผู้จัดการ RT1 (scope B)
+INSERT INTO test.rep (k, v) VALUES ('dbm', api.get_dashboard_charts());
+SELECT test.assert_eq(test.dstage(test.g('dbm'), 'VISITS', 'value')::numeric, 3::numeric,
+                      'L21 ผู้จัดการสาขาเห็นกราฟเฉพาะสาขาของตน');
+SELECT test.logout();
+SELECT test.assert_raises($$SELECT api.get_dashboard_charts()$$, 'L22 ผู้ที่ไม่ได้เข้าสู่ระบบเรียกไม่ได้', '42501');
