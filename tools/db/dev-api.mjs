@@ -116,6 +116,118 @@ async function assumeIdentity(db, identity) {
   await db.query("SELECT test.login_as_uid($1::uuid, $2::text)", [uid, identity.aal]);
 }
 
+/* ---- Edge Function จำลอง (/functions/v1/:name) -------------------------------
+
+   ของจริงอยู่ใน supabase/functions/ และรันบน Deno ด้วยสิทธิ์ service_role
+   ที่นี่ทำงานเดียวกันบน PGlite เพื่อให้ทดสอบ Invite/Disable/MFA ได้ก่อนมี Supabase จริง
+   **เรียก RPC ตัวเดียวกันทุกตัว** จึงพิสูจน์กติกาได้จริง ไม่ใช่ของปลอม           */
+
+async function asServiceRole(db, fn) {
+  await db.exec("BEGIN");
+  try {
+    await db.query("SELECT set_config('role', 'none', true)");
+    await db.query("SELECT set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true)");
+    await db.query("SELECT set_config('role', 'service_role', true)");
+    const out = await fn();
+    await db.exec("COMMIT");
+    return out;
+  } catch (e) {
+    try { await db.exec("ROLLBACK"); } catch { /* ไม่มีทรานแซกชันค้าง */ }
+    throw e;
+  }
+}
+
+/** ผู้เรียกคือใคร — Edge Function ของจริงอ่านจาก JWT ที่แนบมา */
+async function actorOf(db, identity) {
+  if (!identity) throw httpError(401, "ต้องเข้าสู่ระบบก่อน");
+  const { rows } = await db.query(
+    "SELECT s.id, s.user_id, s.status FROM core.staff_profiles s WHERE s.staff_code = $1", [identity.staffCode]);
+  const a = rows[0];
+  if (!a?.user_id) throw httpError(401, `ไม่พบผู้ใช้ ${identity.staffCode}`);
+  return { staffId: a.id, userId: a.user_id, aal: identity.aal };
+}
+
+const FUNCTIONS = {
+  /* เชิญพนักงาน — svc_prepare_invite ตรวจสิทธิ์ผู้เชิญเองจาก actor_user_id */
+  async "invite-staff"(db, body, identity) {
+    const actor = await actorOf(db, identity);
+    return asServiceRole(db, async () => {
+      const payload = {
+        email: body.email, employee_code: body.employee_code, display_name: body.display_name,
+        nickname: body.nickname ?? null, phone: body.phone ?? null,
+        role_code: body.role_code, branch_id: body.branch_id ?? null,
+        actor_user_id: actor.userId, actor_aal: actor.aal,
+      };
+      const { rows } = await db.query("SELECT api.svc_prepare_invite($1::jsonb) AS r", [JSON.stringify(payload)]);
+      const r = rows[0].r;
+      if (!r?.ok) return r;
+
+      /* ของจริง Supabase Auth เป็นผู้สร้างบัญชีผู้ใช้และส่งอีเมลคำเชิญ
+         ในเครื่องเราสร้างแถว auth.users แล้วผูกเข้ากับโปรไฟล์ เพื่อให้เดินขั้นตอน
+         "ตั้งรหัสผ่านครั้งแรก → api.activate_self()" ต่อได้จริง */
+      const ins = await db.query(
+        "INSERT INTO auth.users (email, email_confirmed_at) VALUES ($1, now()) RETURNING id", [body.email]);
+      const uid = ins.rows[0].id;
+      const link = await db.query("SELECT api.svc_link_invited_user($1::jsonb) AS r",
+        [JSON.stringify({ staff_id: r.staff_id, user_id: uid })]);
+      if (!link.rows[0].r?.ok) return link.rows[0].r;
+      return { ...r, invite_url: `/set-password?staff=${r.staff_code}` };
+    });
+  },
+
+  /* เข้าสู่ระบบด้วย ST-NNNN — ห้ามคืนอีเมลหรือบอกว่ามีบัญชีนั้นอยู่จริง (ข้อ 9.2) */
+  async "staff-code-login"(db, body) {
+    return asServiceRole(db, async () => {
+      const { rows } = await db.query("SELECT api.svc_resolve_staff_code($1::text) AS r", [body.staff_code ?? ""]);
+      const r = rows[0].r;
+      if (!r?.ok) return { ok: false };
+      const st = await db.query("SELECT staff_code FROM core.staff_profiles WHERE id = $1::uuid", [r.staff_id]);
+      return { ok: true, staff_code: st.rows[0]?.staff_code ?? null };
+    });
+  },
+
+  /* ลืมรหัสผ่าน — ตอบเหมือนกันเสมอ ไม่ว่าจะมีบัญชีหรือไม่ */
+  async "password-reset"() {
+    return { ok: true };
+  },
+
+  /* ปิดใช้งานบัญชี — ลำดับสำคัญ: หา user_id ก่อน แล้วค่อยปิด แล้วค่อย ban
+     ถ้าปิดก่อน svc_resolve_staff_code จะหาไม่เจอ (คืนเฉพาะบัญชี ACTIVE) แล้ว ban จะถูกข้ามเงียบ ๆ */
+  async "disable-staff"(db, body, identity) {
+    const actor = await actorOf(db, identity);
+    const before = await db.query("SELECT user_id FROM core.staff_profiles WHERE id = $1::uuid", [body.staff_id]);
+    const targetUser = before.rows[0]?.user_id ?? null;
+
+    /* ด่านตรวจสิทธิ์จริงอยู่ที่นี่ — เรียกในบริบทของผู้กด ไม่ใช่ service_role */
+    await runAs(db, identity, async () => {
+      await db.query("SELECT api.disable_staff($1::uuid, $2::text)", [body.staff_id, body.reason ?? ""]);
+    });
+
+    return asServiceRole(db, async () => {
+      if (targetUser) {
+        await db.query("UPDATE auth.users SET banned_until = now() + interval '100 years' WHERE id = $1::uuid", [targetUser]);
+      }
+      const payload = { staff_id: body.staff_id, reason: body.reason, actor_user_id: actor.userId, actor_aal: actor.aal };
+      const { rows } = await db.query("SELECT api.svc_finalize_disable($1::jsonb) AS r", [JSON.stringify(payload)]);
+      return { ...rows[0].r, banned: Boolean(targetUser) };
+    });
+  },
+
+  /* รีเซ็ต MFA */
+  async "reset-mfa"(db, body, identity) {
+    const actor = await actorOf(db, identity);
+    return asServiceRole(db, async () => {
+      const payload = { target_staff_id: body.staff_id, reason: body.reason, actor_user_id: actor.userId, actor_aal: actor.aal };
+      const { rows } = await db.query("SELECT api.svc_reset_mfa_authorize($1::jsonb) AS r", [JSON.stringify(payload)]);
+      const r = rows[0].r;
+      if (r?.ok) {
+        await db.query("DELETE FROM auth.mfa_factors WHERE user_id = (SELECT user_id FROM core.staff_profiles WHERE id = $1::uuid)", [body.staff_id]);
+      }
+      return r;
+    });
+  },
+};
+
 /* ---- ตัวช่วยแปลง query string แบบ PostgREST ---------------------------------- */
 const IDENT = /^[a-z_][a-z0-9_]*$/;
 const ident = (s, what) => {
@@ -384,6 +496,17 @@ async function main() {
            ORDER BY s.staff_code`);
         json(res, 200, { data: rows });
       }).catch((e) => json(res, 500, { message: e.message }));
+    }
+
+    if (url.pathname.startsWith("/functions/v1/")) {
+      const name = decodeURIComponent(url.pathname.slice("/functions/v1/".length));
+      const fn = FUNCTIONS[name];
+      if (!fn) return json(res, 404, { message: `ไม่มี Edge Function ชื่อ ${name}` });
+      if (req.method !== "POST") return json(res, 405, { message: "ต้องเรียกด้วย POST" });
+      return void readBody(req)
+        .then((body) => serialize(() => fn(db, body ?? {}, identityOf(req))))
+        .then((out) => json(res, 200, out))
+        .catch((e) => json(res, e.http ?? 400, { message: e.message, code: e.code ?? null }));
     }
 
     if (url.pathname.startsWith("/rest/v1/")) {

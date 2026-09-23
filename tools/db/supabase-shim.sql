@@ -71,6 +71,12 @@ $$;
 
 GRANT EXECUTE ON FUNCTION auth.jwt(), auth.uid(), auth.role() TO anon, authenticated, service_role;
 
+-- Supabase จัดการ auth.users ผ่าน Admin API ด้วยสิทธิ์ service_role
+-- ในเครื่องจำลองด้วย GRANT ตรง ๆ เพื่อให้ Edge Function จำลอง (tools/db/dev-api.mjs)
+-- สร้างบัญชีตอนเชิญพนักงานและ ban ตอนปิดใช้งานได้ · role อื่นยังแตะไม่ได้เหมือนเดิม
+GRANT SELECT, INSERT, UPDATE, DELETE ON auth.users TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON auth.mfa_factors TO service_role;
+
 -- =====================================================================================
 -- schema test — ตัวช่วยสำหรับไฟล์ทดสอบ
 -- ทุกไฟล์ใน supabase/tests/ ถูกครอบด้วย BEGIN … ROLLBACK โดย run.mjs

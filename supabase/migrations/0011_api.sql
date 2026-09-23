@@ -4010,6 +4010,105 @@ BEGIN
 END;
 $$;
 
+-- ข้อ 9.5 — บันทึกเหตุการณ์เข้าสู่ระบบ (สำเร็จ/ล้มเหลว · MFA · ออกจากระบบ)
+-- ทำไมต้องมี: audit.login_events ถูก REVOKE จากทุก role และไม่มีทางเขียนเลย
+-- ข้อกำหนด "Login / MFA / Invite / Disable Audit" จึงปิดไม่ครบ ถ้าไม่มีประตูนี้
+-- ตัวระบุที่ผู้ใช้กรอก (อีเมล/ST-NNNN) เก็บเป็น sha256 เท่านั้น ห้ามเก็บค่าจริง (ข้อ 9.5)
+CREATE FUNCTION api.svc_record_login_event(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_user  uuid := nullif(p ->> 'user_id', '')::uuid;
+    v_staff uuid;
+    v_org   uuid;
+    v_id    bigint;
+BEGIN
+    PERFORM app.svc_guard();
+    IF nullif(p ->> 'event_type', '') IS NULL OR (p ->> 'success') IS NULL THEN
+        PERFORM app.api_invalid('ต้องระบุ event_type และ success');
+    END IF;
+
+    -- ผูกกับพนักงานให้ถ้าทำได้ เพื่อให้หน้าประวัติความปลอดภัยกรองตามคนได้
+    IF v_user IS NOT NULL THEN
+        SELECT sp.id, sp.organization_id INTO v_staff, v_org
+        FROM core.staff_profiles sp WHERE sp.user_id = v_user;
+    END IF;
+
+    INSERT INTO audit.login_events (organization_id, user_id, staff_id, event_type, method, success,
+                                    failure_reason, identifier_hash, aal, ip, user_agent, device_id, request_id, detail)
+    VALUES (v_org, v_user, v_staff,
+            upper(btrim(p ->> 'event_type')),
+            nullif(upper(btrim(coalesce(p ->> 'method', ''))), ''),
+            (p ->> 'success')::boolean,
+            nullif(btrim(coalesce(p ->> 'failure_reason', '')), ''),
+            nullif(btrim(coalesce(p ->> 'identifier_hash', '')), ''),
+            nullif(btrim(coalesce(p ->> 'aal', '')), ''),
+            nullif(btrim(coalesce(p ->> 'ip', '')), ''),
+            left(nullif(btrim(coalesce(p ->> 'user_agent', '')), ''), 400),
+            nullif(btrim(coalesce(p ->> 'device_id', '')), ''),
+            nullif(btrim(coalesce(p ->> 'request_id', '')), ''),
+            p -> 'detail')
+    RETURNING id INTO v_id;
+
+    RETURN jsonb_build_object('ok', true, 'login_event_id', v_id);
+END;
+$$;
+
+-- ข้อ 7.1 · 19.3 ข้อ 6 — ผูกบัญชีผู้ใช้ที่ Auth เพิ่งสร้าง เข้ากับโปรไฟล์ที่ถูกเชิญไว้
+-- ทำไมต้องมี: api.svc_prepare_invite สร้างโปรไฟล์สถานะ INVITED โดยยังไม่มี user_id
+-- แต่ api.activate_self() ค้นหาพนักงานด้วย user_id = auth.uid() ถ้าไม่ผูกขั้นนี้ คำเชิญจะเปิดใช้งานไม่ได้เลย
+-- Edge Function invite-staff เรียกตัวนี้ทันทีหลังสร้างบัญชีผู้ใช้ใน Supabase Auth
+CREATE FUNCTION api.svc_link_invited_user(p jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_staff uuid := nullif(p ->> 'staff_id', '')::uuid;
+    v_user  uuid := nullif(p ->> 'user_id', '')::uuid;
+    s       core.staff_profiles%ROWTYPE;
+    v_email text;
+BEGIN
+    PERFORM app.svc_guard();
+    IF v_staff IS NULL OR v_user IS NULL THEN
+        PERFORM app.api_invalid('ต้องระบุ staff_id และ user_id');
+    END IF;
+
+    SELECT * INTO s FROM core.staff_profiles WHERE id = v_staff FOR UPDATE;
+    IF NOT FOUND THEN
+        PERFORM app.api_denied('ไม่พบโปรไฟล์พนักงาน');
+    END IF;
+    -- ผูกได้เฉพาะบัญชีที่เพิ่งถูกเชิญและยังไม่เคยผูก — กันการยึดบัญชีที่ใช้งานอยู่
+    IF s.status <> 'INVITED' THEN
+        PERFORM app.api_denied('ผูกบัญชีผู้ใช้ได้เฉพาะโปรไฟล์ที่สถานะ INVITED');
+    END IF;
+    IF s.user_id IS NOT NULL THEN
+        PERFORM app.api_denied('โปรไฟล์นี้ผูกบัญชีผู้ใช้ไว้แล้ว');
+    END IF;
+
+    SELECT u.email INTO v_email FROM auth.users u WHERE u.id = v_user;
+    IF v_email IS NULL THEN
+        PERFORM app.api_denied('ไม่พบบัญชีผู้ใช้');
+    END IF;
+    -- อีเมลต้องตรงกับที่เชิญไว้ ไม่งั้นเท่ากับเชิญคนหนึ่งแล้วผูกให้อีกคน
+    IF lower(btrim(v_email)) IS DISTINCT FROM lower(btrim(s.email)) THEN
+        PERFORM app.api_denied('อีเมลของบัญชีผู้ใช้ไม่ตรงกับอีเมลที่เชิญไว้');
+    END IF;
+    IF EXISTS (SELECT 1 FROM core.staff_profiles x WHERE x.user_id = v_user) THEN
+        PERFORM app.api_denied('บัญชีผู้ใช้นี้ผูกกับพนักงานคนอื่นแล้ว');
+    END IF;
+
+    UPDATE core.staff_profiles SET user_id = v_user, updated_at = now() WHERE id = v_staff;
+    RETURN jsonb_build_object('ok', true, 'staff_id', v_staff, 'staff_code', s.staff_code);
+END;
+$$;
+
 -- ข้อ 9.2 — เข้าสู่ระบบด้วย ST-NNNN (คืน user_id เท่านั้น ห้ามส่งอีเมลออก)
 CREATE FUNCTION api.svc_resolve_staff_code(p_staff_code text)
 RETURNS jsonb
@@ -4180,6 +4279,10 @@ COMMENT ON FUNCTION api.svc_build_export_dataset(uuid) IS 'Edge Function generat
 COMMENT ON FUNCTION api.svc_mark_export_generated(uuid, text) IS 'Edge Function generate-export: APPROVED → GENERATED + file_path · แจ้ง EXPORT_READY';
 COMMENT ON FUNCTION api.svc_prepare_invite(jsonb) IS 'Edge Function invite-staff: สร้าง staff_profiles (INVITED) + staff_invitations + assignment ก่อนออกลิงก์ (19.3 ข้อ 6)';
 COMMENT ON FUNCTION api.svc_finalize_disable(jsonb) IS 'Edge Function disable-staff: ปิดคำเชิญที่ค้างและบันทึก STAFF_DISABLED หลัง ban ผู้ใช้';
+COMMENT ON FUNCTION api.svc_record_login_event(jsonb) IS
+'Edge Function: บันทึก audit.login_events (ข้อ 9.5) · ตัวระบุที่ผู้ใช้กรอกเก็บเป็น sha256 เท่านั้น · ไม่มีทางอื่นเขียนตารางนี้ได้เลย';
+COMMENT ON FUNCTION api.svc_link_invited_user(jsonb) IS
+'Edge Function invite-staff: ผูก auth.users ที่เพิ่งสร้าง เข้ากับโปรไฟล์ INVITED (อีเมลต้องตรงกัน · ผูกซ้ำไม่ได้) · ขาดขั้นนี้ api.activate_self() จะหาโปรไฟล์ไม่เจอ';
 COMMENT ON FUNCTION api.svc_resolve_staff_code(text) IS 'Edge Function staff-code-login: ST-NNNN → user_id (ห้ามส่งอีเมลออก · ข้อ 9.2)';
 COMMENT ON FUNCTION api.svc_reset_mfa_authorize(jsonb) IS 'Edge Function reset-mfa: ตรวจผู้กระทำตามข้อ 7.3 ข้อ 6 แล้วบันทึก MFA_RESET';
 COMMENT ON FUNCTION api.svc_expired_export_files() IS 'Edge Function cron-export-cleanup: ไฟล์ของคำขอที่ EXPIRED และยังไม่ถูกลบ (อ่านอย่างเดียว)';
