@@ -15,7 +15,8 @@
     "typecheck": "node scripts/sync-design.mjs && tsc --noEmit",
     "sync:design": "node scripts/sync-design.mjs",
     "check:format": "node scripts/check-format.mjs",
-    "check": "npm run typecheck && npm run check:format"
+    "test:reception": "node --test scripts/test-reception.mjs",
+    "check": "npm run typecheck && npm run check:format && npm run test:reception"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

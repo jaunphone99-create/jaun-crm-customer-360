@@ -31,15 +31,19 @@ export async function claimVisit(_prev: ActionState, formData: FormData): Promis
     if (!visitId) return { ok: false, message: "ไม่พบคิวที่เลือก" };
 
     const supabase = await getDb();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .schema("crm")
       .from("visits")
       .update({ status: "IN_SERVICE", owner_staff_id: access.staff.staff_id })
       .eq("id", visitId)
-      .eq("status", "WAITING");
+      .eq("status", "WAITING")
+      .select("id");
     if (error) throw error;
 
     revalidatePath(RECEPTION);
+    if (!data || data.length !== 1) {
+      return { ok: false, message: "รับคิวไม่สำเร็จ คิวนี้อาจมีผู้รับแล้วหรือคุณไม่มีสิทธิ์รับ กรุณาตรวจสอบคิวล่าสุด" };
+    }
     return { ok: true, message: "รับคิวแล้ว" };
   } catch (e) {
     return toState(e);

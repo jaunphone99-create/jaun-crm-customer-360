@@ -16,7 +16,7 @@ import {
    และอยู่ใน state ชั่วคราวของคอมโพเนนต์นี้เท่านั้น ไม่เขียนลง storage ไม่ลง URL ไม่ log
    (CANONICAL ข้อ 6.4 · design-system ข้อ 7.9 บรรทัด "ห้าม")
 
-   ปุ่มต่อชนิด: PHONE = แสดง · โทร · คัดลอก · LINE_ID = แสดง · คัดลอก · เปิด LINE
+   ปุ่มต่อชนิด: PHONE = แสดง · โทร · คัดลอก · LINE_ID = แสดง LINE ID · คัดลอก
    ที่เหลือ = แสดง · คัดลอก · LINE_USER_ID ไม่มีปุ่มเพราะไม่ใช่ค่าที่มนุษย์ใช้ติดต่อ */
 
 type ActionKind = { purpose: RevealPurpose; label: string };
@@ -24,12 +24,12 @@ type ActionKind = { purpose: RevealPurpose; label: string };
 const VIEW: ActionKind = { purpose: "VIEW", label: "แสดง" };
 const CALL: ActionKind = { purpose: "CALL", label: "โทร" };
 const COPY: ActionKind = { purpose: "COPY", label: "คัดลอก" };
-const LINE_OPEN: ActionKind = { purpose: "LINE_OPEN", label: "เปิด LINE" };
+const LINE_VIEW: ActionKind = { purpose: "VIEW", label: "แสดง LINE ID" };
 
 function actionsFor(type: string): ActionKind[] {
   if (type === "LINE_USER_ID") return [];
   if (type === "PHONE") return [VIEW, CALL, COPY];
-  if (type === "LINE_ID") return [VIEW, COPY, LINE_OPEN];
+  if (type === "LINE_ID") return [LINE_VIEW, COPY];
   return [VIEW, COPY];
 }
 
@@ -71,8 +71,7 @@ export function ContactList({
       void navigator.clipboard?.writeText(value).catch(() => setNotice("คัดลอกไม่สำเร็จ"));
       return;
     }
-    /* "เปิด LINE" ตกมาทางนี้ด้วยโดยตั้งใจ — รูปแบบลิงก์ LINE ยัง "รอยืนยัน" ใน design-system ข้อ 7.9
-       จึงแสดง LINE ID ให้พนักงานค้นเองแทนที่จะเดา URL แล้วพาไปหน้าที่ไม่มีอยู่จริง */
+    /* แสดงค่า PHONE/LINE ID ชั่วคราว โดยบันทึกวัตถุประสงค์ VIEW ตรงกับการกระทำ */
     setNotice(null);
     setShown({ contactId: state.contactId, value });
     setSeconds(state.autoHideSeconds);

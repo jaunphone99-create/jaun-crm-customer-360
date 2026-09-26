@@ -13,6 +13,7 @@
      node tools/db/dev-api.mjs              เปิดที่ http://127.0.0.1:54329 (ข้อมูลอยู่ใน .dev-db/)
      node tools/db/dev-api.mjs --fresh      ล้างแล้วสร้างใหม่จาก migration + seed
      node tools/db/dev-api.mjs --port 5555  เปลี่ยนพอร์ต
+     node tools/db/dev-api.mjs --as-of 2026-09-11T10:24:00+07:00  ตรึงเวลารายงานเพื่อดู snapshot
 
    รองรับ:
      GET    /rest/v1/:relation   select · ตัวกรอง (eq neq gt gte lt lte like ilike is in) · order · limit · offset
@@ -35,6 +36,11 @@ const valueAfter = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 
 
 const PORT = Number(valueAfter("--port") || process.env.JCRM_DEV_API_PORT || 54329);
 const DATA_DIR = resolve(ROOT, process.env.JCRM_DEV_DB_DIR || ".dev-db");
+const AS_OF = valueAfter("--as-of") ?? null;
+if (flag("--as-of") && (!AS_OF || !/(Z|[+-]\d{2}:\d{2})$/.test(AS_OF) || !Number.isFinite(Date.parse(AS_OF)))) {
+  console.error("--as-of ต้องเป็น ISO-8601 พร้อมเขตเวลา เช่น 2026-09-11T10:24:00+07:00");
+  process.exit(2);
+}
 
 if (process.env.NODE_ENV === "production") {
   console.error("dev-api.mjs ห้ามรันด้วย NODE_ENV=production — บน production ต้องต่อ Supabase จริง");
@@ -471,6 +477,12 @@ async function main() {
   await db.waitReady;
   await db.exec("SET TIME ZONE 'UTC'");
   if (fresh) await bootstrap(db);
+
+  // seed ตรึงเวลาสำหรับชุดทดสอบ แต่การรับลูกค้าสดบันทึกด้วย now()
+  // ใช้เวลาจริงเป็นค่าเริ่มต้นทั้งฐานใหม่และฐานเดิม เพื่อให้คิววันนี้เห็นรายการที่เพิ่งสร้าง
+  // เปลี่ยนเฉพาะนาฬิการายงาน ไม่แก้เวลาในรายการเดิมหรือการตัดสินสิทธิ์/audit
+  await db.query("UPDATE app.settings SET value = $1::jsonb WHERE key = 'clock'", [JSON.stringify({ as_of: AS_OF })]);
+  console.log(AS_OF ? `นาฬิการายงาน: snapshot ${AS_OF} (รายการใหม่ยังใช้เวลาจริง)` : "นาฬิการายงาน: เวลาจริง");
 
   const ver = (await db.query("SELECT current_setting('server_version_num')::int AS v")).rows[0].v;
   const staffCount = (await db.query("SELECT count(*)::int AS n FROM core.staff_profiles")).rows[0].n;
